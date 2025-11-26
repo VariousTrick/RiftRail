@@ -79,50 +79,70 @@ local function get_rail_dir(dir)
     return 0
 end
 -- ============================================================================
--- 构建函数
+-- 构建函数 (核心修改：支持蓝图恢复与标签读取)
 -- ============================================================================
 function Builder.on_built(event)
     local entity = event.entity
-    if not (entity and entity.valid and entity.name == "rift-rail-placer-entity") then return end
+    -- [修改] 既接受放置器(手放)，也接受主体(蓝图/机器人)
+    if not (entity and entity.valid) then return end
+    if entity.name ~= "rift-rail-placer-entity" and entity.name ~= "rift-rail-entity" then return end
 
     if not storage.rift_rails then storage.rift_rails = {} end
 
-    -- >>>>> [新增：提前计算 ID] >>>>>
+    -- 生成新 ID (无论手放还是蓝图，都视为新建筑)
     if not storage.next_rift_id then storage.next_rift_id = 1 end
     local custom_id = storage.next_rift_id
     storage.next_rift_id = storage.next_rift_id + 1
-    -- <<<<< [新增结束] <<<<<
 
     local surface = entity.surface
-    local raw_position = entity.position
-    local direction = entity.direction -- 0, 4, 8, 12
     local force = entity.force
+    local direction = entity.direction
 
-    -- 网格吸附 (保持这个，非常重要)
-    local position = {
-        x = math.floor(raw_position.x / 2) * 2 + 1,
-        y = math.floor(raw_position.y / 2) * 2 + 1
-    }
+    -- [新增] 准备恢复数据 (从蓝图标签读取)
+    local tags = event.tags or {}
+    local recovered_mode = tags.rr_mode or "neutral"           -- 恢复模式，默认为 neutral
+    local recovered_name = tags.rr_name or tostring(custom_id) -- 恢复名字，默认为 ID
+    local recovered_icon = tags.rr_icon                        -- 恢复图标 (可能为 nil)
 
-    -- 直接使用 direction，不进行任何奇怪的映射
-    log_debug("构建... 方向: " .. direction)
+    -- [关键] 分流处理：确定主体 (Shell) 和 位置
+    local shell = nil
+    local position = nil
 
-    entity.destroy()
+    if entity.name == "rift-rail-placer-entity" then
+        -- >>> 情况 A: 玩家手放放置器 >>>
+        -- 保持原有的网格对齐逻辑
+        local raw_position = entity.position
+        position = {
+            x = math.floor(raw_position.x / 2) * 2 + 1,
+            y = math.floor(raw_position.y / 2) * 2 + 1
+        }
 
-    -- 1. 创建主体
-    local shell = surface.create_entity {
-        name = "rift-rail-entity",
-        position = position,
-        direction = direction, -- 直接传 0, 4, 8, 12
-        force = force
-    }
+        log_debug("构建(手放)... 方向: " .. direction)
+        entity.destroy() -- 销毁手中的放置器实体
+
+        -- 创建全新的主体
+        shell = surface.create_entity {
+            name = "rift-rail-entity",
+            position = position,
+            direction = direction,
+            force = force
+        }
+    else
+        -- >>> 情况 B: 蓝图/机器人建造 >>>
+        -- 实体本身就是主体 (Shell)，直接使用
+        log_debug("构建(蓝图)... 方向: " .. direction .. " 恢复模式: " .. recovered_mode)
+        shell = entity
+        position = shell.position
+        -- 不需要销毁 entity，也不需要 create shell
+    end
+
     if not shell then return end
     shell.destructible = false
 
     local children = {}
 
-    -- 2. 创建铁轨
-    local rail_dir = get_rail_dir(direction) -- 获取 0 或 2
+    -- 2. 创建铁轨 (逻辑不变)
+    local rail_dir = get_rail_dir(direction)
     for _, p in pairs(MASTER_LAYOUT.rails) do
         local offset = rotate_point(p, direction)
         local rail = surface.create_entity {
@@ -134,16 +154,11 @@ function Builder.on_built(event)
         table.insert(children, rail)
     end
 
-    -- 3. 创建信号灯
+    -- 3. 创建信号灯 (逻辑不变)
     for _, s in pairs(MASTER_LAYOUT.signals) do
         local offset = rotate_point(s, direction)
-
         local sig_dir = direction
-        if s.flip then
-            -- 16方向制下，旋转180度 = 加8
-            sig_dir = (direction + 8) % 16
-        end
-
+        if s.flip then sig_dir = (direction + 8) % 16 end
         local signal = surface.create_entity {
             name = "rift-rail-signal",
             position = { x = position.x + offset.x, y = position.y + offset.y },
@@ -153,7 +168,7 @@ function Builder.on_built(event)
         table.insert(children, signal)
     end
 
-    -- 4. 创建车站
+    -- 4. 创建车站 (修改：应用恢复的名字)
     local st_offset = rotate_point(MASTER_LAYOUT.station, direction)
     local station = surface.create_entity {
         name = "rift-rail-station",
@@ -162,12 +177,17 @@ function Builder.on_built(event)
         force = force
     }
 
-    -- [新增] 设置初始名称: [图标] ID
-    -- 这样一建造出来，车站名字就是对的
-    station.backer_name = "[item=rift-rail-placer] " .. tostring(custom_id)
+    -- [修改] 拼接车站显示名称 (逻辑参考 Logic.lua)
+    local master_icon = "[item=rift-rail-placer] "
+    local user_icon_str = ""
+    if recovered_icon then
+        user_icon_str = "[" .. recovered_icon.type .. "=" .. recovered_icon.name .. "] "
+    end
+    station.backer_name = master_icon .. user_icon_str .. recovered_name
 
     table.insert(children, station)
-    -- 5. 创建 GUI 核心
+
+    -- 5. 创建 GUI 核心 (逻辑不变)
     local core_offset = rotate_point(MASTER_LAYOUT.core, direction)
     local core = surface.create_entity {
         name = "rift-rail-core",
@@ -177,16 +197,19 @@ function Builder.on_built(event)
     }
     table.insert(children, core)
 
-    -- 6. 创建触发器
-    local col_offset = rotate_point(MASTER_LAYOUT.collider, direction)
-    local collider = surface.create_entity {
-        name = "rift-rail-collider",
-        position = { x = position.x + col_offset.x, y = position.y + col_offset.y },
-        force = force
-    }
-    table.insert(children, collider)
+    -- 6. 创建触发器 (修改：根据恢复的模式决定是否生成)
+    -- 如果是入口(entry) 或 默认(neutral)，则生成碰撞器；出口(exit)则不生成
+    if recovered_mode == "entry" or recovered_mode == "neutral" then
+        local col_offset = rotate_point(MASTER_LAYOUT.collider, direction)
+        local collider = surface.create_entity {
+            name = "rift-rail-collider",
+            position = { x = position.x + col_offset.x, y = position.y + col_offset.y },
+            force = force
+        }
+        table.insert(children, collider)
+    end
 
-    -- 7. 创建物理堵头
+    -- 7. 创建物理堵头 (逻辑不变)
     local blk_offset = rotate_point(MASTER_LAYOUT.blocker, direction)
     local blocker = surface.create_entity {
         name = "rift-rail-blocker",
@@ -195,7 +218,7 @@ function Builder.on_built(event)
     }
     table.insert(children, blocker)
 
-    -- 8. 创建照明灯
+    -- 8. 创建照明灯 (逻辑不变)
     local lamp_offset = rotate_point(MASTER_LAYOUT.lamp, direction)
     local lamp = surface.create_entity {
         name = "rift-rail-lamp",
@@ -204,20 +227,20 @@ function Builder.on_built(event)
     }
     table.insert(children, lamp)
 
-    -- [修正] 存储完整的数据结构
+    -- [修改] 存储数据 (应用恢复的属性)
     storage.rift_rails[shell.unit_number] = {
-        id = custom_id,                                      -- [修改] 使用自定义 ID (1, 2, 3...)
-        unit_number = shell.unit_number,                     -- 保留实体 ID 用于索引
+        id = custom_id,
+        unit_number = shell.unit_number,
 
-        name = tostring(custom_id),                          -- [修改] 默认名字就是 ID
-        icon = { type = "item", name = "rift-rail-placer" }, -- [修改] 默认带图标
+        name = recovered_name, -- 使用恢复的名字
+        icon = recovered_icon, -- 使用恢复的图标
+        mode = recovered_mode, -- 使用恢复的模式
 
         surface = shell.surface,
-        mode = "neutral",
         cybersyn_enabled = false,
         shell = shell,
         children = children,
-        paired_to_id = nil
+        paired_to_id = nil -- 新建/复制的建筑默认不配对
     }
 end
 

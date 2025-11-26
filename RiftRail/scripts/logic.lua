@@ -28,7 +28,7 @@ local function refresh_all_guis()
 end
 
 -- ============================================================================
--- [新增] 物理状态管理 (碰撞器控制)
+-- [新增] 物理状态管理 (精准定点清除版)
 -- ============================================================================
 local function update_collider_state(struct)
     if not (struct and struct.shell and struct.shell.valid) then return end
@@ -37,43 +37,45 @@ local function update_collider_state(struct)
     local center = struct.shell.position
     local direction = struct.shell.direction
 
-    -- 1. 先清理旧的碰撞器 (无论什么模式，先清理再重建是比较稳妥的)
+    -- 1. 计算碰撞器的精确相对坐标
+    -- 基于 Builder.lua 的旋转逻辑 (顺时针: N->E->S->W)
+    -- 基础位置 (North): {x=0, y=-2}
+    local offset = { x = 0, y = 0 }
+
+    if direction == 0 then         -- North (上)
+        offset = { x = 0, y = -2 }
+    elseif direction == 4 then     -- East (右) -> Builder 旋转逻辑 x=-y, y=x -> -(-2), 0 -> 2, 0
+        offset = { x = 2, y = 0 }  -- [修正] 确保是右边 (2, 0)
+    elseif direction == 8 then     -- South (下)
+        offset = { x = 0, y = 2 }
+    elseif direction == 12 then    -- West (左) -> Builder 旋转逻辑 x=y, y=-x -> -2, 0
+        offset = { x = -2, y = 0 } -- [修正] 确保是左边 (-2, 0)
+    end
+
+    -- 2. 计算碰撞器的绝对世界坐标
+    local target_pos = { x = center.x + offset.x, y = center.y + offset.y }
+
+    -- 3. 精准定点清理
+    -- 只在 target_pos 周围 0.5 格内寻找碰撞器
+    -- 这样绝对不会误伤隔壁邻居 (因为邻居的碰撞器至少在 2 格以外)
     local existing = surface.find_entities_filtered {
         name = "rift-rail-collider",
-        position = center,
-        radius = 5 -- 范围稍微大一点，确保能找到
+        position = target_pos, -- 锁定目标点
+        radius = 0.5           -- 极小范围
     }
+
     for _, e in pairs(existing) do
         if e.valid then e.destroy() end
     end
 
-    -- 2. 如果是 [入口] 模式，则创建新的碰撞器
+    -- 4. 如果是 [入口] 模式，则在原地创建新的碰撞器
     if struct.mode == "entry" then
-        -- 计算偏移量 (基于 Builder.lua: collider在 y=-2)
-        -- 需要根据建筑方向旋转偏移量
-        local offset = { x = 0, y = 0 }
-
-        if direction == 0 then      -- North
-            offset = { x = 0, y = -2 }
-        elseif direction == 4 then  -- East
-            offset = { x = -2, y = 0 }
-        elseif direction == 8 then  -- South
-            offset = { x = 0, y = 2 }
-        elseif direction == 12 then -- West
-            offset = { x = 2, y = 0 }
-        end
-
-        local pos = { x = center.x + offset.x, y = center.y + offset.y }
-
         local collider = surface.create_entity {
             name = "rift-rail-collider",
-            position = pos,
+            position = target_pos, -- 使用相同的坐标
             force = struct.shell.force
         }
-        -- log_debug("Logic: 已为入口 (ID " .. struct.id .. ") 重建碰撞器。")
-    else
-        -- exit 或 neutral 模式，刚才已经删除了，不需要做任何事
-        -- log_debug("Logic: 已移除出口/待机 (ID " .. struct.id .. ") 的碰撞器。")
+        -- log_debug("Logic: 已在精准坐标 (" .. target_pos.x .. "," .. target_pos.y .. ") 重建碰撞器。")
     end
 end
 

@@ -213,6 +213,113 @@ script.on_event(defines.events.on_entity_cloned, function(event)
 end)
 
 -- ============================================================================
+-- [修正版 V2] 蓝图保存逻辑 (Read-Modify-Write 模式)
+-- ============================================================================
+script.on_event(defines.events.on_player_setup_blueprint, function(event)
+    local player = game.get_player(event.player_index)
+
+    -- 1. 获取当前正在设置的蓝图物品
+    -- 通常是光标里的物品（Ctrl+C 或 蓝图工具）
+    local blueprint = player.cursor_stack
+
+    -- 检查物品是否有效且是蓝图
+    if not (blueprint and blueprint.valid and blueprint.is_blueprint) then
+        return
+    end
+
+    -- 2. 获取映射关系：{ [蓝图实体索引] = 地面源实体 }
+    local mapping = event.mapping.get()
+
+    -- 3. 读取蓝图里的实体数据表
+    local entities = blueprint.get_blueprint_entities()
+    if not entities then return end
+
+    local modified = false
+
+    -- 4. 遍历蓝图数据表进行修改
+    for i, bp_entity in pairs(entities) do
+        -- bp_entity.entity_number 对应 mapping 中的索引
+        local source_entity = mapping[bp_entity.entity_number]
+
+        -- 确认这是我们的建筑主体
+        if source_entity and source_entity.valid and source_entity.name == "rift-rail-entity" then
+            local data = storage.rift_rails[source_entity.unit_number]
+
+            if data then
+                -- 初始化 tags 表（如果原本没有）
+                if not bp_entity.tags then bp_entity.tags = {} end
+
+                -- 写入数据
+                bp_entity.tags.rr_name = data.name
+                bp_entity.tags.rr_mode = data.mode
+                bp_entity.tags.rr_icon = data.icon
+
+                modified = true
+
+                if DEBUG_MODE then
+                    player.print("[RiftRail] 保存标签到蓝图: " .. tostring(data.name))
+                end
+            end
+        end
+    end
+
+    -- 5. 如果有修改，将数据写回蓝图物品
+    if modified then
+        blueprint.set_blueprint_entities(entities)
+    end
+end)
+
+-- ============================================================================
+-- [新增] 复制粘贴设置 (Shift+右键 -> Shift+左键)
+-- ============================================================================
+script.on_event(defines.events.on_entity_settings_pasted, function(event)
+    local source = event.source
+    local dest = event.destination
+    local player = game.get_player(event.player_index)
+
+    -- 1. 验证：必须是从我们的建筑复制到我们的建筑
+    if not (source.valid and dest.valid) then return end
+    if source.name ~= "rift-rail-entity" or dest.name ~= "rift-rail-entity" then return end
+
+    -- 2. 获取数据
+    local source_data = storage.rift_rails[source.unit_number]
+    local dest_data = storage.rift_rails[dest.unit_number]
+
+    if source_data and dest_data then
+        -- 3. 复制基础配置 (名字、图标)
+        dest_data.name = source_data.name
+        dest_data.icon = source_data.icon -- 这是一个 table，直接引用没问题，因为后续通常是读操作
+
+        -- 4. 应用模式 (Entry/Exit/Neutral)
+        -- 我们调用 Logic.set_mode，这样它会自动处理碰撞器的生成/销毁，以及打印提示信息
+        -- 注意：这里传入 player_index，所以玩家会收到 "模式已切换为入口" 的提示，反馈感很好
+        Logic.set_mode(event.player_index, dest_data.id, source_data.mode)
+
+        -- 5. 刷新车站显示名称 (backer_name)
+        -- 因为 Logic.update_name 是处理 GUI 原始字符串输入的，这里直接操作实体更方便
+        if dest_data.children then
+            for _, child in pairs(dest_data.children) do
+                if child.valid and child.name == "rift-rail-station" then
+                    -- 重建显示名称：[主图标] + [自定义图标] + 名字
+                    local master_icon = "[item=rift-rail-placer] "
+                    local user_icon_str = ""
+                    if dest_data.icon then
+                        user_icon_str = "[" .. dest_data.icon.type .. "=" .. dest_data.icon.name .. "] "
+                    end
+                    child.backer_name = master_icon .. user_icon_str .. dest_data.name
+                    break
+                end
+            end
+        end
+
+        -- 6. Debug 信息
+        if DEBUG_MODE then
+            player.print("[RiftRail] 设置已粘贴: " .. source_data.name .. " -> " .. dest_data.name)
+        end
+    end
+end)
+
+-- ============================================================================
 -- 7. 远程接口
 -- ============================================================================
 remote.add_interface("RiftRail", {

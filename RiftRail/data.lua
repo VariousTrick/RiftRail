@@ -139,7 +139,18 @@ data:extend({
         icon = "__RiftRail__/graphics/entity.png",
         icon_size = 64,
         -- [修正] 加入 placeable-off-grid，防止引擎自动吸附导致与铁轨网格错位
-        flags = { "placeable-neutral", "player-creation", "not-blueprintable", "placeable-off-grid" },
+        -- >>>>> [修改开始] >>>>>
+        -- 原代码：flags = { "placeable-neutral", "player-creation", "not-blueprintable", "placeable-off-grid" },
+        -- 修改后：移除了 "not-blueprintable"，允许生成幽灵实体
+        flags = { "placeable-neutral", "player-creation", "placeable-off-grid" },
+        -- <<<<< [修改结束] <<<<
+
+        -- >>>>> [新增开始] >>>>>
+        -- 修复 Q 键吸取 (Pipette) 功能
+        -- 原理：强制告诉引擎，当对着这个实体按 Q 时，选取 "rift-rail-placer" 这个物品
+        placeable_by = { { item = "rift-rail-placer", count = 1 } },
+        -- <<<<< [新增结束] <<<<<
+
         minable = { mining_time = 1, result = "rift-rail-placer" },
         max_health = 2000,
         collision_mask = {
@@ -304,10 +315,16 @@ local gui_core = data.raw["container"]["rift-rail-core"]
 table_merge(gui_core, table.deepcopy(data.raw["container"]["wooden-chest"]))
 
 gui_core.name = "rift-rail-core"
--- 允许挖掘，掉落放置器
-gui_core.minable = { mining_time = 0.5, result = "rift-rail-placer" }
--- 标志保持不变
-gui_core.flags = { "hide-alt-info", "not-repairable", "not-blueprintable", "not-on-map", "not-rotatable" }
+-- >>>>> [修改开始] >>>>>
+-- 原代码：gui_core.minable = { mining_time = 0.5, result = "rift-rail-placer" }
+-- 修改后：直接设为 nil，禁止挖掘
+gui_core.minable = nil
+
+-- 原代码：gui_core.flags = { "hide-alt-info", "not-repairable", "not-blueprintable", "not-on-map", "not-rotatable" }
+-- 修改后：增加 "not-deconstructable" 防止机器人试图拆它
+gui_core.flags = { "hide-alt-info", "not-repairable", "not-blueprintable", "not-on-map", "not-rotatable",
+    "not-deconstructable" }
+-- <<<<< [修改结束] <<<<
 gui_core.hidden = true
 gui_core.collision_mask = { layers = {} } -- 无碰撞
 gui_core.collision_box = create_centered_box(0, 0)
