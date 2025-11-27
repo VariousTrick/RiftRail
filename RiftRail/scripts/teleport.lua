@@ -184,40 +184,30 @@ end ]]
 local function finish_teleport(entry_struct, exit_struct)
     log_tp("传送结束: 清理状态 (入口ID: " .. entry_struct.id .. ", 出口ID: " .. exit_struct.id .. ")")
 
-    -- 1. 销毁最后的拖船
+    -- 1. 销毁最后的拖船 (带时刻表保护)
     if exit_struct.tug and exit_struct.tug.valid then
+        -- [A] 存: 销毁拖船会导致时刻表重置，先保存当前索引
+        local saved_index_before_tug_death = nil
+        -- 尝试通过 carriage_ahead 获取火车
+        local train_ref = exit_struct.carriage_ahead and exit_struct.carriage_ahead.valid and
+            exit_struct.carriage_ahead.train
+        if train_ref and train_ref.valid and train_ref.schedule then
+            saved_index_before_tug_death = train_ref.schedule.current
+        end
+
+        -- [B] 炸
         exit_struct.tug.destroy()
         exit_struct.tug = nil
+
+        -- [C] 恢复
+        if saved_index_before_tug_death and train_ref and train_ref.valid then
+            train_ref.go_to_station(saved_index_before_tug_death)
+        end
     end
 
     local final_train = exit_struct.carriage_ahead and exit_struct.carriage_ahead.train
 
     if final_train and final_train.valid then
-        -- >>>>> [修改] 在恢复自动模式前，强制应用正确的时刻表 >>>>>
-        if exit_struct.pending_schedule then
-            local saved = exit_struct.pending_schedule
-
-            -- 1. 强制覆盖 records, current, group, interrupts
-            -- [关键] 这里的赋值会让引擎同时设置所有属性
-            final_train.schedule = {
-                records = saved.records,
-                current = saved.current,
-                -- [新增] 恢复组和中断
-                group = saved.group,
-                interrupts = saved.interrupts
-            }
-
-            -- 2. 显式调用 go_to_station 刷新路径
-            final_train.go_to_station(saved.current)
-
-            log_tp("时刻表保护: 最终修复完成。组: " ..
-                tostring(saved.group) .. " 中断数: " .. (saved.interrupts and #saved.interrupts or 0))
-
-            -- 3. 清理备份数据
-            exit_struct.pending_schedule = nil
-        end
-        -- <<<<< [修改结束] <<<<<
-
         -- 2. 恢复模式和速度
         final_train.manual_mode = exit_struct.saved_manual_mode or false
 
@@ -414,13 +404,24 @@ function Teleport.teleport_next(entry_struct)
         end
     end
 
+    -- >>>>> [新增 SE 策略] 1. 在变动发生前，保存当前进度 >>>>>
+    -- 必须在销毁拖船之前保存！因为销毁拖船会导致 carriage_ahead 的时刻表被重置为 1
+    local saved_ahead_index = nil
+    if exit_struct.carriage_ahead and exit_struct.carriage_ahead.valid and exit_struct.carriage_ahead.train then
+        -- 如果出口已经有火车（说明这不是第一节车），保存它的进度
+        if exit_struct.carriage_ahead.train.schedule then
+            saved_ahead_index = exit_struct.carriage_ahead.train.schedule.current
+        end
+    end
+    -- <<<<< [新增结束] <<<<<
+
     -- 销毁旧拖船
     if exit_struct.tug and exit_struct.tug.valid then
         exit_struct.tug.destroy()
         exit_struct.tug = nil
     end
 
-    -- 生成新车厢
+    -- 生成新车厢 (保持不变)
     local new_carriage = exit_struct.surface.create_entity {
         name = carriage.name,
         position = spawn_pos,
@@ -441,6 +442,19 @@ function Teleport.teleport_next(entry_struct)
     new_carriage.health = carriage.health
     new_carriage.backer_name = carriage.backer_name or ""
     if carriage.color then new_carriage.color = carriage.color end
+
+    -- >>>>> [新增 SE 策略] 2. 强制连接并立刻恢复进度 >>>>>
+    -- 尝试与上一节车厢强制连接 (防止引擎把它们当成两列车处理)
+    if exit_struct.carriage_ahead and exit_struct.carriage_ahead.valid then
+        new_carriage.connect_rolling_stock(defines.rail_direction.front)
+        new_carriage.connect_rolling_stock(defines.rail_direction.back)
+    end
+
+    -- 如果之前保存了进度，说明这是后续车厢，立刻把被重置的索引改回去
+    if saved_ahead_index then
+        new_carriage.train.go_to_station(saved_ahead_index)
+    end
+    -- <<<<< [新增结束] <<<<<
 
     -- [修正] 司机转移逻辑 (严格照搬传送门)
     local driver = carriage.get_driver()
@@ -467,31 +481,13 @@ function Teleport.teleport_next(entry_struct)
         -- 2. 转移时刻表
         Schedule.transfer_schedule(carriage.train, new_carriage.train, real_station_name)
 
-        -- >>>>> [修改] 混合备份源：站点从新车拿(已计算)，中断从旧车拿(防丢失) >>>>>
-        if new_carriage.train.schedule and carriage.train.schedule then
-            local new_s = new_carriage.train.schedule -- 从新车获取计算后的站点
-            local old_s = carriage.train.schedule     -- 从旧车直接获取原始中断和组
 
-            exit_struct.pending_schedule = {
-                records = new_s.records, -- 只有这个需要用新的（因为 logical_index 变了）
-                current = new_s.current, -- 只有这个需要用新的
-
-                -- [关键修复] 直接从旧火车继承，绕过中间可能的数据丢失
-                group = old_s.group,
-                interrupts = old_s.interrupts
-            }
-            log_tp("时刻表保护: 混合备份完成。目标索引: " ..
-            new_s.current .. " | 抢救中断数: " .. (old_s.interrupts and #old_s.interrupts or 0))
-        end
-        -- <<<<< [修改结束] <<<<<
 
         -- 3. 保存新火车的时刻表索引 (解决重置问题)
         -- transfer_schedule 内部已经调用了 go_to_station，所以现在的 current 是正确的下一站
-        if new_carriage.train.schedule then
-            exit_struct.saved_schedule_index = new_carriage.train.schedule.current
-            log_tp("时刻表保护: 已保存目标索引 [" .. exit_struct.saved_schedule_index .. "] 到出口结构")
-        end
     end
+
+
     -- <<<<< [修复结束] <<<<<
 
     -- 销毁旧车厢
@@ -505,24 +501,35 @@ function Teleport.teleport_next(entry_struct)
     if next_carriage and next_carriage.valid then
         entry_struct.carriage_behind = next_carriage
 
+        -- >>>>> [新增修复] A. 在生成/连接拖船前，保存刚才设置好的时刻表索引 >>>>>
+        local index_before_tug = nil
+        if new_carriage.train.schedule then
+            index_before_tug = new_carriage.train.schedule.current
+        end
+        -- <<<<< [新增结束] <<<<<
+
         -- 生成新拖船 (Tug)
         local tug_pos = Util.vectors_add(exit_struct.shell.position, geo.tug_offset)
         local tug = exit_struct.surface.create_entity {
             name = "rift-rail-tug",
             position = tug_pos,
-            direction = geo.direction, -- 拖船方向与车一致
+            direction = geo.direction,
             force = new_carriage.force
         }
         if tug then
             tug.destructible = false
             exit_struct.tug = tug
 
-            -- [新增] 强制连接逻辑
-            -- 拖车生成在车厢后方，且方向一致
-            -- 所以拖车的 "Front" 对着车厢的 "Back"
-            -- 尝试两个方向连接，确保万无一失
+            -- [新增] 强制连接逻辑 (这行代码会导致重置！)
             tug.connect_rolling_stock(defines.rail_direction.front)
             tug.connect_rolling_stock(defines.rail_direction.back)
+
+            -- >>>>> [新增修复] B. 拖船连接导致重置，立刻恢复索引 >>>>>
+            if index_before_tug then
+                new_carriage.train.go_to_station(index_before_tug)
+                log_tp("拖船连接修正: 索引已从重置状态恢复为 " .. index_before_tug)
+            end
+            -- <<<<< [新增结束] <<<<<
         end
     else
         log_tp("最后一节车厢传送完毕。")
