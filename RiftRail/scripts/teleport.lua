@@ -193,26 +193,30 @@ local function finish_teleport(entry_struct, exit_struct)
     local final_train = exit_struct.carriage_ahead and exit_struct.carriage_ahead.train
 
     if final_train and final_train.valid then
-        -- >>>>> [新增修复] 在恢复自动模式前，强制应用正确的时刻表 >>>>>
+        -- >>>>> [修改] 在恢复自动模式前，强制应用正确的时刻表 >>>>>
         if exit_struct.pending_schedule then
             local saved = exit_struct.pending_schedule
 
-            -- 1. 强制覆盖 records 和 current
-            -- 注意：必须重新构造 table 赋值，单纯修改属性可能无效
+            -- 1. 强制覆盖 records, current, group, interrupts
+            -- [关键] 这里的赋值会让引擎同时设置所有属性
             final_train.schedule = {
                 records = saved.records,
-                current = saved.current
+                current = saved.current,
+                -- [新增] 恢复组和中断
+                group = saved.group,
+                interrupts = saved.interrupts
             }
 
             -- 2. 显式调用 go_to_station 刷新路径
             final_train.go_to_station(saved.current)
 
-            log_tp("时刻表保护: 多节车厢传送完成，已强制恢复时刻表至索引 [" .. saved.current .. "]")
+            log_tp("时刻表保护: 最终修复完成。组: " ..
+                tostring(saved.group) .. " 中断数: " .. (saved.interrupts and #saved.interrupts or 0))
 
             -- 3. 清理备份数据
             exit_struct.pending_schedule = nil
         end
-        -- <<<<< [修复结束] <<<<<
+        -- <<<<< [修改结束] <<<<<
 
         -- 2. 恢复模式和速度
         final_train.manual_mode = exit_struct.saved_manual_mode or false
@@ -463,14 +467,21 @@ function Teleport.teleport_next(entry_struct)
         -- 2. 转移时刻表
         Schedule.transfer_schedule(carriage.train, new_carriage.train, real_station_name)
 
-        -- >>>>> [修改] 备份完整时刻表 (替换原本只保存索引的逻辑) >>>>>
-        if new_carriage.train.schedule then
-            -- 我们必须保存整个 records 和 current，因为后续车厢连接时，引擎可能会重置它们
+        -- >>>>> [修改] 混合备份源：站点从新车拿(已计算)，中断从旧车拿(防丢失) >>>>>
+        if new_carriage.train.schedule and carriage.train.schedule then
+            local new_s = new_carriage.train.schedule -- 从新车获取计算后的站点
+            local old_s = carriage.train.schedule     -- 从旧车直接获取原始中断和组
+
             exit_struct.pending_schedule = {
-                records = new_carriage.train.schedule.records,
-                current = new_carriage.train.schedule.current
+                records = new_s.records, -- 只有这个需要用新的（因为 logical_index 变了）
+                current = new_s.current, -- 只有这个需要用新的
+
+                -- [关键修复] 直接从旧火车继承，绕过中间可能的数据丢失
+                group = old_s.group,
+                interrupts = old_s.interrupts
             }
-            log_tp("时刻表保护: 已完整备份时刻表数据，目标索引: " .. exit_struct.pending_schedule.current)
+            log_tp("时刻表保护: 混合备份完成。目标索引: " ..
+            new_s.current .. " | 抢救中断数: " .. (old_s.interrupts and #old_s.interrupts or 0))
         end
         -- <<<<< [修改结束] <<<<<
 
