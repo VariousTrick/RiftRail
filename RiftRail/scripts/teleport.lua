@@ -193,6 +193,27 @@ local function finish_teleport(entry_struct, exit_struct)
     local final_train = exit_struct.carriage_ahead and exit_struct.carriage_ahead.train
 
     if final_train and final_train.valid then
+        -- >>>>> [新增修复] 在恢复自动模式前，强制应用正确的时刻表 >>>>>
+        if exit_struct.pending_schedule then
+            local saved = exit_struct.pending_schedule
+
+            -- 1. 强制覆盖 records 和 current
+            -- 注意：必须重新构造 table 赋值，单纯修改属性可能无效
+            final_train.schedule = {
+                records = saved.records,
+                current = saved.current
+            }
+
+            -- 2. 显式调用 go_to_station 刷新路径
+            final_train.go_to_station(saved.current)
+
+            log_tp("时刻表保护: 多节车厢传送完成，已强制恢复时刻表至索引 [" .. saved.current .. "]")
+
+            -- 3. 清理备份数据
+            exit_struct.pending_schedule = nil
+        end
+        -- <<<<< [修复结束] <<<<<
+
         -- 2. 恢复模式和速度
         final_train.manual_mode = exit_struct.saved_manual_mode or false
 
@@ -223,7 +244,7 @@ local function finish_teleport(entry_struct, exit_struct)
             })
         end
 
-        -- >>>>> [新增修复] 时刻表索引保护 (复刻传送门逻辑) >>>>>
+        --[[         -- >>>>> [新增修复] 时刻表索引保护 (复刻传送门逻辑) >>>>>
         if exit_struct.saved_schedule_index then
             local sched = final_train.schedule
             -- 检查索引是否被引擎重置了 (例如重置回了1)
@@ -240,7 +261,7 @@ local function finish_teleport(entry_struct, exit_struct)
             -- 清理保存的索引
             exit_struct.saved_schedule_index = nil
         end
-        -- <<<<< [修复结束] <<<<<
+        -- <<<<< [修复结束] <<<<< ]]
     end
 
     -- 5. 重置状态变量
@@ -441,6 +462,17 @@ function Teleport.teleport_next(entry_struct)
 
         -- 2. 转移时刻表
         Schedule.transfer_schedule(carriage.train, new_carriage.train, real_station_name)
+
+        -- >>>>> [修改] 备份完整时刻表 (替换原本只保存索引的逻辑) >>>>>
+        if new_carriage.train.schedule then
+            -- 我们必须保存整个 records 和 current，因为后续车厢连接时，引擎可能会重置它们
+            exit_struct.pending_schedule = {
+                records = new_carriage.train.schedule.records,
+                current = new_carriage.train.schedule.current
+            }
+            log_tp("时刻表保护: 已完整备份时刻表数据，目标索引: " .. exit_struct.pending_schedule.current)
+        end
+        -- <<<<< [修改结束] <<<<<
 
         -- 3. 保存新火车的时刻表索引 (解决重置问题)
         -- transfer_schedule 内部已经调用了 go_to_station，所以现在的 current 是正确的下一站
