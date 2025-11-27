@@ -4,7 +4,7 @@
 -- 更新：集成传送逻辑、补全玩家传送、事件分流
 
 -- 1. 定义调试总开关
-local DEBUG_MODE = true
+local DEBUG_MODE = false
 
 -- 2. 定义日志函数
 local function log_debug(msg)
