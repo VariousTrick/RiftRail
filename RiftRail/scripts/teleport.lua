@@ -328,24 +328,46 @@ function Teleport.teleport_next(entry_struct)
         if count > 0 then is_clear = false end
     end
 
-    -- 堵塞处理
+    -- 堵塞处理 (SE 方案 - API 调用完全修正版)
     if not is_clear then
         log_tp("出口堵塞，暂停传送...")
-        -- 修改时刻表让火车停下 (照搬逻辑)
         if carriage.train and not carriage.train.manual_mode then
-            local sched = carriage.train.schedule
-            if sched then
-                local current = sched.records[sched.current]
-                if current then
-                    -- 添加无限等待
-                    current.wait_conditions = { { type = "time", ticks = 9999999 } }
-                    current.temporary = true
-                    carriage.train.schedule = sched
-                    log_tp("已修改入口火车时刻表为无限等待。")
+            local sched = carriage.train.get_schedule()
+            if not sched then return end
+
+            local station_entity = nil
+            if entry_struct.children then
+                for _, child in pairs(entry_struct.children) do
+                    if child.valid and child.name == "rift-rail-station" then
+                        station_entity = child
+                        break
+                    end
                 end
             end
+
+            if not (station_entity and station_entity.connected_rail) then return end
+
+            local current_record = sched.get_record({ schedule_index = sched.current })
+
+            if not (current_record and current_record.rail and current_record.rail == station_entity.connected_rail) then
+                -- >>>>> [API 修正] 将所有参数合并到一个表中直接传递 >>>>>
+                sched.add_record({
+                    -- 描述站点本身的字段
+                    rail = station_entity.connected_rail,
+                    temporary = true,
+                    wait_conditions = { { type = "time", ticks = 9999999 } },
+
+                    -- 描述插入位置的字段
+                    index = { schedule_index = sched.current + 1 }
+                })
+                -- <<<<< [修正结束] <<<<<
+
+                carriage.train.go_to_station(sched.current + 1)
+
+                log_tp("API 调用正确：已插入临时路障站点。")
+            end
         end
-        return -- 退出，等待下一次 tick
+        return
     end
 
     -- >>>>> [开始插入] 动态拼接检测 >>>>>
