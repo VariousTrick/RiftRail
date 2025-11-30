@@ -192,7 +192,13 @@ function GUI.build_or_update(player, entity)
                 style = "bold_label"
             })
         else
-            status_flow.add({ type = "label", caption = "Error: Partner data missing", style = "bold_red_label" })
+            -- >>>>> [修改] 本地化错误提示 >>>>>
+            status_flow.add({
+                type = "label",
+                caption = { "gui.rift-rail-status-error-partner-missing" },
+                style = "bold_red_label"
+            })
+            -- <<<<< [修改结束] <<<<<
         end
     else
         status_flow.add({ type = "label", caption = { "gui.rift-rail-status-unpaired" }, style = "bold_label" })
@@ -215,13 +221,23 @@ function GUI.build_or_update(player, entity)
             if p_data.icon and p_data.icon.name then
                 icon_str = "[" .. p_data.icon.type .. "=" .. p_data.icon.name .. "] "
             end
-            local mode_str = "[?]"
-            if p_data.mode == "entry" then mode_str = "[入口]" end
-            if p_data.mode == "exit" then mode_str = "[出口]" end
-            if p_data.mode == "neutral" then mode_str = "[待机]" end
+            -- >>>>> [修改] 使用本地化键值 >>>>>
+            local mode_key = "gui.rift-rail-mode-short-unknown"
+            if p_data.mode == "entry" then mode_key = "gui.rift-rail-mode-short-entry" end
+            if p_data.mode == "exit" then mode_key = "gui.rift-rail-mode-short-exit" end
+            if p_data.mode == "neutral" then mode_key = "gui.rift-rail-mode-short-neutral" end
 
-            local item_text = icon_str ..
-                p_data.name .. " (ID:" .. p_data.id .. ") " .. mode_str .. " [" .. p_data.surface.name .. "]"
+            -- 构建本地化字符串结构 {"", A, B, C...} 用于拼接
+            -- 格式: 图标 + 名字 + (ID:xx) + [模式] + [地表]
+            local item_text = {
+                "",
+                icon_str,
+                p_data.name,
+                " (ID:" .. p_data.id .. ") ",
+                { mode_key }, -- 插入本地化键
+                " [" .. p_data.surface.name .. "]"
+            }
+            -- <<<<< [修改结束] <<<<<
             table.insert(dropdown_items, item_text)
 
             -- [修复] 如果这个就是当前配对的对象，记录索引
@@ -319,7 +335,10 @@ function GUI.build_or_update(player, entity)
             inner_flow.add({
                 type = "label",
                 style = "frame_title",
-                caption = "远程预览: " .. partner.name .. " [" .. partner.shell.surface.name .. "]"
+                -- >>>>> [修改] 本地化预览标题 >>>>>
+                -- 对应 locale: rift-rail-preview-title=远程预览: __1__ [__2__]
+                caption = { "gui.rift-rail-preview-title", partner.name, partner.shell.surface.name }
+                -- <<<<< [修改结束] <<<<<
             }).style.left_padding = 8
 
             -- [修正] 预览框 (inside_shallow_frame) + 拉伸属性

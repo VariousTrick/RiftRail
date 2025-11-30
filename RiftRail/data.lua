@@ -153,7 +153,7 @@ data:extend({
         -- <<<<< [新增结束] <<<<<
 
         minable = { mining_time = 1, result = "rift-rail-placer" },
-        max_health = 2000,
+        max_health = 100000,
         collision_mask = {
             layers = {
                 ["water_tile"] = true,
@@ -187,7 +187,7 @@ data:extend({
         name = "rift-rail-lamp",
         icon = "__base__/graphics/icons/small-lamp.png",
         icon_size = 64,
-        flags = { "hide-alt-info", "not-repairable", "not-blueprintable", "not-deconstructable", "not-on-map" },
+        flags = { "hide-alt-info", "not-blueprintable", "not-deconstructable", "not-on-map" },
         hidden = true,
         selectable_in_game = false,
         -- 无碰撞，不挡路

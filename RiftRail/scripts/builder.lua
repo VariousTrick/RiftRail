@@ -137,7 +137,9 @@ function Builder.on_built(event)
     end
 
     if not shell then return end
-    shell.destructible = false
+    -- [删除这一行] ！！！
+    -- shell.destructible = false
+    -- 让 shell 保持默认的可破坏状态，这样虫子能咬它，你也能修它。
 
     local children = {}
 
@@ -226,6 +228,21 @@ function Builder.on_built(event)
         force = force
     }
     table.insert(children, lamp)
+
+    -- >>>>> [新增] 批量设置内部组件属性 >>>>>
+    for _, child in pairs(children) do
+        if child.valid then
+            -- 特例：碰撞器必须是"脆皮"，否则火车撞上去不会触发传送
+            if child.name == "rift-rail-collider" then
+                child.destructible = true
+            else
+                -- 其他所有组件(铁轨、信号、核心、灯)设为无敌
+                -- 效果：免疫伤害、不显示血条、不会误伤
+                child.destructible = false
+            end
+        end
+    end
+    -- <<<<< [新增结束] <<<<<
 
     -- [修改] 存储数据 (应用恢复的属性)
     storage.rift_rails[shell.unit_number] = {

@@ -148,18 +148,34 @@ local function finish_teleport(entry_struct, exit_struct)
     local final_train = exit_struct.carriage_ahead and exit_struct.carriage_ahead.train
 
     if final_train and final_train.valid then
-        -- 2. 恢复模式和速度
+        -- >>>>> [开始修改] 顺滑出站 v3.0 (极简延迟版) >>>>>
+
+        -- 1. 恢复原始模式
+        -- 这会将火车切回自动模式(如果之前是自动)，引擎接管寻路
         final_train.manual_mode = exit_struct.saved_manual_mode or false
 
-        -- >>>>> [新增] 消除卡顿：补一脚油门 >>>>>
-        -- 获取当前火车的速度方向符号
-        local current_sign = (final_train.speed >= 0) and 1 or -1
-        -- 如果速度过低 (卡顿了)，强制给一个驶离速度 (0.5)
-        -- 这样火车会带着惯性继续滑出出口
-        if math.abs(final_train.speed) < 0.5 then
-            final_train.speed = 0.5 * current_sign
-        end
-        -- <<<<< [新增结束] <<<<<
+        -- 2. 准备速度数值 (只取绝对值，动量守恒)
+        local original_speed = math.abs(exit_struct.saved_speed or 0)
+        local target_speed = math.max(original_speed, 0.5)
+
+        -- >>>>> [开始修改] 入队逻辑 (携带出口方向数据) >>>>>
+
+        -- 1. 计算出口的绝对离去方向 (Orientation 0.0-1.0)
+        -- 我们需要告诉 on_tick: "不管谁是车头，反正要往这个方向跑"
+        local geo_exit = GEOMETRY[exit_struct.shell.direction] or GEOMETRY[0]
+        local out_orientation = geo_exit.direction / 16.0
+
+        -- 2. 初始化队列
+        if not storage.speed_queue then storage.speed_queue = {} end
+
+        -- 3. 入队
+        table.insert(storage.speed_queue, {
+            train = final_train,
+            velocity = target_speed,  -- 速度绝对值
+            out_ori = out_orientation -- 目标物理朝向
+        })
+
+        -- <<<<< [修改结束] <<<<<
 
 
 
@@ -351,11 +367,44 @@ function Teleport.teleport_next(entry_struct)
         exit_struct.tug = nil
     end
 
+    -- >>>>> [开始修改] 计算车厢生成朝向 (纯 Orientation 版) >>>>>
+    -- 1. 获取入口建筑的"深入向量"朝向 (转为 0.0-1.0)
+    -- entry_struct.shell.direction 是 0, 4, 8, 12 (16向系统)
+    local entry_shell_ori = entry_struct.shell.direction / 16.0
+
+    -- 2. 获取车厢当前的绝对朝向 (0.0 - 1.0)
+    local carriage_ori = carriage.orientation
+
+    -- 3. 计算角度差，判断是否"顺向" (头朝死胡同)
+    local diff = math.abs(carriage_ori - entry_shell_ori)
+    if diff > 0.5 then diff = 1.0 - diff end
+    local is_nose_in = diff < 0.125
+
+    log_tp("方向计算: 车厢ori=" .. carriage_ori .. ", 建筑ori=" .. entry_shell_ori .. ", 判定=" .. (is_nose_in and "顺向" or "逆向"))
+
+    -- 4. 决定生成朝向
+    -- geo.direction 是 defines (0, 4, 8, 12)
+    -- [修改] 必须除以 16.0 才能得到正确的 orientation (0, 0.25, 0.5, 0.75)
+    -- 之前除以 8.0 会导致算出 0.5 (南)，引发错误的吸附
+    local exit_base_ori = geo.direction / 16.0
+    local target_ori = exit_base_ori
+
+    if not is_nose_in then
+        -- 逆向进入 -> 逆向离开 (翻转 180 度 = +0.5)
+        target_ori = (target_ori + 0.5) % 1.0
+        log_tp("方向计算: 逆向翻转 (Ori " .. exit_base_ori .. " -> " .. target_ori .. ")")
+    else
+        log_tp("方向计算: 顺向保持 (Ori " .. target_ori .. ")")
+    end
+    -- <<<<< [修改结束] <<<<<
+
     -- 生成新车厢 (保持不变)
     local new_carriage = exit_struct.surface.create_entity {
         name = carriage.name,
         position = spawn_pos,
-        direction = geo.direction,
+        -- [修改] 不再使用 direction，改用 orientation
+        -- 这样引擎会直接接受准确的角度，不再需要猜测是8向还是16向
+        orientation = target_ori,
         force = carriage.force
     }
 
@@ -567,12 +616,52 @@ function Teleport.manage_speed(struct)
                 train_entry.manual_mode = true
             end
 
+            -- >>>>> [开始修改] 在这里增加强制出口手动模式 >>>>>
+            -- 修复报错: Trying to change direction of automatic train
+            -- 必须确保出口火车也是手动模式，脚本才有权反转其速度方向(倒车)
+            if not train_exit.manual_mode then
+                train_exit.manual_mode = true
+                -- log_tp("动力维持: 强制出口火车进入手动模式以应用矢量速度")
+            end
+            -- <<<<< [修改结束] <<<<<
+
             -- 2. 维持出口动力
             local target_speed = 0.5
-            local exit_sign = (train_exit.speed < 0) and -1 or 1
-            if math.abs(train_exit.speed) < target_speed then
-                train_exit.speed = target_speed * exit_sign
+
+            -- >>>>> [开始修改] 基于拖船链接符号的动力逻辑 (SE算法) >>>>>
+            local required_sign = 1
+            local tug = exit_struct.tug
+
+            if tug and tug.valid then
+                -- 1. 计算连接符号
+                -- get_train_forward_sign 在文件头部定义，用来判断车厢和列车整体方向的关系
+                local link_sign = get_train_forward_sign(tug)
+
+                -- 2. 直接应用符号
+                -- 因为拖船永远面朝出口，所以:
+                -- 如果拖船顺接(1)，列车正方向就是出口 -> 正速度
+                -- 如果拖船反接(-1)，列车正方向是死胡同 -> 负速度(倒车)
+                required_sign = link_sign
+
+                --[[                 -- [调试打印] 观察数值，测试成功后可删除
+                game.print("[Debug] ID:" ..
+                    train_exit.id ..
+                    " | 拖船Link: " .. link_sign .. " | 目标Sign: " .. required_sign .. " | 当前Speed: " .. train_exit.speed) ]]
+            else
+                -- 异常保护: 如果没有拖船，回退到 Orientation 算法
+                local geo_exit = GEOMETRY[exit_struct.shell.direction] or GEOMETRY[0]
+                local out_orientation = geo_exit.direction / 16.0
+                local head_orientation = train_exit.front_stock.orientation
+                local diff = math.abs(head_orientation - out_orientation)
+                if diff > 0.5 then diff = 1.0 - diff end
+                if diff > 0.25 then required_sign = -1 end
             end
+
+            -- 应用速度
+            if math.abs(train_exit.speed) < target_speed or (train_exit.speed * required_sign < 0) then
+                train_exit.speed = target_speed * required_sign
+            end
+            -- <<<<< [修改结束] <<<<<
 
             -- 3. [终极修正] 太空电梯三方符号算法
             -- 公式: 入口速度 = |出口速度| * 建筑符号 * 车厢符号 * 连接符号
@@ -607,6 +696,47 @@ end
 -- =================================================================================
 
 function Teleport.on_tick(event)
+    -- >>>>> [新增] 处理速度恢复队列 (延迟一帧执行) >>>>>
+    -- 这是一个简单的 Tick Task 系统
+    -- 如果上一帧有火车刚切回自动模式，它们会在这里等待恢复速度
+    -- >>>>> [修改] 最终版：自动试错恢复速度 >>>>>
+    if storage.speed_queue and #storage.speed_queue > 0 then
+        for _, task in pairs(storage.speed_queue) do
+            local train = task.train
+            local velocity = task.velocity -- 这是一个正数 (绝对值)
+            local target_ori = task.out_ori
+
+            if train and train.valid and not train.manual_mode then
+                local front = train.front_stock
+                if front then
+                    -- 1. 先进行几何估算 (准确率 90%)
+                    local current_ori = front.orientation
+                    local diff = math.abs(current_ori - target_ori)
+                    if diff > 0.5 then diff = 1.0 - diff end
+
+                    local sign = 1
+                    if diff > 0.25 then sign = -1 end
+
+                    -- 2. 尝试应用速度 (pcall 保护)
+                    -- 这里的逻辑是：试图应用我们算出的方向。
+                    -- 如果引擎认为方向反了(报错)，pcall 会捕获错误，不会让游戏崩溃。
+                    local success = pcall(function()
+                        train.speed = velocity * sign
+                    end)
+
+                    -- 3. 如果估算错了，就反过来设
+                    -- 既然正向不对，那反向一定是合法的 (只要有路径)
+                    if not success then
+                        pcall(function()
+                            train.speed = velocity * (-sign)
+                        end)
+                    end
+                end
+            end
+        end
+        storage.speed_queue = {}
+    end
+    -- <<<<< [修改结束] <<<<<
     -- 遍历所有传送门
     -- 注意：效率优化，实际应该只遍历 active 的
     local all = State.get_all_structs()
