@@ -770,7 +770,10 @@ function Teleport.on_tick(event)
         end
 
         -- 3. 持续动力
-        Teleport.manage_speed(struct)
+        -- [性能优化] 只为正在传送的传送门执行昂贵的动力计算
+        if struct.is_teleporting then
+            Teleport.manage_speed(struct)
+        end
     end
 end
 

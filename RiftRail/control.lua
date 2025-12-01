@@ -28,10 +28,11 @@ local Teleport = require("scripts.teleport") -- [新增] 加载传送核心
 
 
 
-
+-- [修改] 给 Builder 注入 CybersynSE (用于拆除清理)
 if Builder.init then
     Builder.init({
         log_debug = log_debug,
+        -- CybersynSE = CybersynSE -- [新增] 注入
     })
 end
 
@@ -53,12 +54,13 @@ if Teleport.init then
     })
 end
 
-
+-- [修改] 给 Logic 注入 CybersynSE (用于GUI开关)
 if Logic.init then
     Logic.init({
         State = State,
         GUI = GUI,
         log_debug = log_debug,
+        -- CybersynSE = CybersynSE -- [新增] 注入
     })
 end
 
@@ -197,59 +199,63 @@ script.on_event(defines.events.on_entity_cloned, function(event)
 end)
 
 -- ============================================================================
--- [修正版 V2] 蓝图保存逻辑 (Read-Modify-Write 模式)
+-- [最终修复版] 蓝图创建时“源头掉包” (修复 "not-rotatable" 报错)
 -- ============================================================================
 script.on_event(defines.events.on_player_setup_blueprint, function(event)
+    -- 这个事件只在“创建蓝图(Ctrl+C)”时有 mapping，我们只处理这种情况
+    if not event.mapping then return end
+
     local player = game.get_player(event.player_index)
-
-    -- 1. 获取当前正在设置的蓝图物品
-    -- 通常是光标里的物品（Ctrl+C 或 蓝图工具）
     local blueprint = player.cursor_stack
+    if not (blueprint and blueprint.valid and blueprint.is_blueprint) then return end
 
-    -- 检查物品是否有效且是蓝图
-    if not (blueprint and blueprint.valid and blueprint.is_blueprint) then
-        return
-    end
-
-    -- 2. 获取映射关系：{ [蓝图实体索引] = 地面源实体 }
-    local mapping = event.mapping.get()
-
-    -- 3. 读取蓝图里的实体数据表
     local entities = blueprint.get_blueprint_entities()
     if not entities then return end
 
-    local modified = false
+    local mapping = event.mapping.get()
 
-    -- 4. 遍历蓝图数据表进行修改
+    local modified = false
+    local new_entities = {} -- 创建一个新的实体列表
+
+    -- 1. 遍历原始蓝图实体，寻找主体并进行“掉包”
     for i, bp_entity in pairs(entities) do
-        -- bp_entity.entity_number 对应 mapping 中的索引
         local source_entity = mapping[bp_entity.entity_number]
 
-        -- 确认这是我们的建筑主体
         if source_entity and source_entity.valid and source_entity.name == "rift-rail-entity" then
+            -- 找到了“顽固”的主体，我们不把它加入新列表
+            -- 而是创建一个全新的、“灵活”的放置器来替换它
+            modified = true
+
             local data = storage.rift_rails[source_entity.unit_number]
 
+            local placer_entity = {
+                entity_number = bp_entity.entity_number,
+                name = "rift-rail-placer-entity",
+                position = bp_entity.position,
+                direction = bp_entity.direction,
+                tags = {} -- 初始化 tags
+            }
+
+            -- 将配置信息保存到这个新放置器的 tags 中
             if data then
-                -- 初始化 tags 表（如果原本没有）
-                if not bp_entity.tags then bp_entity.tags = {} end
-
-                -- 写入数据
-                bp_entity.tags.rr_name = data.name
-                bp_entity.tags.rr_mode = data.mode
-                bp_entity.tags.rr_icon = data.icon
-
-                modified = true
-
-                if DEBUG_MODE then
-                    player.print("[RiftRail] 保存标签到蓝图: " .. tostring(data.name))
-                end
+                placer_entity.tags.rr_name = data.name
+                placer_entity.tags.rr_mode = data.mode
+                placer_entity.tags.rr_icon = data.icon
             end
+
+            -- 将改造后的“安装包”加入新列表
+            table.insert(new_entities, placer_entity)
+            if DEBUG_MODE then player.print("[RiftRail] 蓝图源头掉包: RiftRail Entity -> Placer") end
+        elseif not (source_entity and source_entity.valid and source_entity.name:find("rift-rail-")) then
+            -- 如果这个实体不是任何 RiftRail 的组件，就把它保留下来
+            table.insert(new_entities, bp_entity)
         end
+        -- 注意: 所有 RiftRail 的内部组件 (core, station 等) 都会被自动忽略，不会加入 new_entities
     end
 
-    -- 5. 如果有修改，将数据写回蓝图物品
+    -- 2. 如果发生了“掉包”，就用我们净化过的新列表覆盖整个蓝图
     if modified then
-        blueprint.set_blueprint_entities(entities)
+        blueprint.set_blueprint_entities(new_entities)
     end
 end)
 
@@ -361,6 +367,8 @@ remote.add_interface("RiftRail", {
             -- 执行传送
             player.teleport(safe_pos, struct.shell.surface)
 
+            -- >>>>> [修改开始] >>>>>
+            -- 原代码: player.opened = nil
             -- 新代码: 强制查找并销毁 GUI，不再依赖事件监听
             if player.gui.screen.rift_rail_main_frame then
                 player.gui.screen.rift_rail_main_frame.destroy()
