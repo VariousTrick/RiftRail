@@ -4,11 +4,12 @@
 -- 更新：集成传送逻辑、补全玩家传送、事件分流
 
 -- 1. 定义调试总开关
-local DEBUG_MODE = false
+-- local DEBUG_MODE = false
 
 -- 2. 定义日志函数
 local function log_debug(msg)
-    if DEBUG_MODE then
+    -- [修改] 不再读取本地变量，而是直接检查全局设置
+    if settings.global["rift-rail-debug-mode"].value then
         log("[RiftRail] " .. msg)
         if game then
             game.print("[RiftRail] " .. msg)

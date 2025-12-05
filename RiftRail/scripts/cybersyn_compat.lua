@@ -156,16 +156,27 @@ function CybersynSE.update_connection(portal_struct, opposite_struct, connect, p
                 entity1 = fake_station_for_check,
                 entity2 = max_station,
             }
-            local entity_pair_table = { [entity_pair_key] = connection_data }
-            remote.call("cybersyn", "write_global", entity_pair_table, "connected_surfaces", surface_pair_key)
+            -- [修改] 尝试使用 4 个参数进行定点插入
+            -- 尝试在 connected_surfaces -> surface_pair_key 下直接写入 entity_pair_key
+            -- 这样不会覆盖掉同地表下的 SE 电梯或其他连接
+            local result = remote.call("cybersyn", "write_global", connection_data, "connected_surfaces",
+                surface_pair_key, entity_pair_key)
+            -- [修改] 如果 result 为 false (说明 surface_pair_key 这张大表还不存在)，则初始化这张表
+            if not result then
+                remote.call("cybersyn", "write_global", { [entity_pair_key] = connection_data }, "connected_surfaces",
+                    surface_pair_key)
+            end
 
             log_debug("Cybersyn 兼容: [连接] " .. portal_struct.name .. " <--> " .. opposite_struct.name)
             success = true
         else
             -- 断开连接：清理数据
+            -- [修改] 使用 4 个参数进行定点删除
+            -- 只把我们这一对 (entity_pair_key) 设为 nil，绝对不触碰同地表的其他数据
+            remote.call("cybersyn", "write_global", nil, "connected_surfaces", surface_pair_key, entity_pair_key)
+            -- 清理 SE 表 (保持不变)
             remote.call("cybersyn", "write_global", nil, "se_elevators", station1.unit_number)
             remote.call("cybersyn", "write_global", nil, "se_elevators", station2.unit_number)
-            remote.call("cybersyn", "write_global", nil, "connected_surfaces", surface_pair_key)
             log_debug("Cybersyn 兼容: [断开] 连接清理完毕。")
             success = true
         end
@@ -232,7 +243,7 @@ function CybersynSE.on_portal_cloned(old_struct, new_struct, is_landing)
     end
 
     -- 1. 无条件注销旧连接
-    CybersynSE.update_connection(old_struct, partner, false, nil)
+    -- CybersynSE.update_connection(old_struct, partner, false, nil)
 
     -- 2. 判断逻辑
     local is_takeoff = false
