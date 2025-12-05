@@ -118,6 +118,73 @@ local function log_tp(msg)
 end
 
 -- =================================================================================
+-- -- [新增] Cybersyn 无 SE 模式下的数据迁移与时刻表修复
+-- =================================================================================
+local function handle_cybersyn_migration(old_train_id, new_train, snapshot)
+    -- 如果装了 SE，这步不需要做，直接退出
+    if script.active_mods["space-exploration"] then
+        return
+    end
+    if not (snapshot and new_train and new_train.valid) then
+        return
+    end
+
+    if remote.interfaces["cybersyn"] and remote.interfaces["cybersyn"]["write_global"] then
+        -- 1. 更新实体引用
+        snapshot.entity = new_train
+
+        -- 2. 注入数据到新 ID
+        remote.call("cybersyn", "write_global", snapshot, "trains", new_train.id)
+
+        -- 3. 清除旧 ID 数据 (Cybersyn 会自动清，但手动清更安全)
+        remote.call("cybersyn", "write_global", nil, "trains", old_train_id)
+
+        -- 4. 清除 "正在传送" 标签
+        remote.call("cybersyn", "write_global", nil, "trains", new_train.id, "se_is_being_teleported")
+    end
+
+    -- 5. 时刻表 Rail 补全 (修复异地表 Rail 指向问题)
+    local schedule = new_train.schedule
+    if schedule and schedule.records then
+        local records = schedule.records
+        local current_index = schedule.current
+        local current_record = records[current_index]
+
+        -- 只有当下一站是真实操作站 (P/R/Depot) 且没有 Rail 时才尝试补全
+        if current_record and current_record.station and not current_record.rail then
+            local target_id = nil
+            -- 状态映射: 1=TO_P, 3=TO_R, 5=TO_D
+            if snapshot.status == 1 then
+                target_id = snapshot.p_station_id
+            end
+            if snapshot.status == 3 then
+                target_id = snapshot.r_station_id
+            end
+            if snapshot.status == 5 or snapshot.status == 6 then
+                target_id = snapshot.depot_id
+            end
+
+            if target_id then
+                local table_name = (snapshot.status == 5 or snapshot.status == 6) and "depots" or "stations"
+                local st_data = remote.call("cybersyn", "read_global", table_name, target_id)
+
+                -- 如果目标站在当前地表，插入 Rail 导航点
+                if st_data and st_data.entity_stop and st_data.entity_stop.valid and st_data.entity_stop.surface == new_train.front_stock.surface then
+                    table.insert(records, current_index, {
+                        rail = st_data.entity_stop.connected_rail,
+                        rail_direction = st_data.entity_stop.connected_rail_direction,
+                        temporary = true,
+                        wait_conditions = { { type = "time", ticks = 1 } },
+                    })
+                    schedule.records = records
+                    new_train.schedule = schedule
+                end
+            end
+        end
+    end
+end
+
+-- =================================================================================
 -- 核心传送逻辑
 -- =================================================================================
 
@@ -179,6 +246,13 @@ local function finish_teleport(entry_struct, exit_struct)
         })
 
         -- <<<<< [修改结束] <<<<<
+
+        -- >>>>> [新增] 数据恢复 (注入灵魂) >>>>>
+        if exit_struct.old_train_id and exit_struct.cybersyn_snapshot then
+            handle_cybersyn_migration(exit_struct.old_train_id, final_train, exit_struct.cybersyn_snapshot)
+            exit_struct.cybersyn_snapshot = nil
+        end
+        -- <<<<< [新增结束] <<<<<
 
         -- 4. SE 事件触发 (Finished)
         if SE_TELEPORT_FINISHED_EVENT_ID and exit_struct.old_train_id then
@@ -344,6 +418,18 @@ function Teleport.teleport_next(entry_struct)
         exit_struct.saved_manual_mode = carriage.train.manual_mode
         exit_struct.saved_speed = carriage.train.speed
         exit_struct.old_train_id = carriage.train.id
+
+        -- >>>>> [新增] 免死金牌 (仅无 SE 时生效) >>>>>
+        if remote.interfaces["cybersyn"] and not script.active_mods["space-exploration"] then
+            -- 打标签：告诉 Cybersyn 别删
+            remote.call("cybersyn", "write_global", true, "trains", carriage.train.id, "se_is_being_teleported")
+            -- 存快照
+            local _, snap = pcall(remote.call, "cybersyn", "read_global", "trains", carriage.train.id)
+            if snap then
+                exit_struct.cybersyn_snapshot = snap
+            end
+        end
+        -- <<<<< [新增结束] <<<<<
 
         -- [SE] Started 事件
         if SE_TELEPORT_STARTED_EVENT_ID then

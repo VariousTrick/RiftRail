@@ -26,7 +26,8 @@ local Logic = require("scripts.logic")
 local Schedule = require("scripts.schedule")
 local Util = require("scripts.util")
 local Teleport = require("scripts.teleport")
-local CybersynSE = require("scripts.cybersyn_compat") -- [新增] 加载兼容模块
+local CybersynSE = require("scripts.cybersyn_compat")           -- [新增] 加载兼容模块
+local CybersynScheduler = require("scripts.cybersyn_scheduler") -- [新增]
 
 -- [修改] 给 Builder 注入 CybersynSE (用于拆除清理)
 if Builder.init then
@@ -136,6 +137,11 @@ end)
 script.on_event(defines.events.on_tick, function(event)
     -- 1. 执行传送逻辑
     Teleport.on_tick(event)
+
+    -- 2. [新增] 执行 Cybersyn 调度器逻辑
+    if CybersynScheduler.on_tick then
+        CybersynScheduler.on_tick()
+    end
 end)
 
 -- ============================================================================
