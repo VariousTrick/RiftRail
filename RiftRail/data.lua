@@ -4,10 +4,10 @@
 
 -- 入口在左 (Left)
 local sprite_left = {
-    filename = "__RiftRail__/graphics/sprite_horiz_atlas.png", -- 指向新图集
+    filename = "__RiftRail__/graphics/sprite_horiz_atlas_placer.png", -- 指向新图集
     priority = "high",
-    width = 1344,                                              -- 单个贴图的宽度
-    height = 528,                                              -- 单个贴图的高度
+    width = 1344,                                                     -- 单个贴图的宽度
+    height = 528,                                                     -- 单个贴图的高度
     frame_count = 1,
     direction_count = 1,
     shift = { 0, 0 },
@@ -18,7 +18,7 @@ local sprite_left = {
 
 -- 入口在右 (Right)
 local sprite_right = {
-    filename = "__RiftRail__/graphics/sprite_horiz_atlas.png", -- 指向新图集
+    filename = "__RiftRail__/graphics/sprite_horiz_atlas_placer.png", -- 指向新图集
     priority = "high",
     width = 1344,
     height = 528,
@@ -32,10 +32,10 @@ local sprite_right = {
 
 -- 入口在下 (Down)
 local sprite_down = {
-    filename = "__RiftRail__/graphics/sprite_vert_atlas.png", -- 指向新图集
+    filename = "__RiftRail__/graphics/sprite_vert_atlas_placer.png", -- 指向新图集
     priority = "high",
-    width = 528,                                              -- 单个贴图的宽度
-    height = 1344,                                            -- 单个贴图的高度
+    width = 528,                                                     -- 单个贴图的宽度
+    height = 1344,                                                   -- 单个贴图的高度
     frame_count = 1,
     direction_count = 1,
     shift = { 0, 0 },
@@ -46,7 +46,7 @@ local sprite_down = {
 
 -- 入口在上 (Up)
 local sprite_up = {
-    filename = "__RiftRail__/graphics/sprite_vert_atlas.png", -- 指向新图集
+    filename = "__RiftRail__/graphics/sprite_vert_atlas_placer.png", -- 指向新图集
     priority = "high",
     width = 528,
     height = 1344,
@@ -172,13 +172,122 @@ data:extend({
         build_grid_size = 2,
         -- [修正] 将 animations 改回 picture
         -- simple-entity 的 picture 属性支持这种方向分类写法
+        -- [修改] 建筑主体贴图 (图层顺序修正：先画条纹，再画建筑)
         picture = {
-            north = sprite_down,
-            south = sprite_up,
-            east = sprite_left,
-            west = sprite_right,
+            -- 1. 北向 (North)
+            north = {
+                layers = {
+                    -- Layer 1 (最底层): 发光警示条 -> 先画背景
+                    {
+                        filename = "__RiftRail__/graphics/sprite_vert_atlas_warning.png",
+                        priority = "high",
+                        width = 528,
+                        height = 1344,
+                        scale = 0.35,
+                        shift = { 0, 0 },
+                        y = 0,
+                        blend_mode = "additive",
+                        -- draw_as_light = true,
+                    },
+                    -- Layer 2 (上层): 实体底座 -> 后画前景，遮挡住条纹
+                    {
+                        filename = "__RiftRail__/graphics/sprite_vert_atlas.png",
+                        priority = "high",
+                        width = 528,
+                        height = 1344,
+                        scale = 0.35,
+                        shift = { 0, 0 },
+                        y = 0,
+                    },
+                },
+            },
+
+            -- 2. 南向 (South)
+            south = {
+                layers = {
+                    -- Layer 1: 条纹
+                    {
+                        filename = "__RiftRail__/graphics/sprite_vert_atlas_warning.png",
+                        priority = "high",
+                        width = 528,
+                        height = 1344,
+                        scale = 0.35,
+                        shift = { 0, 0 },
+                        y = 1344,
+                        blend_mode = "additive",
+                        -- draw_as_light = true,
+                    },
+                    -- Layer 2: 建筑
+                    {
+                        filename = "__RiftRail__/graphics/sprite_vert_atlas.png",
+                        priority = "high",
+                        width = 528,
+                        height = 1344,
+                        scale = 0.35,
+                        shift = { 0, 0 },
+                        y = 1344,
+                    },
+                },
+            },
+
+            -- 3. 东向 (East)
+            east = {
+                layers = {
+                    -- Layer 1: 条纹
+                    {
+                        filename = "__RiftRail__/graphics/sprite_horiz_atlas_warning.png",
+                        priority = "high",
+                        width = 1344,
+                        height = 528,
+                        scale = 0.35,
+                        shift = { 0, 0 },
+                        x = 0,
+                        blend_mode = "additive",
+                        -- draw_as_light = true,
+                    },
+                    -- Layer 2: 建筑
+                    {
+                        filename = "__RiftRail__/graphics/sprite_horiz_atlas.png",
+                        priority = "high",
+                        width = 1344,
+                        height = 528,
+                        scale = 0.35,
+                        shift = { 0, 0 },
+                        x = 0,
+                    },
+                },
+            },
+
+            -- 4. 西向 (West)
+            west = {
+                layers = {
+                    -- Layer 1: 条纹
+                    {
+                        filename = "__RiftRail__/graphics/sprite_horiz_atlas_warning.png",
+                        priority = "high",
+                        width = 1344,
+                        height = 528,
+                        scale = 0.35,
+                        shift = { 0, 0 },
+                        x = 1344,
+                        blend_mode = "additive",
+                        -- draw_as_light = true,
+                    },
+                    -- Layer 2: 建筑
+                    {
+                        filename = "__RiftRail__/graphics/sprite_horiz_atlas.png",
+                        priority = "high",
+                        width = 1344,
+                        height = 528,
+                        scale = 0.35,
+                        shift = { 0, 0 },
+                        x = 1344,
+                    },
+                },
+            },
         },
-        render_layer = "train-stop-top",
+        render_layer = "lower-object",
+        -- secondary_draw_order = -10,
     },
 
     -- 8. 内部照明灯
@@ -211,7 +320,7 @@ data:extend({
     { type = "train-stop",           name = "rift-rail-station" },
     { type = "rail-signal",          name = "rift-rail-signal" },
     { type = "legacy-straight-rail", name = "rift-rail-internal-rail" },
-    { type = "container",            name = "rift-rail-core" }, -- [修改] 改为容器(箱子)，以便利用原生的 GUI 锚定机制
+    { type = "container",            name = "rift-rail-core" },    -- [修改] 改为容器(箱子)，以便利用原生的 GUI 锚定机制
     { type = "simple-entity",        name = "rift-rail-collider" },
     { type = "simple-entity",        name = "rift-rail-blocker" }, -- 物理堵头
 
@@ -299,16 +408,137 @@ internal_signal.flags = { "hide-alt-info", "not-repairable", "not-blueprintable"
 internal_signal.hidden = true
 internal_signal.selectable_in_game = false
 
--- [修正] 铁轨名称兼容性修复
+-- [修正] 铁轨配置 (应用自定义贴图)
 local internal_rail = data.raw["legacy-straight-rail"]["rift-rail-internal-rail"]
+
+-- [保留] 关键逻辑：自动寻找正确的原版铁轨原型
 local source_rail = data.raw["legacy-straight-rail"]["legacy-straight-rail"] or
-data.raw["legacy-straight-rail"]["straight-rail"]
-table_merge(internal_rail, table.deepcopy(source_rail))
+    data.raw["legacy-straight-rail"]["straight-rail"]
+
+-- [修改] 手动复制属性，但刻意跳过 "pictures"
+-- 这样我们继承了铁轨的所有物理属性，但没继承它的外观
+for k, v in pairs(source_rail) do
+    if k ~= "pictures" then
+        internal_rail[k] = table.deepcopy(v)
+    end
+end
+
+-- 基础属性覆盖
 internal_rail.name = "rift-rail-internal-rail"
 internal_rail.minable = nil
 internal_rail.flags = { "hide-alt-info", "not-repairable", "not-blueprintable", "not-deconstructable", "not-on-map" }
 internal_rail.hidden = true
 internal_rail.selectable_in_game = false
+
+-- [修正] 定义一个包含完整 16 方向的"空白表"
+local blank_sheet = {
+    -- 主方向
+    north = blank_sprite,
+    east = blank_sprite,
+    south = blank_sprite,
+    west = blank_sprite,
+    -- 对角线
+    north_east = blank_sprite,
+    south_east = blank_sprite,
+    south_west = blank_sprite,
+    north_west = blank_sprite,
+    -- 中间角度
+    north_north_east = blank_sprite,
+    east_north_east = blank_sprite,
+    east_south_east = blank_sprite,
+    south_south_east = blank_sprite,
+    south_south_west = blank_sprite,
+    west_south_west = blank_sprite,
+    west_north_west = blank_sprite,
+    north_north_west = blank_sprite,
+}
+
+-- [核心修改] 铁轨贴图定义 (层级嵌套修正版)
+internal_rail.pictures = {
+    -- 1. 告诉引擎我们要画哪些层
+    render_layers = {
+        stone_path = "rail-stone-path",
+        ties = "rail-ties",
+        backplates = "rail-backplates",
+        metals = "rail-metals", -- 我们将把图片放在这一层
+    },
+
+    -- 2. 竖向铁轨 (North/South)
+    north = {
+        -- [关键] 必须把图放在 metals 键下面，引擎才能找到！
+        metals = {
+            filename = "__RiftRail__/graphics/rail_v.png",
+            priority = "extra-high",
+            width = 128,
+            height = 128,
+            scale = 0.5,
+        },
+        -- 其他层设为空
+        backplates = blank_sprite,
+        ties = blank_sprite,
+        stone_path = blank_sprite,
+    },
+
+    south = {
+        metals = {
+            filename = "__RiftRail__/graphics/rail_v.png",
+            priority = "extra-high",
+            width = 128,
+            height = 128,
+            scale = 0.5,
+        },
+        backplates = blank_sprite,
+        ties = blank_sprite,
+        stone_path = blank_sprite,
+    },
+
+    -- 3. 横向铁轨 (East/West)
+    east = {
+        metals = {
+            filename = "__RiftRail__/graphics/rail_h.png",
+            priority = "extra-high",
+            width = 128,
+            height = 128,
+            scale = 0.5,
+        },
+        backplates = blank_sprite,
+        ties = blank_sprite,
+        stone_path = blank_sprite,
+    },
+
+    west = {
+        metals = {
+            filename = "__RiftRail__/graphics/rail_h.png",
+            priority = "extra-high",
+            width = 128,
+            height = 128,
+            scale = 0.5,
+        },
+        backplates = blank_sprite,
+        ties = blank_sprite,
+        stone_path = blank_sprite,
+    },
+
+    -- 4. 斜向铁轨 (透明)
+    -- 注意：斜向不需要分 metals/ties，直接给 sprite 即可，因为引擎对斜向的处理略有不同
+    northeast = blank_sprite,
+    southeast = blank_sprite,
+    southwest = blank_sprite,
+    northwest = blank_sprite,
+
+    -- 5. 装饰层 (使用 16向 blank_sheet)
+    rail_endings = blank_sheet,
+    ties = blank_sheet,
+    stone_path = blank_sheet,
+    stone_path_background = blank_sheet,
+
+    -- 6. 可视化辅助线
+    segment_visualisation_middle = blank_sprite,
+    segment_visualisation_ending_front = blank_sprite,
+    segment_visualisation_ending_back = blank_sprite,
+    segment_visualisation_continuing_front = blank_sprite,
+    segment_visualisation_continuing_back = blank_sprite,
+}
 
 -- D. 配置 GUI 交互核心 (Core)
 -- [修正] 获取 container 类型的原型
@@ -333,7 +563,30 @@ gui_core.collision_box = create_centered_box(0, 0)
 -- 选择框 (4x12)
 gui_core.selection_box = create_centered_box(4, 4)
 -- [修正] Container 使用 picture 属性，而不是 sprites
-gui_core.picture = blank_sprite
+-- [修改] 使用 AI 生成的虚空迷雾贴图
+gui_core.picture = {
+    filename = "__RiftRail__/graphics/mist_fixed.png",
+    priority = "extra-high",
+    width = 1024,
+    height = 1024,
+
+    -- [核心参数] 线性减淡模式：黑色自动变透明，亮色变发光
+    blend_mode = "additive",
+
+    -- [可选] 让它在夜晚像灯一样自发光
+    -- draw_as_light = true,
+
+    -- [尺寸计算]
+    -- 1024 * 0.125 = 128px (4格，物理边缘)
+    -- 1024 * 0.18  = 184px (5.75格，视觉溢出，效果更佳)
+    scale = 0.18,
+
+    -- 如果感觉中心没对准，微调这里 {x, y}
+    shift = { 0, 0 },
+}
+-- [新增] 强制渲染层级：确保雾气漂浮在火车上方
+gui_core.render_layer = "train-stop-top"
+secondary_draw_order = 10
 -- [修正] 设置库存大小为 1 (最小化，仅用于附着 GUI)
 gui_core.inventory_size = 1
 -- [注意] 之前所有的 activity_led 和 circuit_wire 代码必须全部删除，因为箱子没有这些属性

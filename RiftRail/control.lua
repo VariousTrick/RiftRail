@@ -270,7 +270,15 @@ script.on_event(defines.events.on_player_setup_blueprint, function(event)
     end
 
     local player = game.get_player(event.player_index)
-    local blueprint = player.cursor_stack
+
+    -- [关键修复] 智能获取正在编辑的蓝图
+    -- 优先检查 "新建蓝图" 界面 (Alt+B)，其次检查鼠标上的蓝图 (Ctrl+C)
+    local blueprint = player.blueprint_to_setup
+    if not (blueprint and blueprint.valid and blueprint.is_blueprint) then
+        blueprint = player.cursor_stack
+    end
+
+    -- 如果两种情况都不是有效的蓝图，则退出
     if not (blueprint and blueprint.valid and blueprint.is_blueprint) then
         return
     end
