@@ -122,15 +122,15 @@ script.on_event(defines.events.on_entity_died, function(event)
     if entity.name == "rift-rail-collider" then
         -- 情况1: 碰撞器死亡 -> 触发传送逻辑
         Teleport.on_collider_died(event)
-    else
-        -- 情况2: 其他实体死亡 -> 触发拆除逻辑
-        -- [新增] 先通知 Cybersyn 清理
+    elseif entity.name == "rift-rail-entity" then
+        -- 情况2: 建筑主体死亡 -> 触发拆除逻辑
         local struct = State.get_struct(entity)
         if struct then
             CybersynSE.on_portal_destroyed(struct)
         end
         Builder.on_destroy(event)
     end
+    -- 对于其他任何实体（火车、虫子、树）的死亡，我们一概不管
 end)
 
 -- D. [修改] Tick 循环
@@ -391,6 +391,22 @@ script.on_event(defines.events.on_entity_settings_pasted, function(event)
     end
 end)
 
+-- ============================================================================
+-- [最终修复] 延迟加载事件注册 (正确 API 调用版)
+-- ============================================================================
+
+-- on_init: 只在创建新游戏时运行
+script.on_init(function()
+    -- (这里可以留空，或者处理新游戏逻辑)
+end)
+
+-- on_load: 只在加载存档时运行
+-- 使用独立的 script.on_load 函数，它不依赖 defines 表
+script.on_load(function(event)
+    if Teleport.init_se_events then
+        Teleport.init_se_events()
+    end
+end)
 -- ============================================================================
 -- 7. 远程接口
 -- ============================================================================

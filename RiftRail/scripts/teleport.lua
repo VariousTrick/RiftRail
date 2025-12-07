@@ -11,7 +11,15 @@ local Teleport = {}
 local State = nil
 local Util = nil
 local Schedule = nil
-local log_debug = function() end
+-- [修改] 使用独立的、能读取全局设置的日志函数
+local function log_debug(msg)
+    if settings.global["rift-rail-debug-mode"] and settings.global["rift-rail-debug-mode"].value then
+        log("[RiftRail][Teleport] " .. msg) -- 加上模块名，方便区分
+        if game then
+            game.print("[RiftRail][Teleport] " .. msg)
+        end
+    end
+end
 
 -- SE 事件 ID (初始化时获取)
 local SE_TELEPORT_STARTED_EVENT_ID = nil
@@ -96,25 +104,31 @@ function Teleport.init(deps)
     State = deps.State
     Util = deps.Util
     Schedule = deps.Schedule
-    if deps.log_debug then
-        log_debug = deps.log_debug
-    end
-
-    -- 尝试获取 SE 事件 (动态检测)
-    if script.active_mods["space-exploration"] and remote.interfaces["space-exploration"] then
-        local success, event_started = pcall(remote.call, "space-exploration", "get_on_train_teleport_started_event")
-        local _, event_finished = pcall(remote.call, "space-exploration", "get_on_train_teleport_finished_event")
-        if success then
-            SE_TELEPORT_STARTED_EVENT_ID = event_started
-            SE_TELEPORT_FINISHED_EVENT_ID = event_finished
-            log_debug("传送门 SE 兼容: 成功获取传送事件 ID。")
-        end
-    end
+    -- if deps.log_debug then log_debug = deps.log_debug end
 end
 
 -- 本地日志
 local function log_tp(msg)
     log_debug("[Teleport] " .. msg)
+end
+
+-- [新增] 专门用于在 on_load 中初始化的 SE 事件获取函数
+function Teleport.init_se_events()
+    -- [关键修复] 确保 on_load 时也能拿到最新的日志函数
+    -- if injected_log_debug then log_debug = injected_log_debug end
+    if script.active_mods["space-exploration"] and remote.interfaces["space-exploration"] then
+        log_debug("Teleport: 正在尝试从 SE 获取传送事件 ID (on_load)...")
+        local success, event_started = pcall(remote.call, "space-exploration", "get_on_train_teleport_started_event")
+        local _, event_finished = pcall(remote.call, "space-exploration", "get_on_train_teleport_finished_event")
+
+        if success and event_started then
+            SE_TELEPORT_STARTED_EVENT_ID = event_started
+            SE_TELEPORT_FINISHED_EVENT_ID = event_finished
+            log_debug("Teleport: SE 传送事件 ID 获取成功！")
+        else
+            log_debug("Teleport: 警告 - 无法从 SE 获取传送事件 ID。")
+        end
+    end
 end
 
 -- =================================================================================
@@ -222,30 +236,45 @@ local function finish_teleport(entry_struct, exit_struct)
         -- 这会将火车切回自动模式(如果之前是自动)，引擎接管寻路
         final_train.manual_mode = exit_struct.saved_manual_mode or false
 
+        -- >>>>> [关键修复] 在所有操作之前，立刻恢复被重置的索引！ >>>>>
+        if exit_struct.saved_schedule_index then
+            final_train.go_to_station(exit_struct.saved_schedule_index)
+        end
+        -- <<<<< [修复结束] <<<<<
+
         -- 2. 准备速度数值 (只取绝对值，动量守恒)
         local original_speed = math.abs(exit_struct.saved_speed or 0)
         local target_speed = math.max(original_speed, 0.5)
 
-        -- >>>>> [开始修改] 入队逻辑 (携带出口方向数据) >>>>>
+        -- [核心修复] 将原本入队延迟执行的逻辑，改为立即执行
 
-        -- 1. 计算出口的绝对离去方向 (Orientation 0.0-1.0)
-        -- 我们需要告诉 on_tick: "不管谁是车头，反正要往这个方向跑"
+        -- 1. 计算出站方向 (保留您的逻辑)
         local geo_exit = GEOMETRY[exit_struct.shell.direction] or GEOMETRY[0]
         local out_orientation = geo_exit.direction / 16.0
 
-        -- 2. 初始化队列
-        if not storage.speed_queue then
-            storage.speed_queue = {}
+        -- 2. 直接应用速度 (使用您 on_tick 中的 pcall 逻辑)
+        --    这是您原本写在 on_tick 里的，我们现在把它搬到这里立即执行
+        local front = final_train.front_stock
+        if front then
+            local current_ori = front.orientation
+            local diff = math.abs(current_ori - out_orientation)
+            if diff > 0.5 then
+                diff = 1.0 - diff
+            end
+            local sign = 1
+            if diff > 0.25 then
+                sign = -1
+            end
+
+            local success = pcall(function()
+                final_train.speed = target_speed * sign
+            end)
+            if not success then
+                pcall(function()
+                    final_train.speed = target_speed * -sign
+                end)
+            end
         end
-
-        -- 3. 入队
-        table.insert(storage.speed_queue, {
-            train = final_train,
-            velocity = target_speed,   -- 速度绝对值
-            out_ori = out_orientation, -- 目标物理朝向
-        })
-
-        -- <<<<< [修改结束] <<<<<
 
         -- >>>>> [新增] 数据恢复 (注入灵魂) >>>>>
         if exit_struct.old_train_id and exit_struct.cybersyn_snapshot then
@@ -256,12 +285,17 @@ local function finish_teleport(entry_struct, exit_struct)
 
         -- 4. SE 事件触发 (Finished)
         if SE_TELEPORT_FINISHED_EVENT_ID and exit_struct.old_train_id then
+            -- >>>>> [新增调试日志] >>>>>
+            log_tp("【DEBUG】准备触发 FINISHED 事件: new_train_id = " ..
+            tostring(final_train.id) .. ", old_train_id = " .. tostring(exit_struct.old_train_id))
+            -- <<<<< [新增结束] <<<<<
             log_tp("SE 兼容: 触发 on_train_teleport_finished")
             script.raise_event(SE_TELEPORT_FINISHED_EVENT_ID, {
                 train = final_train,
+                old_train_id = exit_struct.old_train_id,
                 old_train_id_1 = exit_struct.old_train_id,
                 old_surface_index = entry_struct.surface.index,
-                teleporter = entry_struct.shell,
+                teleporter = exit_struct.shell,
             })
         end
     end
@@ -297,10 +331,10 @@ local function finish_teleport(entry_struct, exit_struct)
 end
 
 -- 传送下一节车厢 (由 on_tick 驱动)
-function Teleport.teleport_next(entry_struct)
-    local exit_struct = State.get_struct_by_id(entry_struct.paired_to_id)
+function Teleport.teleport_next(entry_struct, exit_struct)
+    -- [已删除] local exit_struct = State.get_struct_by_id(entry_struct.paired_to_id)
 
-    -- 安全检查
+    -- 安全检查 (保持不变)
     if not (exit_struct and exit_struct.shell and exit_struct.shell.valid) then
         log_tp("错误: 出口失效，传送中断。")
         finish_teleport(entry_struct, entry_struct) -- 自身清理
@@ -419,20 +453,26 @@ function Teleport.teleport_next(entry_struct)
         exit_struct.saved_speed = carriage.train.speed
         exit_struct.old_train_id = carriage.train.id
 
-        -- >>>>> [新增] 免死金牌 (仅无 SE 时生效) >>>>>
-        if remote.interfaces["cybersyn"] and not script.active_mods["space-exploration"] then
+        -- >>>>> [修改] 免死金牌 (无条件生效) >>>>>
+        if remote.interfaces["cybersyn"] then
             -- 打标签：告诉 Cybersyn 别删
             remote.call("cybersyn", "write_global", true, "trains", carriage.train.id, "se_is_being_teleported")
-            -- 存快照
-            local _, snap = pcall(remote.call, "cybersyn", "read_global", "trains", carriage.train.id)
-            if snap then
-                exit_struct.cybersyn_snapshot = snap
+
+            -- [优化] 只有在无 SE 时才需要存快照
+            if not script.active_mods["space-exploration"] then
+                local _, snap = pcall(remote.call, "cybersyn", "read_global", "trains", carriage.train.id)
+                if snap then
+                    exit_struct.cybersyn_snapshot = snap
+                end
             end
         end
         -- <<<<< [新增结束] <<<<<
 
         -- [SE] Started 事件
         if SE_TELEPORT_STARTED_EVENT_ID then
+            -- >>>>> [新增调试日志] >>>>>
+            log_tp("【DEBUG】准备触发 STARTED 事件: old_train_id = " .. tostring(carriage.train.id))
+            -- <<<<< [新增结束] <<<<<
             script.raise_event(SE_TELEPORT_STARTED_EVENT_ID, {
                 train = carriage.train,
                 old_train_id_1 = carriage.train.id,
@@ -554,6 +594,12 @@ function Teleport.teleport_next(entry_struct)
         -- 2. 转移时刻表
         Schedule.transfer_schedule(carriage.train, new_carriage.train, real_station_name)
 
+        -- >>>>> [关键修复] 在被拖船重置前，立刻备份正确的索引！ >>>>>
+        if new_carriage.train and new_carriage.train.schedule then
+            exit_struct.saved_schedule_index = new_carriage.train.schedule.current
+        end
+        -- <<<<< [修复结束] <<<<<
+
         -- 3. 保存新火车的时刻表索引 (解决重置问题)
         -- transfer_schedule 内部已经调用了 go_to_station，所以现在的 current 是正确的下一站
     end
@@ -569,11 +615,7 @@ function Teleport.teleport_next(entry_struct)
     if next_carriage and next_carriage.valid then
         entry_struct.carriage_behind = next_carriage
 
-        --  A. 在生成/连接拖船前，保存刚才设置好的时刻表索引 >>>>>
-        local index_before_tug = nil
-        if new_carriage.train.schedule then
-            index_before_tug = new_carriage.train.schedule.current
-        end
+        -- [修改] 只创建拖船，不连接，不恢复索引
 
         -- 生成新拖船 (Tug)
         local tug_pos = Util.vectors_add(exit_struct.shell.position, geo.tug_offset)
@@ -586,16 +628,7 @@ function Teleport.teleport_next(entry_struct)
         if tug then
             tug.destructible = false
             exit_struct.tug = tug
-
-            -- 强制连接逻辑 (这行代码会导致重置！)
-            tug.connect_rolling_stock(defines.rail_direction.front)
-            tug.connect_rolling_stock(defines.rail_direction.back)
-
-            -- B. 拖船连接导致重置，立刻恢复索引 >>>>>
-            if index_before_tug then
-                new_carriage.train.go_to_station(index_before_tug)
-                log_tp("拖船连接修正: 索引已从重置状态恢复为 " .. index_before_tug)
-            end
+            log_tp("拖船已创建，等待物理吸附或速度管理器接管。")
         end
     else
         log_tp("最后一节车厢传送完毕。")
@@ -795,46 +828,7 @@ function Teleport.on_tick(event)
     -- 这是一个简单的 Tick Task 系统
     -- 如果上一帧有火车刚切回自动模式，它们会在这里等待恢复速度
     -- >>>>> [修改] 最终版：自动试错恢复速度 >>>>>
-    if storage.speed_queue and #storage.speed_queue > 0 then
-        for _, task in pairs(storage.speed_queue) do
-            local train = task.train
-            local velocity = task.velocity -- 这是一个正数 (绝对值)
-            local target_ori = task.out_ori
 
-            if train and train.valid and not train.manual_mode then
-                local front = train.front_stock
-                if front then
-                    -- 1. 先进行几何估算 (准确率 90%)
-                    local current_ori = front.orientation
-                    local diff = math.abs(current_ori - target_ori)
-                    if diff > 0.5 then
-                        diff = 1.0 - diff
-                    end
-
-                    local sign = 1
-                    if diff > 0.25 then
-                        sign = -1
-                    end
-
-                    -- 2. 尝试应用速度 (pcall 保护)
-                    -- 这里的逻辑是：试图应用我们算出的方向。
-                    -- 如果引擎认为方向反了(报错)，pcall 会捕获错误，不会让游戏崩溃。
-                    local success = pcall(function()
-                        train.speed = velocity * sign
-                    end)
-
-                    -- 3. 如果估算错了，就反过来设
-                    -- 既然正向不对，那反向一定是合法的 (只要有路径)
-                    if not success then
-                        pcall(function()
-                            train.speed = velocity * -sign
-                        end)
-                    end
-                end
-            end
-        end
-        storage.speed_queue = {}
-    end
     -- <<<<< [修改结束] <<<<<
     -- 遍历所有传送门
     -- 注意：效率优化，实际应该只遍历 active 的
@@ -867,9 +861,11 @@ function Teleport.on_tick(event)
                 -- >>>>> [新增修改] 只要引用存在，就进入处理 (即使 .valid 为 false) >>>>>
                 -- 原代码: if struct.carriage_behind and struct.carriage_behind.valid then
                 if struct.carriage_behind then
+                    -- [修改] 查找出口并将 exit_struct 作为参数传入
+                    local exit_struct = State.get_struct_by_id(struct.paired_to_id)
+
                     -- 让 teleport_next 内部去判断有效性。
-                    -- 如果无效，teleport_next 会自动调用 finish_teleport 清理拖船。
-                    Teleport.teleport_next(struct)
+                    Teleport.teleport_next(struct, exit_struct)
                 else
                     -- 只有当 struct.carriage_behind 真的为 nil (正常传送完毕) 时，才关闭状态
                     log_debug("Teleport [Tick]: 传送序列正常结束，关闭状态。")

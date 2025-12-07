@@ -6,7 +6,8 @@
   "factorio_version": "2.0",
   "dependencies": [
     "base",
-    "? cybersyn"
+    "? cybersyn",
+    "? space-exploration"
   ],
   "description": "非对称跨地表单向铁路传送门系统。当前为开发测试版本。"
 }
