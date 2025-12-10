@@ -212,7 +212,7 @@ local function finish_teleport(entry_struct, exit_struct)
 		local saved_index_before_tug_death = nil
 		-- 尝试通过 carriage_ahead 获取火车
 		local train_ref = exit_struct.carriage_ahead and exit_struct.carriage_ahead.valid and
-			exit_struct.carriage_ahead.train
+		exit_struct.carriage_ahead.train
 		if train_ref and train_ref.valid and train_ref.schedule then
 			saved_index_before_tug_death = train_ref.schedule.current
 		end
@@ -287,7 +287,7 @@ local function finish_teleport(entry_struct, exit_struct)
 		if SE_TELEPORT_FINISHED_EVENT_ID and exit_struct.old_train_id then
 			-- >>>>> [新增调试日志] >>>>>
 			log_tp("【DEBUG】准备触发 FINISHED 事件: new_train_id = " ..
-				tostring(final_train.id) .. ", old_train_id = " .. tostring(exit_struct.old_train_id))
+			tostring(final_train.id) .. ", old_train_id = " .. tostring(exit_struct.old_train_id))
 			-- <<<<< [新增结束] <<<<<
 			log_tp("SE 兼容: 触发 on_train_teleport_finished")
 			script.raise_event(SE_TELEPORT_FINISHED_EVENT_ID, {
@@ -348,11 +348,32 @@ function Teleport.teleport_next(entry_struct, exit_struct)
 	local geo = GEOMETRY[exit_struct.shell.direction] or GEOMETRY[0]
 	local spawn_pos = Util.vectors_add(exit_struct.shell.position, geo.spawn_offset)
 
-	-- 定义检查区域 (简单一个小矩形)
-	local check_area = {
-		left_top = { x = spawn_pos.x - 2, y = spawn_pos.y - 2 },
-		right_bottom = { x = spawn_pos.x + 2, y = spawn_pos.y + 2 },
-	}
+	-- >>>>> [修改] 动态生成出口检测区域 (宽度修正为2) >>>>>
+	local check_area = {}
+	local dir = exit_struct.shell.direction
+
+	if dir == 0 then -- North (出口在下)
+		check_area = {
+			left_top = { x = spawn_pos.x - 1, y = spawn_pos.y },
+			right_bottom = { x = spawn_pos.x + 1, y = spawn_pos.y + 8 },
+		}
+	elseif dir == 8 then -- South (出口在上)
+		check_area = {
+			left_top = { x = spawn_pos.x - 1, y = spawn_pos.y - 8 },
+			right_bottom = { x = spawn_pos.x + 1, y = spawn_pos.y },
+		}
+	elseif dir == 4 then -- East (出口在左)
+		check_area = {
+			left_top = { x = spawn_pos.x - 8, y = spawn_pos.y - 1 },
+			right_bottom = { x = spawn_pos.x, y = spawn_pos.y + 1 },
+		}
+	elseif dir == 12 then -- West (出口在右)
+		check_area = {
+			left_top = { x = spawn_pos.x, y = spawn_pos.y - 1 },
+			right_bottom = { x = spawn_pos.x + 8, y = spawn_pos.y + 1 },
+		}
+	end
+	-- <<<<< [修改结束] <<<<<
 
 	-- 如果前面有车 (carriage_ahead)，说明正在传送中，不需要检查堵塞 (我们是接在它后面的)
 	-- 只有当 carriage_ahead 为空 (第一节) 时才检查堵塞
@@ -614,7 +635,7 @@ function Teleport.teleport_next(entry_struct, exit_struct)
 
 	-- 更新链表指针
 	entry_struct.carriage_ahead = new_carriage -- 记录刚传过去的这节 (虽然没什么用，但保持一致)
-	exit_struct.carriage_ahead = new_carriage -- 记录出口的最前头 (用于拉动)
+	exit_struct.carriage_ahead = new_carriage  -- 记录出口的最前头 (用于拉动)
 
 	-- 准备下一节
 	if next_carriage and next_carriage.valid then
@@ -798,7 +819,7 @@ function Teleport.manage_speed(struct)
 			-- 只有当火车处于手动模式，或者自动模式下的“正在行驶”/“无路径”状态时，才施加动力
 			-- 如果是 wait_signal (红灯) 或 destination_full (终点满)，则不推，让其自然停下
 			local should_push = train_exit.manual_mode or (train_exit.state == defines.train_state.on_the_path) or
-				(train_exit.state == defines.train_state.no_path)
+			(train_exit.state == defines.train_state.no_path)
 
 			if should_push then
 				if math.abs(train_exit.speed) < target_speed or (train_exit.speed * required_sign < 0) then
@@ -854,9 +875,9 @@ function Teleport.on_tick(event)
 					if dir == 0 then
 						offset = { x = 0, y = -2 } -- North
 					elseif dir == 4 then
-						offset = { x = 2, y = 0 } -- East
+						offset = { x = 2, y = 0 }  -- East
 					elseif dir == 8 then
-						offset = { x = 0, y = 2 } -- South
+						offset = { x = 0, y = 2 }  -- South
 					elseif dir == 12 then
 						offset = { x = -2, y = 0 } -- West
 					end
