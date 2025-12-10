@@ -212,7 +212,7 @@ local function finish_teleport(entry_struct, exit_struct)
 		local saved_index_before_tug_death = nil
 		-- 尝试通过 carriage_ahead 获取火车
 		local train_ref = exit_struct.carriage_ahead and exit_struct.carriage_ahead.valid and
-		exit_struct.carriage_ahead.train
+			exit_struct.carriage_ahead.train
 		if train_ref and train_ref.valid and train_ref.schedule then
 			saved_index_before_tug_death = train_ref.schedule.current
 		end
@@ -287,7 +287,7 @@ local function finish_teleport(entry_struct, exit_struct)
 		if SE_TELEPORT_FINISHED_EVENT_ID and exit_struct.old_train_id then
 			-- >>>>> [新增调试日志] >>>>>
 			log_tp("【DEBUG】准备触发 FINISHED 事件: new_train_id = " ..
-			tostring(final_train.id) .. ", old_train_id = " .. tostring(exit_struct.old_train_id))
+				tostring(final_train.id) .. ", old_train_id = " .. tostring(exit_struct.old_train_id))
 			-- <<<<< [新增结束] <<<<<
 			log_tp("SE 兼容: 触发 on_train_teleport_finished")
 			script.raise_event(SE_TELEPORT_FINISHED_EVENT_ID, {
@@ -323,6 +323,11 @@ end
 -- 传送下一节车厢 (由 on_tick 驱动)
 function Teleport.teleport_next(entry_struct, exit_struct)
 	-- [已删除] local exit_struct = State.get_struct_by_id(entry_struct.paired_to_id)
+
+	-- >>>>> [新增] 在这里记录是否为第一节车 >>>>>
+	-- 必须在 entry_struct.carriage_ahead 被后续逻辑更新之前记录下来
+	local is_first_carriage = (entry_struct.carriage_ahead == nil)
+	-- <<<<< [新增结束] <<<<<
 
 	-- 安全检查 (保持不变)
 	if not (exit_struct and exit_struct.shell and exit_struct.shell.valid) then
@@ -506,21 +511,31 @@ function Teleport.teleport_next(entry_struct, exit_struct)
 
 	log_tp("方向计算: 车厢ori=" .. carriage_ori .. ", 建筑ori=" .. entry_shell_ori .. ", 判定=" .. (is_nose_in and "顺向" or "逆向"))
 
-	-- 4. 决定生成朝向
-	-- geo.direction 是 defines (0, 4, 8, 12)
-	-- [修改] 必须除以 16.0 才能得到正确的 orientation (0, 0.25, 0.5, 0.75)
-	-- 之前除以 8.0 会导致算出 0.5 (南)，引发错误的吸附
+	-- >>>>> [修改] 1. 提前计算目标朝向 (target_ori) >>>>>
 	local exit_base_ori = geo.direction / 16.0
 	local target_ori = exit_base_ori
 
 	if not is_nose_in then
-		-- 逆向进入 -> 逆向离开 (翻转 180 度 = +0.5)
+		-- 逆向进入 -> 逆向离开 (翻转 180 度)
 		target_ori = (target_ori + 0.5) % 1.0
 		log_tp("方向计算: 逆向翻转 (Ori " .. exit_base_ori .. " -> " .. target_ori .. ")")
 	else
 		log_tp("方向计算: 顺向保持 (Ori " .. target_ori .. ")")
 	end
 	-- <<<<< [修改结束] <<<<<
+
+	-- >>>>> [修改] 2. 方案B: 动态偏移生成位置 (基于目标朝向) >>>>>
+	-- 判定条件：默认方向建筑(0) + 第一节车 + 机车 + 车头朝向北(0/1)
+	local is_facing_dead_end = (target_ori > 0.875 or target_ori < 0.125)
+
+	if exit_struct.shell.direction == 0 and not entry_struct.carriage_ahead and carriage.type == "locomotive" and is_facing_dead_end then
+		spawn_pos.y = spawn_pos.y + 2 -- 往出口方向(南)挪2格
+		log_tp("几何修正: 检测到车头面朝死胡同，已向外偏移生成坐标以容纳拖车。")
+	end
+	-- <<<<< [修改结束] <<<<<
+
+	-- [注意] 这里删除了原有的 "-- 4. 决定生成朝向" 那一大段重复代码
+	-- 直接使用上面算好的 target_ori 进行生成
 
 	-- 生成新车厢
 	local new_carriage = exit_struct.surface.create_entity({
@@ -599,7 +614,7 @@ function Teleport.teleport_next(entry_struct, exit_struct)
 
 	-- 更新链表指针
 	entry_struct.carriage_ahead = new_carriage -- 记录刚传过去的这节 (虽然没什么用，但保持一致)
-	exit_struct.carriage_ahead = new_carriage  -- 记录出口的最前头 (用于拉动)
+	exit_struct.carriage_ahead = new_carriage -- 记录出口的最前头 (用于拉动)
 
 	-- 准备下一节
 	if next_carriage and next_carriage.valid then
@@ -620,6 +635,20 @@ function Teleport.teleport_next(entry_struct, exit_struct)
 			exit_struct.tug = tug
 			log_tp("拖船已创建，等待物理吸附或速度管理器接管。")
 		end
+
+		-- >>>>> [新增逻辑] 立即恢复出口火车的状态 (模仿 SE) >>>>>
+		if new_carriage.train and new_carriage.train.valid then
+			-- 1. 恢复时刻表指针
+			-- [修正] 这里的变量名是 exit_struct，而不是 struct
+			if exit_struct.saved_schedule_index then
+				new_carriage.train.go_to_station(exit_struct.saved_schedule_index)
+			end
+
+			-- 2. 恢复自动模式 (如果之前是自动)
+			-- 直接恢复，相信几何修正已经保证了拖车的存在
+			new_carriage.train.manual_mode = exit_struct.saved_manual_mode or false
+		end
+		-- <<<<< [新增结束] <<<<<
 	else
 		log_tp("最后一节车厢传送完毕。")
 		finish_teleport(entry_struct, exit_struct)
@@ -716,6 +745,7 @@ end
 -- =================================================================================
 -- 持续动力 (每 tick 调用)
 -- =================================================================================
+
 function Teleport.manage_speed(struct)
 	if not struct.paired_to_id then
 		return
@@ -733,39 +763,25 @@ function Teleport.manage_speed(struct)
 		local train_exit = carriage_exit.train
 
 		if train_entry and train_entry.valid and train_exit and train_exit.valid then
-			-- 1. 强制入口手动模式
+			-- 1. 强制入口手动模式 (保持不变，入口必须完全接管)
 			if not train_entry.manual_mode then
 				train_entry.manual_mode = true
 			end
 
-			-- >>>>> [开始修改] 在这里增加强制出口手动模式 >>>>>
-			-- 修复报错: Trying to change direction of automatic train
-			-- 必须确保出口火车也是手动模式，脚本才有权反转其速度方向(倒车)
-			if not train_exit.manual_mode then
-				train_exit.manual_mode = true
-				-- log_tp("动力维持: 强制出口火车进入手动模式以应用矢量速度")
-			end
-			-- <<<<< [修改结束] <<<<<
+			-- [修改] 移除了强制出口火车 (train_exit) 手动模式的代码
+			-- 允许出口火车保持自动模式，以便引擎能够检测红绿灯信号
 
 			-- 2. 维持出口动力
 			local target_speed = 0.5
 
-			-- >>>>> [开始修改] 基于拖船链接符号的动力逻辑 (SE算法) >>>>>
+			-- [保留] 基于拖船链接符号的动力逻辑 (SE算法)
 			local required_sign = 1
 			local tug = exit_struct.tug
 
 			if tug and tug.valid then
-				-- 1. 计算连接符号
-				-- get_train_forward_sign 在文件头部定义，用来判断车厢和列车整体方向的关系
 				local link_sign = get_train_forward_sign(tug)
-
-				-- 2. 直接应用符号
-				-- 因为拖船永远面朝出口，所以:
-				-- 如果拖船顺接(1)，列车正方向就是出口 -> 正速度
-				-- 如果拖船反接(-1)，列车正方向是死胡同 -> 负速度(倒车)
 				required_sign = link_sign
 			else
-				-- 异常保护: 如果没有拖船，回退到 Orientation 算法
 				local geo_exit = GEOMETRY[exit_struct.shell.direction] or GEOMETRY[0]
 				local out_orientation = geo_exit.direction / 16.0
 				local head_orientation = train_exit.front_stock.orientation
@@ -778,34 +794,29 @@ function Teleport.manage_speed(struct)
 				end
 			end
 
-			-- 应用速度
-			if math.abs(train_exit.speed) < target_speed or (train_exit.speed * required_sign < 0) then
-				train_exit.speed = target_speed * required_sign
+			-- [修改] 应用速度前增加状态检查
+			-- 只有当火车处于手动模式，或者自动模式下的“正在行驶”/“无路径”状态时，才施加动力
+			-- 如果是 wait_signal (红灯) 或 destination_full (终点满)，则不推，让其自然停下
+			local should_push = train_exit.manual_mode or (train_exit.state == defines.train_state.on_the_path) or
+				(train_exit.state == defines.train_state.no_path)
+
+			if should_push then
+				if math.abs(train_exit.speed) < target_speed or (train_exit.speed * required_sign < 0) then
+					train_exit.speed = target_speed * required_sign
+				end
 			end
-			-- <<<<< [修改结束] <<<<<
 
-			-- 3. [终极修正] 太空电梯三方符号算法
-			-- 公式: 入口速度 = |出口速度| * 建筑符号 * 车厢符号 * 连接符号
-
-			-- A. 建筑符号 (Portal Sign)
-			-- Dir 0 (North, -Y) & Dir 4 (East, +X) -> 定义为 1
-			-- Dir 8 (South, +Y) & Dir 12 (West, -X) -> 定义为 -1
+			-- 3. [终极修正] 太空电梯三方符号算法 (保持不变)
 			local dir = struct.shell.direction
 			local portal_sign = -1
 			if dir == 0 or dir == 4 then
 				portal_sign = 1
 			end
 
-			-- B. 车厢符号 (Carriage Sign)
-			-- 照搬 SE: < 0.5 (N/E) 为 1, >= 0.5 (S/W) 为 -1
 			local ori = carriage_entry.orientation
 			local car_sign = (ori < 0.5) and 1 or -1
-
-			-- C. 连接符号 (Link Sign)
-			-- 判断车厢是否反向连接
 			local link_sign = get_train_forward_sign(carriage_entry)
 
-			-- 4. 计算并应用
 			local final_sign = portal_sign * car_sign * link_sign
 			train_entry.speed = math.abs(train_exit.speed) * final_sign
 		end
@@ -843,9 +854,9 @@ function Teleport.on_tick(event)
 					if dir == 0 then
 						offset = { x = 0, y = -2 } -- North
 					elseif dir == 4 then
-						offset = { x = 2, y = 0 }  -- East
+						offset = { x = 2, y = 0 } -- East
 					elseif dir == 8 then
-						offset = { x = 0, y = 2 }  -- South
+						offset = { x = 0, y = 2 } -- South
 					elseif dir == 12 then
 						offset = { x = -2, y = 0 } -- West
 					end
