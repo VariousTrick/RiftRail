@@ -34,6 +34,7 @@ if Builder.init then
     Builder.init({
         log_debug = log_debug,
         State = State,
+        Logic = Logic,
         CybersynSE = CybersynSE,
     })
 end
@@ -194,7 +195,7 @@ script.on_event(defines.events.on_entity_cloned, function(event)
         return
     end
 
-    -- 分支 A: Cybersyn 控制器
+    -- 分支 A: Cybersyn 控制器 (逻辑不变)
     if new_entity.name == "cybersyn-combinator" then
         if script.active_mods["zzzzz"] then
             return
@@ -217,47 +218,58 @@ script.on_event(defines.events.on_entity_cloned, function(event)
         return
     end
 
-    -- 1. 拷贝数据
     local new_data = flib_util.table.deepcopy(old_data)
-
-    -- 2. 更新核心引用
     local new_unit_number = new_entity.unit_number
+
     new_data.unit_number = new_unit_number
     new_data.shell = new_entity
     new_data.surface = new_entity.surface
 
-    -- 3. 使用“精准定位”重建 children 列表 (这部分逻辑保持不变)
+    -- 【修改】使用“精准且容错的定位”重建 children 列表
     local old_children_list = new_data.children
     new_data.children = {}
     local new_center_pos = new_entity.position
+
     if old_children_list then
         for _, old_child_data in pairs(old_children_list) do
-            if old_child_data.relative_pos then
+            -- 增加安全检查，确保旧数据是有效的
+            if old_child_data.relative_pos and old_child_data.entity and old_child_data.entity.valid then
+                -- 1. 获取子实体的名字，用于精准点名
+                local child_name = old_child_data.entity.name
+
+                -- 2. 计算子实体在新地表上的精确预期坐标
                 local expected_pos = {
                     x = new_center_pos.x + old_child_data.relative_pos.x,
                     y = new_center_pos.y + old_child_data.relative_pos.y,
                 }
-                local found_clone = new_entity.surface.find_entities_filtered({ position = expected_pos, radius = 0.1, limit = 1 })
+
+                -- 3. 在这个精确位置的稍大范围内，按名字查找克隆体
+                local found_clone = new_entity.surface.find_entities_filtered({
+                    name = child_name, -- <<-- [核心修复1] 指定名字
+                    position = expected_pos,
+                    radius = 0.5, -- <<-- [核心修复2] 稍微扩大范围以容错
+                    limit = 1,
+                })
+
                 if found_clone and found_clone[1] then
-                    table.insert(new_data.children, { entity = found_clone[1], relative_pos = old_child_data.relative_pos })
+                    table.insert(new_data.children, {
+                        entity = found_clone[1],
+                        relative_pos = old_child_data.relative_pos,
+                    })
+                elseif DEBUG_MODE_ENABLED then
+                    log_debug("RiftRail Clone Error: 在位置 " .. serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
                 end
             end
         end
     end
 
-    -- 4. 保存新数据到主表
+    -- 4. 保存新数据
     storage.rift_rails[new_unit_number] = new_data
-
-    -- 5. 【核心修复】更新 id_map 缓存，让自定义 ID 指向新的 unit_number
-    --    这是解决“目标数据丢失”的关键！
     if storage.rift_rail_id_map then
         storage.rift_rail_id_map[new_data.id] = new_unit_number
-        if DEBUG_MODE_ENABLED then
-            log_debug("[RiftRail] 克隆修复: id_map 已更新, ID " .. new_data.id .. " 现在指向新的 unit_number " .. new_unit_number)
-        end
     end
 
-    -- 6. Cybersyn 迁移 (保持不变)
+    -- 5. Cybersyn 迁移
     local is_landing = false
     local old_is_space = string.find(old_entity.surface.name, "spaceship")
     local new_is_space = string.find(new_entity.surface.name, "spaceship")
@@ -266,7 +278,7 @@ script.on_event(defines.events.on_entity_cloned, function(event)
     end
     CybersynSE.on_portal_cloned(old_data, new_data, is_landing)
 
-    -- 7. 删除旧数据
+    -- 6. 删除旧数据
     storage.rift_rails[old_unit_number] = nil
 
     if DEBUG_MODE_ENABLED then

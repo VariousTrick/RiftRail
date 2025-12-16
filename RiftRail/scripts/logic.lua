@@ -99,6 +99,7 @@ local function update_collider_state(struct)
     end
 end
 
+-- scripts/logic.lua
 -- ============================================================================
 -- 1. 更新名称
 -- ============================================================================
@@ -109,13 +110,11 @@ function Logic.update_name(player_index, portal_id, new_string)
         return
     end
 
-    -- 1. 解析输入
+    -- 1. 解析输入 (逻辑不变)
     local icon_type, icon_name, plain_name = string.match(new_string, "%[([%w%-]+)=([%w%-]+)%]%s*(.*)")
 
-    -- 2. [核心修正] 智能去重
+    -- 2. 智能去重 (逻辑不变)
     if icon_type and icon_name then
-        -- 如果解析出的图标就是我们的 "Rift Rail 放置器"，说明这是默认图标
-        -- 我们将其视为 "无自定义图标" (nil)，避免和强制添加的主图标重复
         if icon_name == "rift-rail-placer" then
             my_data.icon = nil
         else
@@ -123,21 +122,21 @@ function Logic.update_name(player_index, portal_id, new_string)
         end
         my_data.name = plain_name
     else
-        -- 没有图标，只存名字
         my_data.name = new_string
         my_data.icon = nil
     end
 
     -- 3. 更新实体显示名称
     if my_data.children then
-        for _, child in pairs(my_data.children) do
-            if child.valid and child.name == "rift-rail-station" then
+        -- 【修改】适配新的 children 结构
+        for _, child_data in pairs(my_data.children) do
+            local child = child_data.entity -- <<-- [核心修复] 先从表中取出实体
+            if child and child.valid and child.name == "rift-rail-station" then
                 -- 强制添加的主图标
                 local master_icon = "[item=rift-rail-placer] "
 
                 -- 用户自定义图标字符串
                 local user_icon_str = ""
-                -- 只有当 icon 存在且不是主图标时(上面已经过滤了)，这里才会生成字符串
                 if my_data.icon then
                     user_icon_str = "[" .. my_data.icon.type .. "=" .. my_data.icon.name .. "] "
                 end

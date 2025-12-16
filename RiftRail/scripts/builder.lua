@@ -8,7 +8,8 @@ local State = nil -- <<-- [新增] 在文件顶部声明一个局部变量来存
 local log_debug = function() end
 
 function Builder.init(deps)
-    State = deps.State -- <<-- [新增] 接收从 control.lua 传来的 State
+    State = deps.State
+    Logic = deps.Logic -- <<-- [新增] 接收从 control.lua 传来的 Logic
     if deps.log_debug then
         log_debug = deps.log_debug
     end
@@ -154,14 +155,18 @@ function Builder.on_built(event)
             direction = child_dir,
             force = force,
         }
-        -- 合并额外属性 (例如 backer_name)
-        if extra_properties then
-            for k, v in pairs(extra_properties) do
-                entity_proto[k] = v
+
+        -- 1. 先创建实体，不包含 backer_name
+        local child_entity = surface.create_entity(entity_proto)
+
+        -- 2. 【核心修复】在实体创建之后，再设置它的运行时属性
+        if extra_properties and child_entity and child_entity.valid then
+            if extra_properties.backer_name then
+                child_entity.backer_name = extra_properties.backer_name
             end
+            -- 未来如果需要设置其他运行时属性，也可以加在这里
         end
 
-        local child_entity = surface.create_entity(entity_proto)
         table.insert(children, { entity = child_entity, relative_pos = relative_pos })
         return child_entity
     end

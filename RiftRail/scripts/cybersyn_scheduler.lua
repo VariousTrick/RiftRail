@@ -23,7 +23,9 @@ local pending_trains = {}
 -- 辅助：从组件中获取车站实体
 local function get_station(struct)
     if struct.children then
-        for _, child in pairs(struct.children) do
+        -- 【修改】适配新的 children 结构 {entity=..., relative_pos=...}
+        for _, child_data in pairs(struct.children) do
+            local child = child_data.entity -- <<-- [核心修改] 先从表中取出实体
             if child and child.valid and child.name == "rift-rail-station" then
                 return child
             end
