@@ -183,7 +183,7 @@ script.on_event(defines.events.on_gui_confirmed, GUI.handle_confirmed)
 -- 当玩家按 E 或 ESC 关闭窗口时触发
 script.on_event(defines.events.on_gui_closed, GUI.handle_close)
 -- ============================================================================
--- [新增] 克隆/传送事件处理 (修复 SE 飞船移动导致的数据丢失)
+-- [最终修复版] 克隆/传送事件处理
 -- ============================================================================
 script.on_event(defines.events.on_entity_cloned, function(event)
     local new_entity = event.destination
@@ -209,66 +209,67 @@ script.on_event(defines.events.on_entity_cloned, function(event)
         return
     end
 
-    local old_id = old_entity.unit_number
-    local old_data = storage.rift_rails and storage.rift_rails[old_id]
+    local old_unit_number = old_entity.unit_number
+    local old_data = storage.rift_rails and storage.rift_rails[old_unit_number]
 
     if not old_data then
         return
     end
 
+    -- 1. 拷贝数据
     local new_data = flib_util.table.deepcopy(old_data)
 
-    new_data.unit_number = new_entity.unit_number
+    -- 2. 更新核心引用
+    local new_unit_number = new_entity.unit_number
+    new_data.unit_number = new_unit_number
     new_data.shell = new_entity
     new_data.surface = new_entity.surface
 
-    -- 【修改】使用“精准定位”重建 children 列表
+    -- 3. 使用“精准定位”重建 children 列表 (这部分逻辑保持不变)
     local old_children_list = new_data.children
-    new_data.children = {} -- 清空，准备重新填充
+    new_data.children = {}
     local new_center_pos = new_entity.position
-
-    for _, old_child_data in pairs(old_children_list) do
-        if old_child_data.relative_pos then
-            local expected_pos = {
-                x = new_center_pos.x + old_child_data.relative_pos.x,
-                y = new_center_pos.y + old_child_data.relative_pos.y,
-            }
-            local found_clone = new_entity.surface.find_entities_filtered({
-                position = expected_pos,
-                radius = 0.1,
-                limit = 1,
-            })
-
-            if found_clone and found_clone[1] then
-                table.insert(new_data.children, {
-                    entity = found_clone[1],
-                    relative_pos = old_child_data.relative_pos,
-                })
-            elseif DEBUG_MODE_ENABLED then
-                if DEBUG_MODE_ENABLED then
-                    log_debug("RiftRail Clone Error: 在精准位置未能找到子实体的克隆体。")
+    if old_children_list then
+        for _, old_child_data in pairs(old_children_list) do
+            if old_child_data.relative_pos then
+                local expected_pos = {
+                    x = new_center_pos.x + old_child_data.relative_pos.x,
+                    y = new_center_pos.y + old_child_data.relative_pos.y,
+                }
+                local found_clone = new_entity.surface.find_entities_filtered({ position = expected_pos, radius = 0.1, limit = 1 })
+                if found_clone and found_clone[1] then
+                    table.insert(new_data.children, { entity = found_clone[1], relative_pos = old_child_data.relative_pos })
                 end
             end
         end
     end
 
-    storage.rift_rails[new_entity.unit_number] = new_data
+    -- 4. 保存新数据到主表
+    storage.rift_rails[new_unit_number] = new_data
 
+    -- 5. 【核心修复】更新 id_map 缓存，让自定义 ID 指向新的 unit_number
+    --    这是解决“目标数据丢失”的关键！
+    if storage.rift_rail_id_map then
+        storage.rift_rail_id_map[new_data.id] = new_unit_number
+        if DEBUG_MODE_ENABLED then
+            log_debug("[RiftRail] 克隆修复: id_map 已更新, ID " .. new_data.id .. " 现在指向新的 unit_number " .. new_unit_number)
+        end
+    end
+
+    -- 6. Cybersyn 迁移 (保持不变)
     local is_landing = false
     local old_is_space = string.find(old_entity.surface.name, "spaceship")
     local new_is_space = string.find(new_entity.surface.name, "spaceship")
     if old_is_space and not new_is_space then
         is_landing = true
     end
+    CybersynSE.on_portal_cloned(old_data, new_data, is_landing)
 
-    CybersynSE.on_portal_cloned(old_data, storage.rift_rails[new_entity.unit_number], is_landing)
-
-    storage.rift_rails[old_id] = nil
+    -- 7. 删除旧数据
+    storage.rift_rails[old_unit_number] = nil
 
     if DEBUG_MODE_ENABLED then
-        if DEBUG_MODE_ENABLED then
-            log_debug("[RiftRail] 克隆迁移成功: ID " .. old_data.id .. " | 实体ID " .. old_id .. " -> " .. new_entity.unit_number)
-        end
+        log_debug("[RiftRail] 克隆迁移成功: ID " .. new_data.id .. " | 实体ID " .. old_unit_number .. " -> " .. new_unit_number)
     end
 end)
 
