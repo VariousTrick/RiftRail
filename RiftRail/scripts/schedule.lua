@@ -5,6 +5,8 @@
 
 local Schedule = {}
 
+local DEBUG_MODE_ENABLED = settings.global["rift-rail-debug-mode"].value
+
 -- 默认空日志函数，会被 control.lua 注入的函数覆盖
 local log_debug = function() end
 
@@ -20,7 +22,9 @@ end
 local function log_schedule(message)
     -- 调用 control.lua 传入的 log_debug
     -- 它会自动处理 log() 和 game.print()，并带有 [RiftRail] 前缀
-    log_debug("[Schedule] " .. message)
+    if DEBUG_MODE_ENABLED then
+        log_debug("[Schedule] " .. message)
+    end
 end
 
 --- 核心函数：转移时刻表和中断机制 (v3.0 SE重构版)

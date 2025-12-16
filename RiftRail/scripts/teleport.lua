@@ -4,7 +4,7 @@
 -- 包含：堵车检测、内容转移、拖船机制、Cybersyn/SE 兼容
 
 local Teleport = {}
-
+local DEBUG_MODE_ENABLED = settings.global["rift-rail-debug-mode"].value
 -- =================================================================================
 -- 依赖与本地变量
 -- =================================================================================
@@ -62,12 +62,12 @@ local GEOMETRY = {
 -- =================================================================================
 
 -- 添加到活跃列表
+-- 【性能重构】使用二分查找插入，替换 table.sort
 local function add_to_active(struct)
     if not struct or not struct.unit_number then
         return
     end
 
-    -- 确保表存在
     if not storage.active_teleporters then
         storage.active_teleporters = {}
     end
@@ -75,25 +75,31 @@ local function add_to_active(struct)
         storage.active_teleporter_list = {}
     end
 
-    -- 如果已经在列表里，就不重复添加
     if storage.active_teleporters[struct.unit_number] then
         return
     end
 
-    -- 1. 存入哈希表 (快速查找)
     storage.active_teleporters[struct.unit_number] = struct
+    local list = storage.active_teleporter_list
+    local unit_number = struct.unit_number
 
-    -- 2. 存入有序列表 (用于遍历)
-    table.insert(storage.active_teleporter_list, struct)
-
-    -- 3. 排序 (保持多人游戏同步确定性)
-    -- 因为添加是低频事件，这里排序开销可以接受
-    table.sort(storage.active_teleporter_list, function(a, b)
-        return a.unit_number < b.unit_number
-    end)
+    -- 二分查找确定插入位置
+    local low, high = 1, #list
+    local pos = #list + 1
+    while low <= high do
+        local mid = math.floor((low + high) / 2)
+        if list[mid].unit_number > unit_number then
+            pos = mid
+            high = mid - 1
+        else
+            low = mid + 1
+        end
+    end
+    table.insert(list, pos, struct)
 end
 
 -- 从活跃列表移除
+-- 【性能重构】优化移除逻辑
 local function remove_from_active(struct)
     if not struct or not struct.unit_number then
         return
@@ -102,31 +108,37 @@ local function remove_from_active(struct)
         return
     end
 
-    -- 1. 从哈希表移除
     storage.active_teleporters[struct.unit_number] = nil
+    local list = storage.active_teleporter_list
+    local unit_number = struct.unit_number
 
-    -- 2. 从有序列表移除
-    -- 这是一个 O(N) 操作，但列表通常很短，且比每帧排序要快得多
-    for i, active_struct in ipairs(storage.active_teleporter_list) do
-        if active_struct == struct then
-            table.remove(storage.active_teleporter_list, i)
-            break
+    -- 二分查找确定移除位置
+    local low, high = 1, #list
+    while low <= high do
+        local mid = math.floor((low + high) / 2)
+        local mid_val = list[mid].unit_number
+        if mid_val == unit_number then
+            table.remove(list, mid)
+            return
+        elseif mid_val < unit_number then
+            low = mid + 1
+        else
+            high = mid - 1
         end
     end
 end
 
 -- [新增] 辅助函数：从子实体中获取真实的车站名称 (带图标)
--- 逻辑复刻：传送门模组直接读取 struct.station.backer_name，RiftRail 需遍历 children
 local function get_real_station_name(struct)
+    -- 【修改】适配新的 children 结构 {entity=..., relative_pos=...}
     if struct.children then
-        for _, child in pairs(struct.children) do
-            if child.valid and child.name == "rift-rail-station" then
-                -- 返回游戏内实际显示的名称 (如 "[item=xxx] 1")
+        for _, child_data in pairs(struct.children) do
+            local child = child_data.entity
+            if child and child.valid and child.name == "rift-rail-station" then
                 return child.backer_name
             end
         end
     end
-    -- 保底：如果找不到实体，才返回内部存储的名字
     return struct.name
 end
 
@@ -167,7 +179,9 @@ end
 
 -- 本地日志
 local function log_tp(msg)
-    log_debug("[Teleport] " .. msg)
+    if DEBUG_MODE_ENABLED then
+        log_debug("[Teleport] " .. msg)
+    end
 end
 
 -- [新增] 专门用于在 on_load 中初始化的 SE 事件获取函数
@@ -175,16 +189,22 @@ function Teleport.init_se_events()
     -- [关键修复] 确保 on_load 时也能拿到最新的日志函数
     -- if injected_log_debug then log_debug = injected_log_debug end
     if script.active_mods["space-exploration"] and remote.interfaces["space-exploration"] then
-        log_debug("Teleport: 正在尝试从 SE 获取传送事件 ID (on_load)...")
+        if DEBUG_MODE_ENABLED then
+            log_debug("Teleport: 正在尝试从 SE 获取传送事件 ID (on_load)...")
+        end
         local success, event_started = pcall(remote.call, "space-exploration", "get_on_train_teleport_started_event")
         local _, event_finished = pcall(remote.call, "space-exploration", "get_on_train_teleport_finished_event")
 
         if success and event_started then
             SE_TELEPORT_STARTED_EVENT_ID = event_started
             SE_TELEPORT_FINISHED_EVENT_ID = event_finished
-            log_debug("Teleport: SE 传送事件 ID 获取成功！")
+            if DEBUG_MODE_ENABLED then
+                log_debug("Teleport: SE 传送事件 ID 获取成功！")
+            end
         else
-            log_debug("Teleport: 警告 - 无法从 SE 获取传送事件 ID。")
+            if DEBUG_MODE_ENABLED then
+                log_debug("Teleport: 警告 - 无法从 SE 获取传送事件 ID。")
+            end
         end
     end
 end

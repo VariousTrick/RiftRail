@@ -3,17 +3,17 @@
 -- 功能：事件分发、日志管理、模块加载
 -- 更新：集成传送逻辑、补全玩家传送、事件分流
 
--- 1. 定义调试总开关
--- local DEBUG_MODE = false
+-- ============================================================================
+-- 1. 缓存与日志
+-- ============================================================================
+-- 【性能优化】缓存调试模式开关
+local DEBUG_MODE_ENABLED = settings.global["rift-rail-debug-mode"].value
 
--- 2. 定义日志函数
+-- 2.【性能优化】新的日志函数，在使用处进行判断以避免字符串拼接
 local function log_debug(msg)
-    -- [修改] 不再读取本地变量，而是直接检查全局设置
-    if settings.global["rift-rail-debug-mode"].value then
-        log("[RiftRail] " .. msg)
-        if game then
-            game.print("[RiftRail] " .. msg)
-        end
+    log("[RiftRail] " .. msg)
+    if game then
+        game.print("[RiftRail] " .. msg)
     end
 end
 
@@ -193,72 +193,67 @@ script.on_event(defines.events.on_entity_cloned, function(event)
         return
     end
 
-    -- [新增] 1.1 唤醒 Cybersyn 控制器 (与 Railjump 互斥)
+    -- 分支 A: Cybersyn 控制器
     if new_entity.name == "cybersyn-combinator" then
-        -- 如果安装了 Railjump (zzzzz)，我们避嫌，让他去处理
         if script.active_mods["zzzzz"] then
             return
         end
-
-        -- 否则我们自己处理：只要是在飞船上，就唤醒
         if string.find(new_entity.surface.name, "spaceship") then
             script.raise_event(defines.events.script_raised_built, { entity = new_entity })
         end
-        return -- 处理完毕，退出
+        return
     end
 
-    -- 1.2 过滤：我们只关心主体的克隆 (原有逻辑)
+    -- 分支 B: RiftRail 主体
     if new_entity.name ~= "rift-rail-entity" then
         return
     end
 
-    -- 2. 查找旧数据
-    -- 注意：old_entity 在这一刻还是 valid 的，但马上就会被 SE 销毁
     local old_id = old_entity.unit_number
     local old_data = storage.rift_rails and storage.rift_rails[old_id]
 
     if not old_data then
-        -- 如果旧实体本身就是个没有数据的“僵尸”，那我们无能为力
         return
     end
 
-    -- 3. 深度拷贝数据 (避免引用传递问题)
     local new_data = flib_util.table.deepcopy(old_data)
 
-    -- 4. 更新核心引用
     new_data.unit_number = new_entity.unit_number
     new_data.shell = new_entity
     new_data.surface = new_entity.surface
 
-    -- 5. 重建子实体列表 (Children)
-    -- 旧数据里的 children 指向的是旧表面的实体，我们需要在新表面找到对应的克隆体
-    -- 方法：在主体周围小范围内搜索同名组件
-    new_data.children = {}
+    -- 【修改】使用“精准定位”重建 children 列表
+    local old_children_list = new_data.children
+    new_data.children = {} -- 清空，准备重新填充
+    local new_center_pos = new_entity.position
 
-    local child_names = {
-        "rift-rail-station",
-        "rift-rail-core",
-        "rift-rail-signal",
-        "rift-rail-internal-rail",
-        "rift-rail-collider",
-        "rift-rail-blocker",
-        "rift-rail-lamp",
-    }
+    for _, old_child_data in pairs(old_children_list) do
+        if old_child_data.relative_pos then
+            local expected_pos = {
+                x = new_center_pos.x + old_child_data.relative_pos.x,
+                y = new_center_pos.y + old_child_data.relative_pos.y,
+            }
+            local found_clone = new_entity.surface.find_entities_filtered({
+                position = expected_pos,
+                radius = 0.1,
+                limit = 1,
+            })
 
-    local found_children = new_entity.surface.find_entities_filtered({
-        position = new_entity.position,
-        radius = 10, -- 建筑本身不大，10格半径足够覆盖所有组件
-        name = child_names,
-    })
-
-    for _, child in pairs(found_children) do
-        table.insert(new_data.children, child)
+            if found_clone and found_clone[1] then
+                table.insert(new_data.children, {
+                    entity = found_clone[1],
+                    relative_pos = old_child_data.relative_pos,
+                })
+            elseif DEBUG_MODE_ENABLED then
+                if DEBUG_MODE_ENABLED then
+                    log_debug("RiftRail Clone Error: 在精准位置未能找到子实体的克隆体。")
+                end
+            end
+        end
     end
 
-    -- 6. 保存新数据
     storage.rift_rails[new_entity.unit_number] = new_data
 
-    -- [新增] Cybersyn 智能迁移
     local is_landing = false
     local old_is_space = string.find(old_entity.surface.name, "spaceship")
     local new_is_space = string.find(new_entity.surface.name, "spaceship")
@@ -268,15 +263,12 @@ script.on_event(defines.events.on_entity_cloned, function(event)
 
     CybersynSE.on_portal_cloned(old_data, storage.rift_rails[new_entity.unit_number], is_landing)
 
-    -- 7. [关键] 删除旧数据
-    -- 这样做是为了“欺骗” Builder.on_destroy。
-    -- 当 SE 稍后销毁旧实体时，on_destroy 去查表会发现数据已经没了，
-    -- 因此它不会执行“解除配对”的逻辑。配对关系得以保留。
     storage.rift_rails[old_id] = nil
 
-    -- 8. 调试日志
-    if DEBUG_MODE then
-        game.print("[RiftRail] 克隆迁移成功: ID " .. old_data.id .. " | 实体ID " .. old_id .. " -> " .. new_entity.unit_number)
+    if DEBUG_MODE_ENABLED then
+        if DEBUG_MODE_ENABLED then
+            log_debug("[RiftRail] 克隆迁移成功: ID " .. old_data.id .. " | 实体ID " .. old_id .. " -> " .. new_entity.unit_number)
+        end
     end
 end)
 
@@ -469,24 +461,65 @@ end)
 
 -- on_init: 只在创建新游戏时运行
 script.on_init(function()
-    -- [新增] 初始化碰撞器索引表
+    State.ensure_storage() -- 会创建空的 rift_rails 和 id_map
     storage.collider_map = {}
-    -- [新增] 初始化活跃传送门有序列表
     storage.active_teleporter_list = {}
-    -- (这里可以留空，或者处理新游戏逻辑)
 end)
 
 -- on_configuration_changed: 处理模组更新或配置变更
 script.on_configuration_changed(function(event)
-    -- [新增] 迁移活跃列表 (GC优化)
+    -- 1. 确保基础表结构存在
+    State.ensure_storage()
+
+    -- 2. 【迁移】为旧存档构建 id_map 缓存
+    if storage.rift_rails and next(storage.rift_rails) ~= nil and next(storage.rift_rail_id_map) == nil then
+        if DEBUG_MODE_ENABLED then
+            if DEBUG_MODE_ENABLED then
+                log_debug("[Migration] 检测到旧存档，正在构建 id_map 缓存...")
+            end
+        end
+        for unit_number, struct in pairs(storage.rift_rails) do
+            storage.rift_rail_id_map[struct.id] = unit_number
+        end
+    end
+
+    -- 3. 【迁移】为旧建筑的 children 列表补充相对坐标
+    if storage.rift_rails then
+        for _, struct in pairs(storage.rift_rails) do
+            -- 判断是否为需要修复的旧数据：检查第一个 child 是否是实体对象，而不是 table
+            if struct.children and #struct.children > 0 and struct.children[1].valid then
+                if DEBUG_MODE_ENABLED then
+                    if DEBUG_MODE_ENABLED then
+                        log_debug("[Migration] 正在修复建筑 ID " .. struct.id .. " 的 children 列表...")
+                    end
+                end
+                local new_children = {}
+                if struct.shell and struct.shell.valid then
+                    local center_pos = struct.shell.position
+                    for _, child_entity in pairs(struct.children) do
+                        if child_entity and child_entity.valid then
+                            table.insert(new_children, {
+                                entity = child_entity,
+                                relative_pos = {
+                                    x = child_entity.position.x - center_pos.x,
+                                    y = child_entity.position.y - center_pos.y,
+                                },
+                            })
+                        end
+                    end
+                    struct.children = new_children
+                end
+            end
+        end
+    end
+
+    -- 4. 【迁移】GC优化相关的活跃列表
     if not storage.active_teleporter_list then
         storage.active_teleporter_list = {}
         if storage.active_teleporters then
-            log_debug("[Migration] 正在构建活跃传送门有序列表...")
             for _, struct in pairs(storage.active_teleporters) do
                 table.insert(storage.active_teleporter_list, struct)
             end
-            -- 必须排序以保证确定性
             table.sort(storage.active_teleporter_list, function(a, b)
                 return a.unit_number < b.unit_number
             end)

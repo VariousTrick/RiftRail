@@ -5,330 +5,332 @@ local Logic = {}
 local State = nil
 local GUI = nil
 local CybersynSE = nil -- [新增] 本地变量
+
+local DEBUG_MODE_ENABLED = settings.global["rift-rail-debug-mode"].value
 local log_debug = function() end
 
 function Logic.init(deps)
-	State = deps.State
-	GUI = deps.GUI
-	log_debug = deps.log_debug
-	CybersynSE = deps.CybersynSE -- [新增] 获取依赖
+    State = deps.State
+    GUI = deps.GUI
+    log_debug = deps.log_debug
+    CybersynSE = deps.CybersynSE -- [新增] 获取依赖
 end
 
 -- ============================================================================
 -- 辅助函数：广播刷新
 -- ============================================================================
 local function refresh_all_guis()
-	for _, player in pairs(game.connected_players) do
-		local opened = player.opened
+    for _, player in pairs(game.connected_players) do
+        local opened = player.opened
 
-		-- 情况 1: 如果 opened 是实体 (比如其他模组直接 opened 实体，或者是兼容旧版)
-		if opened and opened.valid and opened.object_name == "LuaEntity" and State.get_struct(opened) then
-			GUI.build_or_update(player, opened)
+        -- 情况 1: 如果 opened 是实体 (比如其他模组直接 opened 实体，或者是兼容旧版)
+        if opened and opened.valid and opened.object_name == "LuaEntity" and State.get_struct(opened) then
+            GUI.build_or_update(player, opened)
 
-			-- 情况 2: [新增] 如果 opened 是我们的 GUI Frame
-		elseif opened and opened.valid and opened.object_name == "LuaGuiElement" and opened.name == "rift_rail_main_frame" then
-			-- 从 tags 中获取 unit_number
-			local unit_number = opened.tags.unit_number
-			if unit_number then
-				-- 查找对应的实体数据
-				local struct = State.get_struct_by_unit_number(unit_number)
-				if struct and struct.shell and struct.shell.valid then
-					-- 传入实体进行刷新
-					GUI.build_or_update(player, struct.shell)
-				end
-			end
-		end
-	end
+            -- 情况 2: [新增] 如果 opened 是我们的 GUI Frame
+        elseif opened and opened.valid and opened.object_name == "LuaGuiElement" and opened.name == "rift_rail_main_frame" then
+            -- 从 tags 中获取 unit_number
+            local unit_number = opened.tags.unit_number
+            if unit_number then
+                -- 查找对应的实体数据
+                local struct = State.get_struct_by_unit_number(unit_number)
+                if struct and struct.shell and struct.shell.valid then
+                    -- 传入实体进行刷新
+                    GUI.build_or_update(player, struct.shell)
+                end
+            end
+        end
+    end
 end
 
 -- ============================================================================
 -- [新增] 物理状态管理 (精准定点清除版)
 -- ============================================================================
 local function update_collider_state(struct)
-	if not (struct and struct.shell and struct.shell.valid) then
-		return
-	end
+    if not (struct and struct.shell and struct.shell.valid) then
+        return
+    end
 
-	local surface = struct.shell.surface
-	local center = struct.shell.position
-	local direction = struct.shell.direction
+    local surface = struct.shell.surface
+    local center = struct.shell.position
+    local direction = struct.shell.direction
 
-	-- 1. 计算碰撞器的精确相对坐标
-	-- 基于 Builder.lua 的旋转逻辑 (顺时针: N->E->S->W)
-	-- 基础位置 (North): {x=0, y=-2}
-	local offset = { x = 0, y = 0 }
+    -- 1. 计算碰撞器的精确相对坐标
+    -- 基于 Builder.lua 的旋转逻辑 (顺时针: N->E->S->W)
+    -- 基础位置 (North): {x=0, y=-2}
+    local offset = { x = 0, y = 0 }
 
-	if direction == 0 then         -- North (上)
-		offset = { x = 0, y = -2 }
-	elseif direction == 4 then     -- East (右) -> Builder 旋转逻辑 x=-y, y=x -> -(-2), 0 -> 2, 0
-		offset = { x = 2, y = 0 }  -- [修正] 确保是右边 (2, 0)
-	elseif direction == 8 then     -- South (下)
-		offset = { x = 0, y = 2 }
-	elseif direction == 12 then    -- West (左) -> Builder 旋转逻辑 x=y, y=-x -> -2, 0
-		offset = { x = -2, y = 0 } -- [修正] 确保是左边 (-2, 0)
-	end
+    if direction == 0 then -- North (上)
+        offset = { x = 0, y = -2 }
+    elseif direction == 4 then -- East (右) -> Builder 旋转逻辑 x=-y, y=x -> -(-2), 0 -> 2, 0
+        offset = { x = 2, y = 0 } -- [修正] 确保是右边 (2, 0)
+    elseif direction == 8 then -- South (下)
+        offset = { x = 0, y = 2 }
+    elseif direction == 12 then -- West (左) -> Builder 旋转逻辑 x=y, y=-x -> -2, 0
+        offset = { x = -2, y = 0 } -- [修正] 确保是左边 (-2, 0)
+    end
 
-	-- 2. 计算碰撞器的绝对世界坐标
-	local target_pos = { x = center.x + offset.x, y = center.y + offset.y }
+    -- 2. 计算碰撞器的绝对世界坐标
+    local target_pos = { x = center.x + offset.x, y = center.y + offset.y }
 
-	-- 3. 精准定点清理
-	-- 只在 target_pos 周围 0.5 格内寻找碰撞器
-	-- 这样绝对不会误伤隔壁邻居 (因为邻居的碰撞器至少在 2 格以外)
-	local existing = surface.find_entities_filtered({
-		name = "rift-rail-collider",
-		position = target_pos, -- 锁定目标点
-		radius = 0.5,          -- 极小范围
-	})
+    -- 3. 精准定点清理
+    -- 只在 target_pos 周围 0.5 格内寻找碰撞器
+    -- 这样绝对不会误伤隔壁邻居 (因为邻居的碰撞器至少在 2 格以外)
+    local existing = surface.find_entities_filtered({
+        name = "rift-rail-collider",
+        position = target_pos, -- 锁定目标点
+        radius = 0.5, -- 极小范围
+    })
 
-	for _, e in pairs(existing) do
-		if e.valid then
-			e.destroy()
-		end
-	end
+    for _, e in pairs(existing) do
+        if e.valid then
+            e.destroy()
+        end
+    end
 
-	-- 4. 如果是 [入口] 模式，则在原地创建新的碰撞器
-	if struct.mode == "entry" then
-		local collider = surface.create_entity({
-			name = "rift-rail-collider",
-			position = target_pos, -- 使用相同的坐标
-			force = struct.shell.force,
-		})
-		-- log_debug("Logic: 已在精准坐标 (" .. target_pos.x .. "," .. target_pos.y .. ") 重建碰撞器。")
-	end
+    -- 4. 如果是 [入口] 模式，则在原地创建新的碰撞器
+    if struct.mode == "entry" then
+        local collider = surface.create_entity({
+            name = "rift-rail-collider",
+            position = target_pos, -- 使用相同的坐标
+            force = struct.shell.force,
+        })
+        -- if DEBUG_MODE_ENABLED then log_debug("Logic: 已在精准坐标 (" .. target_pos.x .. "," .. target_pos.y .. ") 重建碰撞器。") end
+    end
 end
 
 -- ============================================================================
 -- 1. 更新名称
 -- ============================================================================
 function Logic.update_name(player_index, portal_id, new_string)
-	local player = game.get_player(player_index)
-	local my_data = State.get_struct_by_id(portal_id)
-	if not (player and my_data) then
-		return
-	end
+    local player = game.get_player(player_index)
+    local my_data = State.get_struct_by_id(portal_id)
+    if not (player and my_data) then
+        return
+    end
 
-	-- 1. 解析输入
-	local icon_type, icon_name, plain_name = string.match(new_string, "%[([%w%-]+)=([%w%-]+)%]%s*(.*)")
+    -- 1. 解析输入
+    local icon_type, icon_name, plain_name = string.match(new_string, "%[([%w%-]+)=([%w%-]+)%]%s*(.*)")
 
-	-- 2. [核心修正] 智能去重
-	if icon_type and icon_name then
-		-- 如果解析出的图标就是我们的 "Rift Rail 放置器"，说明这是默认图标
-		-- 我们将其视为 "无自定义图标" (nil)，避免和强制添加的主图标重复
-		if icon_name == "rift-rail-placer" then
-			my_data.icon = nil
-		else
-			my_data.icon = { type = icon_type, name = icon_name }
-		end
-		my_data.name = plain_name
-	else
-		-- 没有图标，只存名字
-		my_data.name = new_string
-		my_data.icon = nil
-	end
+    -- 2. [核心修正] 智能去重
+    if icon_type and icon_name then
+        -- 如果解析出的图标就是我们的 "Rift Rail 放置器"，说明这是默认图标
+        -- 我们将其视为 "无自定义图标" (nil)，避免和强制添加的主图标重复
+        if icon_name == "rift-rail-placer" then
+            my_data.icon = nil
+        else
+            my_data.icon = { type = icon_type, name = icon_name }
+        end
+        my_data.name = plain_name
+    else
+        -- 没有图标，只存名字
+        my_data.name = new_string
+        my_data.icon = nil
+    end
 
-	-- 3. 更新实体显示名称
-	if my_data.children then
-		for _, child in pairs(my_data.children) do
-			if child.valid and child.name == "rift-rail-station" then
-				-- 强制添加的主图标
-				local master_icon = "[item=rift-rail-placer] "
+    -- 3. 更新实体显示名称
+    if my_data.children then
+        for _, child in pairs(my_data.children) do
+            if child.valid and child.name == "rift-rail-station" then
+                -- 强制添加的主图标
+                local master_icon = "[item=rift-rail-placer] "
 
-				-- 用户自定义图标字符串
-				local user_icon_str = ""
-				-- 只有当 icon 存在且不是主图标时(上面已经过滤了)，这里才会生成字符串
-				if my_data.icon then
-					user_icon_str = "[" .. my_data.icon.type .. "=" .. my_data.icon.name .. "] "
-				end
+                -- 用户自定义图标字符串
+                local user_icon_str = ""
+                -- 只有当 icon 存在且不是主图标时(上面已经过滤了)，这里才会生成字符串
+                if my_data.icon then
+                    user_icon_str = "[" .. my_data.icon.type .. "=" .. my_data.icon.name .. "] "
+                end
 
-				-- 拼接：[主图标] + [用户图标(如果有)] + 名字
-				child.backer_name = master_icon .. user_icon_str .. my_data.name
-				break
-			end
-		end
-	end
+                -- 拼接：[主图标] + [用户图标(如果有)] + 名字
+                child.backer_name = master_icon .. user_icon_str .. my_data.name
+                break
+            end
+        end
+    end
 
-	player.print({ "messages.rift-rail-mode-changed", my_data.name })
-	refresh_all_guis()
+    player.print({ "messages.rift-rail-mode-changed", my_data.name })
+    refresh_all_guis()
 end
 
 -- ============================================================================
 -- 2. 模式切换 (核心修改)
 -- ============================================================================
 function Logic.set_mode(player_index, portal_id, mode, skip_sync)
-	local player = nil
-	if player_index then
-		player = game.get_player(player_index)
-	end
+    local player = nil
+    if player_index then
+        player = game.get_player(player_index)
+    end
 
-	local my_data = State.get_struct_by_id(portal_id)
-	if not my_data then
-		return
-	end
+    local my_data = State.get_struct_by_id(portal_id)
+    if not my_data then
+        return
+    end
 
-	if my_data.mode == mode then
-		return
-	end
+    if my_data.mode == mode then
+        return
+    end
 
-	my_data.mode = mode
+    my_data.mode = mode
 
-	-- [新增] 立即更新物理碰撞器状态
-	update_collider_state(my_data)
+    -- [新增] 立即更新物理碰撞器状态
+    update_collider_state(my_data)
 
-	-- 消息提示
-	if player then
-		if mode == "entry" then
-			player.print({ "gui.rift-rail-mode-entry" })
-		end
-		if mode == "exit" then
-			player.print({ "gui.rift-rail-mode-exit" })
-		end
-		if mode == "neutral" then
-			player.print({ "gui.rift-rail-mode-neutral" })
-		end
-	end
+    -- 消息提示
+    if player then
+        if mode == "entry" then
+            player.print({ "gui.rift-rail-mode-entry" })
+        end
+        if mode == "exit" then
+            player.print({ "gui.rift-rail-mode-exit" })
+        end
+        if mode == "neutral" then
+            player.print({ "gui.rift-rail-mode-neutral" })
+        end
+    end
 
-	-- 智能同步配对对象
-	if not skip_sync and my_data.paired_to_id then
-		local partner = State.get_struct_by_id(my_data.paired_to_id)
-		if partner then
-			local partner_mode = "neutral"
-			if mode == "entry" then
-				partner_mode = "exit"
-			end
-			if mode == "exit" then
-				partner_mode = "entry"
-			end
+    -- 智能同步配对对象
+    if not skip_sync and my_data.paired_to_id then
+        local partner = State.get_struct_by_id(my_data.paired_to_id)
+        if partner then
+            local partner_mode = "neutral"
+            if mode == "entry" then
+                partner_mode = "exit"
+            end
+            if mode == "exit" then
+                partner_mode = "entry"
+            end
 
-			Logic.set_mode(nil, partner.id, partner_mode, true)
+            Logic.set_mode(nil, partner.id, partner_mode, true)
 
-			if player then
-				player.print({ "messages.rift-rail-mode-synced", partner_mode })
-			end
-		end
-	end
+            if player then
+                player.print({ "messages.rift-rail-mode-synced", partner_mode })
+            end
+        end
+    end
 
-	refresh_all_guis()
+    refresh_all_guis()
 end
 
 -- ============================================================================
 -- 3. 配对逻辑
 -- ============================================================================
 function Logic.pair_portals(player_index, source_id, target_id)
-	local player = game.get_player(player_index)
-	local source = State.get_struct_by_id(source_id)
-	local target = State.get_struct_by_id(target_id)
+    local player = game.get_player(player_index)
+    local source = State.get_struct_by_id(source_id)
+    local target = State.get_struct_by_id(target_id)
 
-	if not (source and target) then
-		return
-	end
+    if not (source and target) then
+        return
+    end
 
-	if source.paired_to_id then
-		player.print({ "messages.rift-rail-error-self-already-paired" })
-		return
-	end
-	if target.paired_to_id then
-		player.print({ "messages.rift-rail-error-target-already-paired" })
-		return
-	end
+    if source.paired_to_id then
+        player.print({ "messages.rift-rail-error-self-already-paired" })
+        return
+    end
+    if target.paired_to_id then
+        player.print({ "messages.rift-rail-error-target-already-paired" })
+        return
+    end
 
-	source.paired_to_id = target_id
-	target.paired_to_id = source_id
+    source.paired_to_id = target_id
+    target.paired_to_id = source_id
 
-	player.print({ "messages.rift-rail-pair-success", source.name, target.name })
+    player.print({ "messages.rift-rail-pair-success", source.name, target.name })
 
-	-- 智能初始化状态
-	if source.mode == "entry" then
-		Logic.set_mode(player_index, target_id, "exit", true)
-	elseif source.mode == "exit" then
-		Logic.set_mode(player_index, target_id, "entry", true)
-	elseif target.mode == "entry" then
-		Logic.set_mode(player_index, source_id, "exit", true)
-	elseif target.mode == "exit" then
-		Logic.set_mode(player_index, source_id, "entry", true)
-	end
+    -- 智能初始化状态
+    if source.mode == "entry" then
+        Logic.set_mode(player_index, target_id, "exit", true)
+    elseif source.mode == "exit" then
+        Logic.set_mode(player_index, target_id, "entry", true)
+    elseif target.mode == "entry" then
+        Logic.set_mode(player_index, source_id, "exit", true)
+    elseif target.mode == "exit" then
+        Logic.set_mode(player_index, source_id, "entry", true)
+    end
 
-	refresh_all_guis()
+    refresh_all_guis()
 end
 
 -- ============================================================================
 -- 4. 解绑逻辑
 -- ============================================================================
 function Logic.unpair_portals(player_index, portal_id)
-	local player = game.get_player(player_index)
-	local source = State.get_struct_by_id(portal_id)
-	if not source or not source.paired_to_id then
-		return
-	end
+    local player = game.get_player(player_index)
+    local source = State.get_struct_by_id(portal_id)
+    if not source or not source.paired_to_id then
+        return
+    end
 
-	local target = State.get_struct_by_id(source.paired_to_id)
-	local target_name = target and target.name or "Unknown"
+    local target = State.get_struct_by_id(source.paired_to_id)
+    local target_name = target and target.name or "Unknown"
 
-	source.paired_to_id = nil
-	Logic.set_mode(nil, source.id, "neutral", true)
+    source.paired_to_id = nil
+    Logic.set_mode(nil, source.id, "neutral", true)
 
-	if target then
-		target.paired_to_id = nil
-		Logic.set_mode(nil, target.id, "neutral", true)
-	end
+    if target then
+        target.paired_to_id = nil
+        Logic.set_mode(nil, target.id, "neutral", true)
+    end
 
-	player.print({ "messages.rift-rail-unpair-success", target_name })
-	refresh_all_guis()
+    player.print({ "messages.rift-rail-unpair-success", target_name })
+    refresh_all_guis()
 end
 
 -- ============================================================================
 -- 5. 远程观察
 -- ============================================================================
 function Logic.open_remote_view(player_index, portal_id)
-	local player = game.get_player(player_index)
-	local my_data = State.get_struct_by_id(portal_id)
-	if not (player and my_data and my_data.paired_to_id) then
-		return
-	end
+    local player = game.get_player(player_index)
+    local my_data = State.get_struct_by_id(portal_id)
+    if not (player and my_data and my_data.paired_to_id) then
+        return
+    end
 
-	local target = State.get_struct_by_id(my_data.paired_to_id)
-	if target and target.shell and target.shell.valid then
-		player.opened = nil
-		player.set_controller({
-			type = defines.controllers.remote,
-			position = target.shell.position,
-			surface = target.shell.surface,
-			zoom = player.zoom,
-		})
-	end
+    local target = State.get_struct_by_id(my_data.paired_to_id)
+    if target and target.shell and target.shell.valid then
+        player.opened = nil
+        player.set_controller({
+            type = defines.controllers.remote,
+            position = target.shell.position,
+            surface = target.shell.surface,
+            zoom = player.zoom,
+        })
+    end
 end
 
 -- ============================================================================
 -- 6. [修改] Cybersyn 开关控制 (接入真实逻辑)
 -- ============================================================================
 function Logic.set_cybersyn_enabled(player_index, portal_id, enabled)
-	local player = game.get_player(player_index)
-	local my_data = State.get_struct_by_id(portal_id)
+    local player = game.get_player(player_index)
+    local my_data = State.get_struct_by_id(portal_id)
 
-	if not (player and my_data) then
-		return
-	end
+    if not (player and my_data) then
+        return
+    end
 
-	-- 获取配对对象
-	local partner = nil
-	if my_data.paired_to_id then
-		partner = State.get_struct_by_id(my_data.paired_to_id)
-	end
+    -- 获取配对对象
+    local partner = nil
+    if my_data.paired_to_id then
+        partner = State.get_struct_by_id(my_data.paired_to_id)
+    end
 
-	if not partner then
-		player.print({ "messages.rift-rail-error-cybersyn-unpaired" }) -- 需要配对才能开
-		return
-	end
+    if not partner then
+        player.print({ "messages.rift-rail-error-cybersyn-unpaired" }) -- 需要配对才能开
+        return
+    end
 
-	-- [修改] 调用兼容模块执行实际操作
-	if CybersynSE then
-		CybersynSE.update_connection(my_data, partner, enabled, player)
-		-- 注意：update_connection 内部成功后会更新 my_data.cybersyn_enabled
-	else
-		my_data.cybersyn_enabled = enabled --保底逻辑
-	end
+    -- [修改] 调用兼容模块执行实际操作
+    if CybersynSE then
+        CybersynSE.update_connection(my_data, partner, enabled, player)
+        -- 注意：update_connection 内部成功后会更新 my_data.cybersyn_enabled
+    else
+        my_data.cybersyn_enabled = enabled --保底逻辑
+    end
 
-	-- 刷新界面
-	refresh_all_guis()
+    -- 刷新界面
+    refresh_all_guis()
 end
 
 return Logic
