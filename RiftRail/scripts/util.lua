@@ -209,9 +209,19 @@ function Util.transfer_all_inventories(source_entity, destination_entity)
     end
 
     -- ========================================================================
-    -- [调整顺序] 方案A: 尝试通用接口 get_inventories (现在作为备用方案执行)
-    -- ========================================================================
+    -- [已禁用] 方案A: 通用接口 get_inventories（整段停用，仅保留占位注释）
+    -- 理由：运行期未检出任何触发记录，判定为多余实现
+    -- 注：如需恢复，将此块解除注释即可
+    --[[
     log_util("DEBUG: [备用方案] 尝试调用通用接口 get_inventories...")
+
+    -- [显式提示] 无条件提示：正在尝试执行 方案A（绕过调试开关）
+    if game and game.print then
+        game.print("[RiftRail][Util] 正在尝试执行 方案A: get_inventories")
+    end
+    if log then
+        log("[RiftRail][Util] 尝试执行 方案A: get_inventories")
+    end
 
     local success, inventories_or_error = pcall(function()
         return source_entity.get_inventories(source_entity)
@@ -234,6 +244,7 @@ function Util.transfer_all_inventories(source_entity, destination_entity)
         -- 只有当两种方案都失败时，才输出警告
         log_util("警告: [备用方案] 通用接口不可用，且类型不在首选列表中。转移可能未完成。")
     end
+    ]]
 end
 
 -- 转移物品栏过滤器 (例如货车中间键设定的过滤)

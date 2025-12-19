@@ -345,51 +345,21 @@ local function finish_teleport(entry_struct, exit_struct)
     local final_train = exit_struct.carriage_ahead and exit_struct.carriage_ahead.train
 
     if final_train and final_train.valid then
-        -- >>>>> [开始修改] 顺滑出站 v3.0 (极简延迟版) >>>>>
-
-        -- 1. 恢复原始模式
-        -- 这会将火车切回自动模式(如果之前是自动)，引擎接管寻路
-        final_train.manual_mode = exit_struct.saved_manual_mode or false
-
-        -- >>>>> [关键修复] 在所有操作之前，立刻恢复被重置的索引！ >>>>>
+        -- >>>>> [关键修复] 先恢复时刻表索引，后恢复 manual_mode >>>>>
+        -- 注意：go_to_station 会强制设置列车为自动模式，所以必须先调用 go_to_station
+        -- 然后立即恢复 manual_mode，这样恢复的值才不会被覆盖
         if exit_struct.saved_schedule_index then
             final_train.go_to_station(exit_struct.saved_schedule_index)
         end
+
+        -- 1. 恢复原始模式
+        -- go_to_station 已经把列车改成自动，现在恢复到之前的状态
+        final_train.manual_mode = exit_struct.saved_manual_mode or false
         -- <<<<< [修复结束] <<<<<
 
-        -- 2. 准备速度数值 (只取绝对值，动量守恒)
-        local original_speed = math.abs(exit_struct.saved_speed or 0)
-        local target_speed = math.max(original_speed, 0.5)
-
-        -- [核心修复] 将原本入队延迟执行的逻辑，改为立即执行
-
-        -- 1. 计算出站方向 (保留您的逻辑)
-        local geo_exit = GEOMETRY[exit_struct.shell.direction] or GEOMETRY[0]
-        local out_orientation = geo_exit.direction / 16.0
-
-        -- 2. 直接应用速度 (使用您 on_tick 中的 pcall 逻辑)
-        --    这是您原本写在 on_tick 里的，我们现在把它搬到这里立即执行
-        local front = final_train.front_stock
-        if front then
-            local current_ori = front.orientation
-            local diff = math.abs(current_ori - out_orientation)
-            if diff > 0.5 then
-                diff = 1.0 - diff
-            end
-            local sign = 1
-            if diff > 0.25 then
-                sign = -1
-            end
-
-            local success = pcall(function()
-                final_train.speed = target_speed * sign
-            end)
-            if not success then
-                pcall(function()
-                    final_train.speed = target_speed * -sign
-                end)
-            end
-        end
+        -- 2. 恢复速度（确定性）：保留原始符号，不设置最小地板，不试探反向
+        local restored_speed = exit_struct.saved_speed or 0
+        final_train.speed = restored_speed
 
         -- >>>>> [新增] 数据恢复 (注入灵魂) >>>>>
         if exit_struct.old_train_id and exit_struct.cybersyn_snapshot then
@@ -705,12 +675,6 @@ function Teleport.teleport_next(entry_struct, exit_struct)
     new_carriage.backer_name = carriage.backer_name or ""
     if carriage.color then
         new_carriage.color = carriage.color
-    end
-
-    -- 尝试与上一节车厢强制连接 (防止引擎把它们当成两列车处理)
-    if exit_struct.carriage_ahead and exit_struct.carriage_ahead.valid then
-        new_carriage.connect_rolling_stock(defines.rail_direction.front)
-        new_carriage.connect_rolling_stock(defines.rail_direction.back)
     end
 
     -- 如果之前保存了进度，说明这是后续车厢，立刻把被重置的索引改回去
