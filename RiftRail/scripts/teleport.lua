@@ -346,7 +346,13 @@ local function finish_teleport(entry_struct, exit_struct)
         end
     end
 
-    local final_train = exit_struct.carriage_ahead and exit_struct.carriage_ahead.train
+    -- [修复] 安全获取 train 对象，防止 carriage_ahead 已销毁(invalid)时访问 .train 导致崩溃
+    local final_train = nil
+    if exit_struct.carriage_ahead and exit_struct.carriage_ahead.valid then
+        final_train = exit_struct.carriage_ahead.train
+    else
+        log_tp("警告: finish_teleport 时出口车厢无效或丢失，跳过列车恢复逻辑。")
+    end
 
     if final_train and final_train.valid then
         -- >>>>> [关键修复] 先恢复时刻表索引，后恢复 manual_mode >>>>>
@@ -724,9 +730,7 @@ function Teleport.teleport_next(entry_struct, exit_struct)
         -- [LTN] 在以下任一条件下执行本地重指派与临时站插入：
         --   1) 未安装 SE；或
         --   2) 安装了 SE 但未安装 se-ltn-glue（无第三方接管时需要我们兜底）。
-        local need_local_ltn_reassign = remote.interfaces["logistic-train-network"]
-            and exit_struct.old_train_id
-            and (not script.active_mods["space-exploration"] or (script.active_mods["space-exploration"] and not script.active_mods["se-ltn-glue"]))
+        local need_local_ltn_reassign = remote.interfaces["logistic-train-network"] and exit_struct.old_train_id and (not script.active_mods["space-exploration"] or (script.active_mods["space-exploration"] and not script.active_mods["se-ltn-glue"]))
 
         if need_local_ltn_reassign then
             local ok, has_delivery = pcall(remote.call, "logistic-train-network", "reassign_delivery", exit_struct.old_train_id, new_carriage.train)
@@ -835,7 +839,7 @@ function Teleport.on_collider_died(event)
 
     -- 3. 配对检查
     if not struct.paired_to_id then
-        game.print({"messages.rift-rail-error-unpaired-or-collider"})
+        game.print({ "messages.rift-rail-error-unpaired-or-collider" })
         struct.collider_needs_rebuild = true
         return
     end
