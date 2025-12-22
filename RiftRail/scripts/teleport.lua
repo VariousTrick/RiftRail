@@ -497,8 +497,10 @@ function Teleport.teleport_next(entry_struct, exit_struct)
 
             local station_entity = nil
             if entry_struct.children then
-                for _, child in pairs(entry_struct.children) do
-                    if child.valid and child.name == "rift-rail-station" then
+                for _, child_data in pairs(entry_struct.children) do
+                    -- [修复] 从子数据表中取出 entity 对象，因为 children 存的是 {entity=..., ...}
+                    local child = child_data.entity
+                    if child and child.valid and child.name == "rift-rail-station" then
                         station_entity = child
                         break
                     end
