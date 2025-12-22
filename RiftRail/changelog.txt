@@ -1,6 +1,17 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.7.4
+Date: 2025-12-22
+  Features:
+    - [本地化] 所有面向玩家的错误/信息消息现在已完全本地化（支持中英文）。
+    - [描述] 为传送门外壳和核心实体添加了清晰的游戏内描述，包括碰撞器重建说明。
+    - [用户引导] 改进了用户引导：如果传送失败，系统会提示玩家使用“重建碰撞器”设置。
+  Maintenance:
+    - 少量代码清理和国际化改进。
+    - 版本号提升至 0.7.4。
+
+---------------------------------------------------------------------------------------------------
 Version: 0.7.3
-Date: 2025-12-23
+Date: 2025-12-22
   Bugfixes:
     - [图标] 修复了 Rift Rail 科技图标尺寸错误导致的游戏报错：The given sprite rectangle (left_top=0x0, right_bottom=128x128) is outside the actual sprite size (left_top=0x0, right_bottom=64x64). If this is being used as an icon you may need to define the icon_size property. See the log file for more information.: __RiftRail__/graphics/icon/riftrail.png。
   Maintenance:

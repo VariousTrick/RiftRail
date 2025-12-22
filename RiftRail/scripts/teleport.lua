@@ -835,7 +835,7 @@ function Teleport.on_collider_died(event)
 
     -- 3. 配对检查
     if not struct.paired_to_id then
-        game.print("[RiftRail] 错误: 试图进入未配对的传送门！")
+        game.print({"messages.rift-rail-error-unpaired-or-collider"})
         struct.collider_needs_rebuild = true
         return
     end

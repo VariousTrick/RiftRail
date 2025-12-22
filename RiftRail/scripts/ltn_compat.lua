@@ -92,7 +92,7 @@ function LTN.update_connection(portal_struct, opposite_struct, connect, player)
     if not ok then
         ltn_log("[LTNCompat] 调用失败: " .. tostring(err))
         if player then
-            player.print("LTN调用失败:" .. tostring(err))
+            player.print({"messages.rift-rail-error-ltn-call-failed", tostring(err)})
         end
         return
     end
