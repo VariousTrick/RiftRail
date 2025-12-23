@@ -114,17 +114,13 @@ data:extend({
         name = "rift-rail-placer-entity",
         icon = "__RiftRail__/graphics/icon/riftrail.png",
         icon_size = 64,
-        -- >>>>> [修改 1] >>>>>
-        -- 移除 "placeable-off-grid"，只保留基础标志
         flags = { "placeable-neutral", "placeable-player", "player-creation" },
-        -- <<<<< [修改结束] <<<<<
         minable = { mining_time = 0.5, result = "rift-rail-placer" },
         max_health = 1000,
-        -- [修正] 竖向尺寸 4x12
+        -- 竖向尺寸 4x12
         collision_box = create_centered_box(3.8, 11.8),
-
         selection_box = create_centered_box(4, 12),
-        -- [修正] 强制 1x1 网格对齐，解决错位
+        -- 强制 1x1 网格对齐，解决错位
         build_grid_size = 1,
         picture = {
             north = sprite_down,
@@ -145,13 +141,9 @@ data:extend({
         -- 这样玩家放下后就不能按 R 旋转它了 (想换方向必须拆了重放)
         -- 这保护了内部结构 (铁轨/核心) 不会错位
         flags = { "placeable-neutral", "player-creation", "placeable-off-grid", "not-rotatable" },
-        -- <<<<< [修改结束] <<<<
-
-        -- >>>>> [新增开始] >>>>>
-        -- 修复 Q 键吸取 (Pipette) 功能
         -- 原理：强制告诉引擎，当对着这个实体按 Q 时，选取 "rift-rail-placer" 这个物品
         placeable_by = { { item = "rift-rail-placer", count = 1 } },
-        -- <<<<< [新增结束] <<<<<
+
 
         minable = { mining_time = 1, result = "rift-rail-placer" },
         max_health = 100000,
@@ -325,43 +317,31 @@ data:extend({
     { type = "simple-entity", name = "rift-rail-collider" },
     { type = "simple-entity", name = "rift-rail-blocker" }, -- 物理堵头
 
-    -- 爆炸效果
-    {
-        type = "explosion",
-        name = "rift-rail-train-collision-explosion",
-        icon = "__base__/graphics/icons/iron-plate.png",
-        icon_size = 64,
-        hidden = true,
-        flags = { "not-on-map", "placeable-off-grid" },
-        animations = blank_sprite,
-    },
-    -- 用于火车传送的隐形拖船 (Tug)
-    -- 完全复刻自传送门/SE的物理参数，确保拼接稳定
     {
         type = "locomotive",
-        name = "rift-rail-tug",
+        name = "rift-rail-leader-train",
         subgroup = "other",
         flags = { "not-blueprintable", "not-deconstructable" },
         hidden = true, -- 隐藏实体
-    	icon = "__RiftRail__/graphics/icon/riftrail.png",
-    	icon_size = 64,
+        icon = "__RiftRail__/graphics/icon/riftrail.png",
+        icon_size = 64,
 
         -- 物理属性
-        collision_box = { { -0.6, -0.3 }, { 0.6, 0.3 } },
-        selection_box = { { -1, -1 }, { 1, 3 } },
-        max_health = 1000,
+        collision_box = create_centered_box(1.2, 0.6),
+        selection_box = create_centered_box(2, 6),
+        max_health = 50000,
         energy_per_hit_point = 5,
-        weight = 20000,
+        weight = 1000,
 
         -- 动力参数
-        max_power = "10000kW",
-        max_speed = 1,
+        max_power = "500kW",
+        max_speed = 5,
         reversing_power_modifier = 1,
-        braking_force = 10,
+        braking_force = 2,
 
         -- 阻力参数
         air_resistance = 0,
-        friction_force = 0.5,
+        friction_force = 2,
 
         -- 连接参数
         connection_distance = 0.1,
@@ -602,11 +582,6 @@ trigger.max_health = 1
 trigger.picture = blank_sprite
 trigger.collision_box = create_centered_box(2, 2)
 trigger.collision_mask = { layers = { ["train"] = true } }
-trigger.dying_trigger_effect = {
-    type = "create-entity",
-    entity_name = "rift-rail-train-collision-explosion",
-    trigger_created_entity = true,
-}
 
 -- F. 配置物理堵头 (Blocker)
 -- 需求：放在死胡同端，阻止铁路连接

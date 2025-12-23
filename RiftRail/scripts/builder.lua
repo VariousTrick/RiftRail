@@ -322,9 +322,9 @@ function Builder.on_destroy(event)
                 if Logic.set_mode then
                     Logic.set_mode(nil, partner.id, "neutral", true)
                 end -- 调用Logic来正确处理碰撞器
-                if partner.tug and partner.tug.valid then
-                    partner.tug.destroy()
-                    partner.tug = nil
+                if partner.leadertrain and partner.leadertrain.valid then
+                    partner.leadertrain.destroy()
+                    partner.leadertrain = nil
                 end
             end
         end

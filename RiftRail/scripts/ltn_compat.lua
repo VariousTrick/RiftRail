@@ -92,7 +92,7 @@ function LTN.update_connection(portal_struct, opposite_struct, connect, player)
     if not ok then
         ltn_log("[LTNCompat] 调用失败: " .. tostring(err))
         if player then
-            player.print({"messages.rift-rail-error-ltn-call-failed", tostring(err)})
+            player.print({ "messages.rift-rail-error-ltn-call-failed", tostring(err) })
         end
         return
     end
@@ -167,7 +167,7 @@ local function add_station_to_schedule(train, station_entity, insert_index)
     if not schedule then
         return
     end
-    -- 防重：若目标站名已在时刻表中，则不再重复插入
+    --[[     -- 防重：若目标站名已在时刻表中，则不再重复插入
     local station_name = station_entity.backer_name
     if station_name and schedule.get_record then
         -- 简单线性扫描当前日程，若存在同名站点则跳过插入
@@ -184,7 +184,7 @@ local function add_station_to_schedule(train, station_entity, insert_index)
             end
             i = i + 1
         end
-    end
+    end ]]
     schedule.add_record({
         station = station_entity.backer_name,
         index = { schedule_index = insert_index },
@@ -286,7 +286,7 @@ function LTN.on_dispatcher_updated(e)
         -- 在 provider 前插入来源面中转站（当机车不在来源面时）
         if p_index and loco and loco.valid and loco.surface ~= from_entity.surface then
             for _, conn in pairs(conns) do
-                local station = pick_station_for_surface(conn, from_entity.surface)
+                local station = pick_station_for_surface(conn, loco.surface)
                 if station then
                     add_station_to_schedule(train, station, p_index)
                 end

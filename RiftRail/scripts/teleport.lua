@@ -1,7 +1,7 @@
 -- scripts/teleport.lua
 -- 【Rift Rail - 传送核心模块】
 -- 功能：处理火车传送的完整运行时逻辑 (基于传送门 Mod v1.1 适配)
--- 包含：堵车检测、内容转移、拖船机制、Cybersyn/SE 兼容
+-- 包含：堵车检测、内容转移、引导车机制、Cybersyn/SE 兼容
 
 local Teleport = {}
 
@@ -37,33 +37,39 @@ local SE_TELEPORT_STARTED_EVENT_ID = nil
 local SE_TELEPORT_FINISHED_EVENT_ID = nil
 
 -- 【Rift Rail 专用几何参数】
--- 定义不同建筑朝向下的：出口生成点、车厢朝向、拖船位置
--- 【Rift Rail 专用几何参数】
 -- 修正版：将偏移量调整为偶数 (0)，对准铁轨中心，防止生成失败
 -- 基于 "车厢生成在建筑中心 (y=0)" 的设定
 local GEOMETRY = {
-    [0] = { -- North
+    [0] = { -- North (出口在下方 Y+)
         spawn_offset = { x = 0, y = 0 },
         direction = defines.direction.south,
-        tug_offset = { x = 0, y = -4.0 }, -- [修改] 拉近距离，从 -4.5 改为 -4.0
+        -- [修改] 坐标反转：从 -4.0 (后方) 改为 4.0 (前方，即出口方向)
+        -- 这样 Leader Train 会生成在车厢和下方红绿灯(y=5)之间
+        leadertrain_offset = { x = 0, y = 4.0 },
         velocity_mult = { x = 0, y = 1 },
     },
-    [4] = { -- East
+    [4] = { -- East (出口在左方 X-)
         spawn_offset = { x = 0, y = 0 },
         direction = defines.direction.west,
-        tug_offset = { x = 4.0, y = 0 }, -- [修改] 4.5 -> 4.0
+        -- [修改] 坐标反转：从 4.0 (后方) 改为 -4.0 (前方，即出口方向)
+        -- 这样 Leader Train 会生成在车厢和左侧红绿灯(x=-5)之间
+        leadertrain_offset = { x = -4.0, y = 0 },
         velocity_mult = { x = -1, y = 0 },
     },
-    [8] = { -- South
+    [8] = { -- South (出口在上方 Y-)
         spawn_offset = { x = 0, y = 0 },
         direction = defines.direction.north,
-        tug_offset = { x = 0, y = 4.0 }, -- [修改] 4.5 -> 4.0
+        -- [修改] 坐标反转：从 4.0 (后方) 改为 -4.0 (前方，即出口方向)
+        -- 这样 Leader Train 会生成在车厢和上方红绿灯(y=-5)之间
+        leadertrain_offset = { x = 0, y = -4.0 },
         velocity_mult = { x = 0, y = -1 },
     },
-    [12] = { -- West
+    [12] = { -- West (出口在右方 X+)
         spawn_offset = { x = 0, y = 0 },
         direction = defines.direction.east,
-        tug_offset = { x = -4.0, y = 0 }, -- [修改] -4.5 -> -4.0
+        -- [修改] 坐标反转：从 -4.0 (后方) 改为 4.0 (前方，即出口方向)
+        -- 这样 Leader Train 会生成在车厢和右侧红绿灯(x=5)之间
+        leadertrain_offset = { x = 4.0, y = 0 },
         velocity_mult = { x = 1, y = 0 },
     },
 }
@@ -321,28 +327,28 @@ end
 local function finish_teleport(entry_struct, exit_struct)
     log_tp("传送结束: 清理状态 (入口ID: " .. entry_struct.id .. ", 出口ID: " .. exit_struct.id .. ")")
 
-    -- 1. 销毁最后的拖船 (带时刻表保护)
-    local exit_train_speed_before_tug_death = nil
-    if exit_struct.tug and exit_struct.tug.valid then
-        -- [A] 存: 销毁拖船会导致时刻表重置，先保存当前索引和速度
-        local saved_index_before_tug_death = nil
+    -- 1. 销毁最后的引导车 (带时刻表保护)
+    local exit_train_speed_before_leadertrain_death = nil
+    if exit_struct.leadertrain and exit_struct.leadertrain.valid then
+        -- [A] 存: 销毁引导车会导致时刻表重置，先保存当前索引和速度
+        local saved_index_before_leadertrain_death = nil
         -- 尝试通过 carriage_ahead 获取火车
         local train_ref = exit_struct.carriage_ahead and exit_struct.carriage_ahead.valid and exit_struct.carriage_ahead.train
         if train_ref and train_ref.valid then
             if train_ref.schedule then
-                saved_index_before_tug_death = train_ref.schedule.current
+                saved_index_before_leadertrain_death = train_ref.schedule.current
             end
             -- [关键] 保存出口列车当前的实际速度（传送过程中已加速到的高速）
-            exit_train_speed_before_tug_death = train_ref.speed
+            exit_train_speed_before_leadertrain_death = train_ref.speed
         end
 
         -- [B] 炸
-        exit_struct.tug.destroy()
-        exit_struct.tug = nil
+        exit_struct.leadertrain.destroy()
+        exit_struct.leadertrain = nil
 
         -- [C] 恢复
-        if saved_index_before_tug_death and train_ref and train_ref.valid then
-            train_ref.go_to_station(saved_index_before_tug_death)
+        if saved_index_before_leadertrain_death and train_ref and train_ref.valid then
+            train_ref.go_to_station(saved_index_before_leadertrain_death)
         end
     end
 
@@ -367,9 +373,9 @@ local function finish_teleport(entry_struct, exit_struct)
         final_train.manual_mode = exit_struct.saved_manual_mode or false
         -- <<<<< [修复结束] <<<<<
 
-        -- 2. 恢复速度：优先使用最后保存的出口实际速度，其次拖船销毁前速度，最后才用入口速度
+        -- 2. 恢复速度：优先使用最后保存的出口实际速度，其次引导车销毁前速度，最后才用入口速度
         -- 这样可以保持传送过程中获得的动量，避免结束时骤降
-        local restored_speed = exit_struct.final_train_speed or exit_train_speed_before_tug_death or exit_struct.saved_speed or 0
+        local restored_speed = exit_struct.final_train_speed or exit_train_speed_before_leadertrain_death or exit_struct.saved_speed or 0
         final_train.speed = restored_speed
 
         -- >>>>> [新增] 数据恢复 (注入灵魂) >>>>>
@@ -421,6 +427,10 @@ end
 -- 传送下一节车厢 (由 on_tick 驱动)
 function Teleport.teleport_next(entry_struct, exit_struct)
     -- [已删除] local exit_struct = State.get_struct_by_id(entry_struct.paired_to_id)
+
+    -- >>>>> [新增] 在这里记录是否为第一节车 >>>>>
+    local is_first_carriage = (entry_struct.carriage_ahead == nil)
+    -- <<<<< [新增结束] <<<<<
 
     -- >>>>> [新增] 在这里记录是否为第一节车 >>>>>
     -- 必须在 entry_struct.carriage_ahead 被后续逻辑更新之前记录下来
@@ -536,7 +546,7 @@ function Teleport.teleport_next(entry_struct, exit_struct)
 
     -- 动态拼接检测
     -- 询问引擎：当前位置是否已经空出来，可以放置新车厢了？
-    -- 如果前车还没被拖船拉远，这里会返回 false
+    -- 如果前车还没被引导车拉远，这里会返回 false
     local can_place = exit_struct.surface.can_place_entity({
         name = carriage.name,
         position = spawn_pos,
@@ -604,23 +614,6 @@ function Teleport.teleport_next(entry_struct, exit_struct)
         end
     end
 
-    -- >>>>> [新增 SE 策略] 1. 在变动发生前，保存当前进度 >>>>>
-    -- 必须在销毁拖船之前保存！因为销毁拖船会导致 carriage_ahead 的时刻表被重置为 1
-    local saved_ahead_index = nil
-    if exit_struct.carriage_ahead and exit_struct.carriage_ahead.valid and exit_struct.carriage_ahead.train then
-        -- 如果出口已经有火车（说明这不是第一节车），保存它的进度
-        if exit_struct.carriage_ahead.train.schedule then
-            saved_ahead_index = exit_struct.carriage_ahead.train.schedule.current
-        end
-    end
-    -- <<<<< [新增结束] <<<<<
-
-    -- 销毁旧拖船
-    if exit_struct.tug and exit_struct.tug.valid then
-        exit_struct.tug.destroy()
-        exit_struct.tug = nil
-    end
-
     -- >>>>> [开始修改] 计算车厢生成朝向 (纯 Orientation 版) >>>>>
     -- 1. 获取入口建筑的"深入向量"朝向 (转为 0.0-1.0)
     -- entry_struct.shell.direction 是 0, 4, 8, 12 (16向系统)
@@ -651,15 +644,15 @@ function Teleport.teleport_next(entry_struct, exit_struct)
     end
     -- <<<<< [修改结束] <<<<<
 
-    -- >>>>> [修改] 2. 方案B: 动态偏移生成位置 (基于目标朝向) >>>>>
+    --[[     -- >>>>> [修改] 2. 方案B: 动态偏移生成位置 (基于目标朝向) >>>>>
     -- 判定条件：默认方向建筑(0) + 第一节车 + 机车 + 车头朝向北(0/1)
     local is_facing_dead_end = (target_ori > 0.875 or target_ori < 0.125)
 
     if exit_struct.shell.direction == 0 and not entry_struct.carriage_ahead and carriage.type == "locomotive" and is_facing_dead_end then
         spawn_pos.y = spawn_pos.y + 2 -- 往出口方向(南)挪2格
-        log_tp("几何修正: 检测到车头面朝死胡同，已向外偏移生成坐标以容纳拖车。")
+        log_tp("几何修正: 检测到车头面朝死胡同，已向外偏移生成坐标以容纳引导车。")
     end
-    -- <<<<< [修改结束] <<<<<
+    -- <<<<< [修改结束] <<<<< ]]
 
     -- [注意] 这里删除了原有的 "-- 4. 决定生成朝向" 那一大段重复代码
     -- 直接使用上面算好的 target_ori 进行生成
@@ -672,6 +665,7 @@ function Teleport.teleport_next(entry_struct, exit_struct)
         -- 这样引擎会直接接受准确的角度，不再需要猜测是8向还是16向
         orientation = target_ori,
         force = carriage.force,
+        quality = carriage.quality, -- 【新增】 必须继承原车厢的品质！
     })
 
     if not new_carriage then
@@ -720,7 +714,7 @@ function Teleport.teleport_next(entry_struct, exit_struct)
         -- 2. 转移时刻表
         Schedule.transfer_schedule(carriage.train, new_carriage.train, real_station_name)
 
-        -- >>>>> [关键修复] 在被拖船重置前，立刻备份正确的索引！ >>>>>
+        -- >>>>> [关键修复] 在被引导车重置前，立刻备份正确的索引！ >>>>>
         if new_carriage.train and new_carriage.train.schedule then
             exit_struct.saved_schedule_index = new_carriage.train.schedule.current
         end
@@ -757,41 +751,68 @@ function Teleport.teleport_next(entry_struct, exit_struct)
     exit_struct.carriage_ahead = new_carriage -- 记录出口的最前头 (用于拉动)
 
     -- 准备下一节
-    if next_carriage and next_carriage.valid then
-        entry_struct.carriage_behind = next_carriage
+    -- =========================================================================
+    -- [修改] 引导车 (Leader) 生成逻辑：只在第一节车时生成，且不再销毁
+    -- =========================================================================
 
-        -- [修改] 只创建拖船，不连接，不恢复索引
+    -- 1. 如果是第一节车，生成引导车 (Leader)
+    if is_first_carriage then
+        -- 计算位于前方的引导车坐标 (leadertrain_offset 已改为前方)
+        local leadertrain_pos = Util.vectors_add(exit_struct.shell.position, geo.leadertrain_offset)
 
-        -- 生成新拖船 (Tug)
-        local tug_pos = Util.vectors_add(exit_struct.shell.position, geo.tug_offset)
-        local tug = exit_struct.surface.create_entity({
-            name = "rift-rail-tug",
-            position = tug_pos,
+        log_tp("正在创建引导车 (Leader)... 坐标偏移: x=" .. geo.leadertrain_offset.x .. ", y=" .. geo.leadertrain_offset.y)
+
+        local leadertrain = exit_struct.surface.create_entity({
+            name = "rift-rail-leader-train",
+            position = leadertrain_pos,
             direction = geo.direction,
             force = new_carriage.force,
         })
-        if tug then
-            tug.destructible = false
-            exit_struct.tug = tug
-            log_tp("拖船已创建，等待物理吸附或速度管理器接管。")
+
+        if leadertrain then
+            leadertrain.destructible = false
+            exit_struct.leadertrain = leadertrain
+            log_tp("引导车创建成功 ID: " .. leadertrain.unit_number)
+
+        --[[             -- [时刻表恢复] 刚生成时立即恢复一次状态，确保处于手动模式可以被拉动
+            if new_carriage.train and new_carriage.train.valid then
+                if exit_struct.saved_schedule_index then
+                    new_carriage.train.go_to_station(exit_struct.saved_schedule_index)
+                end
+                new_carriage.train.manual_mode = exit_struct.saved_manual_mode or false
+            end ]]
+        else
+            log_tp("错误：引导车创建失败！")
+        end
+    end
+
+    -- =========================================================================
+    -- [关键修复] 状态一致性维护
+    -- 无论是否为第一节车，只要发生了拼接，引擎都会重置列车状态为手动。
+    -- 所以必须对每一节新车都执行"先恢复进度，再恢复模式"的操作。
+    -- =========================================================================
+    if new_carriage.train and new_carriage.train.valid then
+        -- 1. 恢复时刻表进度 (副作用：列车会被强制切换为自动模式)
+        -- 注意：saved_schedule_index 是在第一节车处理时保存的，后续车厢直接复用
+        if exit_struct.saved_schedule_index then
+            new_carriage.train.go_to_station(exit_struct.saved_schedule_index)
         end
 
-        -- >>>>> [新增逻辑] 立即恢复出口火车的状态 (模仿 SE) >>>>>
-        if new_carriage.train and new_carriage.train.valid then
-            -- 1. 恢复时刻表指针
-            -- [修正] 这里的变量名是 exit_struct，而不是 struct
-            if exit_struct.saved_schedule_index then
-                new_carriage.train.go_to_station(exit_struct.saved_schedule_index)
-            end
+        -- 2. 恢复原始模式
+        -- 如果原来是手动(true)，这里会把它切回手动 -> 引导车强拉
+        -- 如果原来是自动(false)，这里保持自动 -> 遵守红绿灯
+        new_carriage.train.manual_mode = exit_struct.saved_manual_mode or false
 
-            -- 2. 恢复自动模式 (如果之前是自动)
-            -- 直接恢复，相信几何修正已经保证了拖车的存在
-            new_carriage.train.manual_mode = exit_struct.saved_manual_mode or false
-        end
-        -- <<<<< [新增结束] <<<<<
+        -- [可选日志] 调试列车状态
+        -- log_tp("状态恢复: ID=" .. new_carriage.train.id .. " Mode=" .. (new_carriage.train.manual_mode and "Manual" or "Auto"))
+    end
+
+    -- 2. 准备下一节 (简化版：只更新指针，不再生成引导车)
+    if next_carriage and next_carriage.valid then
+        entry_struct.carriage_behind = next_carriage
     else
         log_tp("最后一节车厢传送完毕。")
-        -- 最后一节车传完时不再更新速度（此时为0），直接使用之前保存的高速
+        -- 传送结束，调用 finish_teleport 进行收尾 (销毁引导车，恢复最终速度)
         finish_teleport(entry_struct, exit_struct)
     end
 end
@@ -804,6 +825,13 @@ function Teleport.on_collider_died(event)
     local entity = event.entity
     if not (entity and entity.valid) then
         return
+    end
+
+    local cause = event.cause -- 撞击者
+    if cause and cause.name == "rift-rail-leader-train" then
+        cause.destroy()
+        game.print({ "messages.rift-rail-error-destroyed-leader" })
+        return -- 销毁后直接结束，不执行任何传送逻辑
     end
 
     -- 1. 反查建筑数据
@@ -911,12 +939,12 @@ function Teleport.manage_speed(struct)
             -- 2. 维持出口动力
             local target_speed = 0.5
 
-            -- [保留] 基于拖船链接符号的动力逻辑 (SE算法)
+            -- [保留] 基于引导车链接符号的动力逻辑 (SE算法)
             local required_sign = 1
-            local tug = exit_struct.tug
+            local leadertrain = exit_struct.leadertrain
 
-            if tug and tug.valid then
-                local link_sign = get_train_forward_sign(tug)
+            if leadertrain and leadertrain.valid then
+                local link_sign = get_train_forward_sign(leadertrain)
                 required_sign = link_sign
             else
                 local geo_exit = GEOMETRY[exit_struct.shell.direction] or GEOMETRY[0]

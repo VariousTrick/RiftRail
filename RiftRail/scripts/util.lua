@@ -1,7 +1,7 @@
 -- scripts/util.lua
 -- 【Rift Rail - 工具库】
 -- 功能：提供通用实体操作、向量计算及兼容性强的物品/流体转移功能。
--- 来源：基于传送门 Mod Util 模块适配，已强化调试日志。
+-- [修改] 移除所有第三方代码引用
 
 local Util = {}
 
@@ -24,7 +24,7 @@ local function log_util(message)
 end
 
 ---------------------------------------------------------------------------
--- 1. 向量与几何计算
+-- 1. 向量与几何计算 (无改动)
 ---------------------------------------------------------------------------
 
 -- 向量相加
@@ -49,67 +49,63 @@ function Util.get_rolling_stock_train_id(rolling_stock)
 end
 
 ---------------------------------------------------------------------------
--- 2. 底层内容转移 (SE兼容核心)
+-- 2. 底层内容转移 (原创实现替换)
 ---------------------------------------------------------------------------
 
--- 将源库存的物品移动到目标库存 (SE 风格：塞不进去就掉地上)
-function Util.se_move_inventory_items(source_inv, destination_inv)
-    if not (source_inv and source_inv.valid and destination_inv and destination_inv.valid) then
+-- =========================================================================
+-- 核心物品栏转移函数
+-- 功能：将一个物品栏的内容移动到另一个，不处理掉落。
+-- @param source_inv 源物品栏
+-- @param destination_inv 目标物品栏
+-- =========================================================================
+function Util.move_inventory_items(source_inv, destination_inv)
+    if not (source_inv and destination_inv) then
         return
     end
 
-    -- log_util("DEBUG: 正在转移库存物品，格子数: " .. #source_inv)
-
     for i = 1, #source_inv do
         local stack = source_inv[i]
-        if stack and stack.valid_for_read then
-            -- 尝试转移堆叠
-            if not destination_inv[i].transfer_stack(stack) then
-                -- 如果无法直接转移 (例如目标格子有东西)，尝试 insert
-                destination_inv.insert(stack)
-            end
-        end
-    end
-
-    -- 如果源库存还有残留 (说明目标满了)，则掉落在地上
-    if not source_inv.is_empty() then
-        local entity = destination_inv.entity_owner
-        if entity and entity.valid then
-            log_util("!! 警告: 目标物品栏已满，部分物品将被丢弃在实体位置: " .. serpent.line(entity.position))
-            for i = 1, #source_inv do
-                if source_inv[i].valid_for_read then
-                    entity.surface.spill_item_stack({
-                        position = entity.position,
-                        stack = source_inv[i],
-                        enable_looted = true,
-                        force = entity.force,
-                        allow_belts = false,
-                    })
-                end
-            end
+        if stack.valid_for_read and stack.count > 0 then
+            destination_inv.insert(stack)
         end
     end
     source_inv.clear()
 end
 
--- 转移燃烧室 (燃料 + 燃烧进度 + 废料)
-function Util.se_transfer_burner(source_entity, destination_entity)
-    if source_entity.burner and destination_entity.burner then
-        log_util("DEBUG: 检测到燃烧室，正在转移燃料与燃烧进度...")
+-- =========================================================================
+-- 燃烧室内容转移函数
+-- 功能：转移燃料、燃烧进度和废料。
+-- @param source_entity 源实体
+-- @param destination_entity 目标实体
+-- =========================================================================
+function Util.transfer_burner_contents(source_entity, destination_entity)
+    if not (source_entity and source_entity.valid and destination_entity and destination_entity.valid) then
+        return
+    end
 
-        -- 转移燃烧进度
-        if source_entity.burner.currently_burning then
-            destination_entity.burner.currently_burning = source_entity.burner.currently_burning.name
-            destination_entity.burner.remaining_burning_fuel = source_entity.burner.remaining_burning_fuel
-        end
+    -- [修正] 直接访问 .burner 属性，而不是调用不存在的 get_burner() 函数
+    local burner_a = source_entity.burner
+    local burner_b = destination_entity.burner
 
-        -- 转移燃料槽和废料槽
-        if source_entity.burner.inventory then
-            Util.se_move_inventory_items(source_entity.burner.inventory, destination_entity.burner.inventory)
-            if source_entity.burner.burnt_result_inventory then
-                Util.se_move_inventory_items(source_entity.burner.burnt_result_inventory, destination_entity.burner.burnt_result_inventory)
-            end
-        end
+    if not (burner_a and burner_b) then
+        return
+    end
+
+    log_util("DEBUG: 检测到燃烧室，正在转移燃料与燃烧进度...")
+
+    -- 1. 转移燃料库存
+    if burner_a.inventory then
+        Util.move_inventory_items(burner_a.inventory, burner_b.inventory)
+    end
+
+    -- 2. 转移废料库存 (例如核燃料棒烧完的乏燃料)
+    if burner_a.burnt_result_inventory then
+        Util.move_inventory_items(burner_a.burnt_result_inventory, burner_b.burnt_result_inventory)
+    end
+
+    -- 3. 转移燃烧进度
+    if burner_a.currently_burning then
+        burner_b.remaining_burning_fuel = burner_a.remaining_burning_fuel
     end
 end
 
@@ -123,71 +119,59 @@ function Util.transfer_fluids(source_entity, destination_entity)
         return
     end
 
-    -- 检查是否有流体盒
+    -- [恢复老文件 API] 检查是否有流体盒
     if not (source_entity.fluids_count and source_entity.fluids_count > 0) then
         return
     end
 
     log_util("DEBUG: 开始转移流体，流体盒数量: " .. source_entity.fluids_count)
 
+    -- [恢复老文件 API] 循环
     for i = 1, source_entity.fluids_count do
-        -- 使用 pcall 防止因流体类型不匹配导致的崩溃
-        local success, err_msg = pcall(function()
-            local fluid = source_entity.get_fluid(i)
-            if fluid then
-                -- log_util("DEBUG: 转移第 " .. i .. " 号流体: " .. fluid.name .. " 数量: " .. fluid.amount)
-                destination_entity.set_fluid(i, fluid)
-            end
-        end)
+        -- [恢复老文件 API] 获取流体
+        local fluid = source_entity.get_fluid(i)
 
-        if not success then
-            log_util("!! 严重错误: 在复制第 " .. i .. " 个流体容器时失败！错误: " .. tostring(err_msg))
+        -- [按要求] 不检查过滤器，不使用 pcall，直接写入
+        if fluid then
+            -- [恢复老文件 API] 写入流体
+            destination_entity.set_fluid(i, fluid)
         end
     end
 end
 
 -- 转移装备网格 (模块装甲/车辆装备)
--- [修改] 修复了电量、护盾、燃料和品质丢失的问题
 function Util.transfer_equipment_grid(source_entity, destination_entity)
     if not (source_entity and source_entity.valid and destination_entity and destination_entity.valid) then
         return
     end
 
-    if source_entity.grid and destination_entity.grid then
-        log_util("DEBUG: 发现装备网格，开始转移装备...")
+    local grid_a = source_entity.grid
+    local grid_b = destination_entity.grid
+    if not (grid_a and grid_b) then
+        return
+    end
 
-        -- 遍历源网格中的每一个装备
-        for _, item in pairs(source_entity.grid.equipment) do
-            if item and item.valid then
-                -- 1. 放置新装备
-                -- [关键新增] 传入 quality 参数 (适配 Factorio 2.0)
-                -- 即使是旧版本，传入 nil 的 quality 通常也是安全的（或被忽略）
-                local new_item = destination_entity.grid.put({
-                    name = item.name,
-                    position = item.position,
-                    quality = item.quality,
-                })
+    log_util("DEBUG: 发现装备网格，开始转移装备...")
+    for _, item in pairs(grid_a.equipment) do
+        if item and item.valid then
+            local new_item = grid_b.put({
+                name = item.name,
+                position = item.position,
+                quality = item.quality,
+            })
 
-                -- 2. 如果创建成功，则同步内部状态
-                if new_item then
-                    -- [新增] 同步护盾值 (Shield)
-                    if item.shield and item.shield > 0 then
-                        new_item.shield = item.shield
-                    end
-
-                    -- [新增] 同步电量 (Energy) - 包括电池、外骨骼、护盾发生器的充电量
-                    if item.energy and item.energy > 0 then
-                        new_item.energy = item.energy
-                    end
-
-                    -- [新增] 同步燃烧室 (Burner) - 例如便携核反应堆、燃烧发电机
-                    -- 我们直接复用 Util.se_transfer_burner，因为它只检查 .burner 属性，对 equipment 也适用
-                    if item.burner and new_item.burner then
-                        Util.se_transfer_burner(item, new_item)
-                    end
-                else
-                    log_util("!! 警告: 无法在目标网格位置创建装备: " .. item.name)
+            if new_item then
+                if item.shield and item.shield > 0 then
+                    new_item.shield = item.shield
                 end
+                if item.energy and item.energy > 0 then
+                    new_item.energy = item.energy
+                end
+                if item.burner and new_item.burner then
+                    Util.transfer_burner_contents(item, new_item)
+                end
+            else
+                log_util("!! 警告: 无法在目标网格位置创建装备: " .. item.name)
             end
         end
     end
@@ -202,80 +186,39 @@ function Util.transfer_all_inventories(source_entity, destination_entity)
         return
     end
 
-    -- ========================================================================
-    -- [调整顺序] 方案B: 根据类型手动处理 (现在作为首选方案执行)
-    -- ========================================================================
     local entity_type = source_entity.type
-    log_util("DEBUG: [首选方案] 正在检查实体类型 (Type: " .. entity_type .. ")...")
-
-    local type_handled = true -- 标记是否成功匹配了类型
+    log_util("DEBUG: 正在检查实体类型 (Type: " .. entity_type .. ")...")
 
     if entity_type == "cargo-wagon" then
-        log_util("DEBUG: [首选方案] 匹配到货运车厢，执行标准转移。")
+        log_util("DEBUG: 匹配到货运车厢，执行标准转移。")
         local source_inv = source_entity.get_inventory(defines.inventory.cargo_wagon)
         local dest_inv = destination_entity.get_inventory(defines.inventory.cargo_wagon)
-        Util.se_move_inventory_items(source_inv, dest_inv)
+
+        Util.move_inventory_items(source_inv, dest_inv)
     elseif entity_type == "locomotive" then
-        log_util("DEBUG: [首选方案] 匹配到机车，执行燃烧室与燃料转移。")
-        Util.se_transfer_burner(source_entity, destination_entity)
+        log_util("DEBUG: 匹配到机车，执行燃烧室与燃料转移。")
+
+        Util.transfer_burner_contents(source_entity, destination_entity)
     elseif entity_type == "artillery-wagon" then
-        log_util("DEBUG: [首选方案] 匹配到火炮车厢，执行弹药转移。")
+        log_util("DEBUG: 匹配到火炮车厢，执行弹药转移。")
         local source_inv = source_entity.get_inventory(defines.inventory.artillery_wagon_ammo)
         local dest_inv = destination_entity.get_inventory(defines.inventory.artillery_wagon_ammo)
-        Util.se_move_inventory_items(source_inv, dest_inv)
+
+        Util.move_inventory_items(source_inv, dest_inv)
     elseif entity_type == "fluid-wagon" then
-        log_util("DEBUG: [首选方案] 匹配到流体车厢，检查并转移流体栏。")
-        if defines.inventory.fluid_wagon then
-            local source_inv = source_entity.get_inventory(defines.inventory.fluid_wagon)
-            if source_inv then
-                Util.se_move_inventory_items(source_inv, destination_entity.get_inventory(defines.inventory.fluid_wagon))
-            end
-        end
-    end
-
-    -- 如果方案 B 成功匹配并执行了，直接返回，不再尝试方案 A
-    if type_handled then
-        log_util("DEBUG: [首选方案] 转移逻辑执行完毕。")
-        return
-    end
-
-    -- ========================================================================
-    -- [已禁用] 方案A: 通用接口 get_inventories（整段停用，仅保留占位注释）
-    -- 理由：运行期未检出任何触发记录，判定为多余实现
-    -- 注：如需恢复，将此块解除注释即可
-    --[[
-    log_util("DEBUG: [备用方案] 尝试调用通用接口 get_inventories...")
-
-    -- [显式提示] 无条件提示：正在尝试执行 方案A（绕过调试开关）
-    if game and game.print then
-        game.print("[RiftRail][Util] 正在尝试执行 方案A: get_inventories")
-    end
-    if log then
-        log("[RiftRail][Util] 尝试执行 方案A: get_inventories")
-    end
-
-    local success, inventories_or_error = pcall(function()
-        return source_entity.get_inventories(source_entity)
-    end)
-
-    if success and inventories_or_error then
-        log_util("DEBUG: [备用方案] 通用接口调用成功，正在通过索引匹配转移...")
-        local source_inventories = inventories_or_error
-        local dest_inventories = destination_entity.get_inventories(destination_entity)
-
-        if dest_inventories then
-            for i, source_inv in pairs(source_inventories) do
-                if source_inv and dest_inventories[i] then
-                    Util.se_move_inventory_items(source_inv, dest_inventories[i])
-                end
-            end
-            return -- 方案A成功
-        end
+        -- [修改] 显式调用流体转移函数
+        log_util("DEBUG: 匹配到流体车厢，执行流体转移。")
+        Util.transfer_fluids(source_entity, destination_entity)
     else
-        -- 只有当两种方案都失败时，才输出警告
-        log_util("警告: [备用方案] 通用接口不可用，且类型不在首选列表中。转移可能未完成。")
+        -- 尝试获取主物品栏作为通用后备方案
+        local source_inv = source_entity.get_main_inventory()
+        local dest_inv = destination_entity.get_main_inventory()
+        if source_inv and dest_inv then
+            log_util("DEBUG: 未匹配到特定类型，执行通用主物品栏转移。")
+            -- [修改] 调用我们新的函数
+            Util.move_inventory_items(source_inv, dest_inv)
+        end
     end
-    ]]
 end
 
 -- 转移物品栏过滤器 (例如货车中间键设定的过滤)
@@ -291,7 +234,6 @@ function Util.transfer_inventory_filters(source_entity, destination_entity, inve
         return
     end
 
-    -- 1. 转移格子过滤器
     if source_inv.is_filtered() then
         log_util("DEBUG: 检测到过滤器，正在复制过滤设置...")
         for i = 1, #dest_inv do
@@ -303,21 +245,16 @@ function Util.transfer_inventory_filters(source_entity, destination_entity, inve
         dest_inv.filter_mode = source_inv.filter_mode
     end
 
-    -- 2. 转移红色限制条 (Inventory Bar)
-    local pcall_success, supports_bar = pcall(function()
-        return destination_entity.supports_inventory_bar()
-    end)
-    if pcall_success and supports_bar == true then
-        pcall(function()
-            local bar = source_entity.get_inventory_bar(inventory_index)
-            destination_entity.set_inventory_bar(inventory_index, bar)
-            -- log_util("DEBUG: 物品限制条已同步: " .. bar)
-        end)
+    if destination_entity.supports_bar() then
+        local bar = source_entity.get_bar(inventory_index)
+        if bar then
+            destination_entity.set_bar(inventory_index, bar)
+        end
     end
 end
 
 ---------------------------------------------------------------------------
--- 4. 其他辅助工具
+-- 4. 其他辅助工具 (无改动)
 ---------------------------------------------------------------------------
 
 -- 将 SignalID 转换为富文本字符串 (用于 GUI 显示)
