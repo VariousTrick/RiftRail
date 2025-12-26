@@ -43,7 +43,7 @@ local GEOMETRY = {
     [0] = { -- North (出口在下方 Y+)
         spawn_offset = { x = 0, y = 0 },
         direction = defines.direction.south,
-        -- [修改] 坐标反转：从 -4.0 (后方) 改为 4.0 (前方，即出口方向)
+        -- 坐标反转：从 -4.0 (后方) 改为 4.0 (前方，即出口方向)
         -- 这样 Leader Train 会生成在车厢和下方红绿灯(y=5)之间
         leadertrain_offset = { x = 0, y = 4.0 },
         velocity_mult = { x = 0, y = 1 },
@@ -51,7 +51,7 @@ local GEOMETRY = {
     [4] = { -- East (出口在左方 X-)
         spawn_offset = { x = 0, y = 0 },
         direction = defines.direction.west,
-        -- [修改] 坐标反转：从 4.0 (后方) 改为 -4.0 (前方，即出口方向)
+        -- 坐标反转：从 4.0 (后方) 改为 -4.0 (前方，即出口方向)
         -- 这样 Leader Train 会生成在车厢和左侧红绿灯(x=-5)之间
         leadertrain_offset = { x = -4.0, y = 0 },
         velocity_mult = { x = -1, y = 0 },
@@ -59,7 +59,7 @@ local GEOMETRY = {
     [8] = { -- South (出口在上方 Y-)
         spawn_offset = { x = 0, y = 0 },
         direction = defines.direction.north,
-        -- [修改] 坐标反转：从 4.0 (后方) 改为 -4.0 (前方，即出口方向)
+        -- 坐标反转：从 4.0 (后方) 改为 -4.0 (前方，即出口方向)
         -- 这样 Leader Train 会生成在车厢和上方红绿灯(y=-5)之间
         leadertrain_offset = { x = 0, y = -4.0 },
         velocity_mult = { x = 0, y = -1 },
@@ -67,7 +67,7 @@ local GEOMETRY = {
     [12] = { -- West (出口在右方 X+)
         spawn_offset = { x = 0, y = 0 },
         direction = defines.direction.east,
-        -- [修改] 坐标反转：从 -4.0 (后方) 改为 4.0 (前方，即出口方向)
+        -- 坐标反转：从 -4.0 (后方) 改为 4.0 (前方，即出口方向)
         -- 这样 Leader Train 会生成在车厢和右侧红绿灯(x=5)之间
         leadertrain_offset = { x = 4.0, y = 0 },
         velocity_mult = { x = 1, y = 0 },
@@ -116,7 +116,7 @@ local function add_to_active(struct)
 end
 
 -- 从活跃列表移除
--- 【性能重构】优化移除逻辑
+-- 优化移除逻辑
 local function remove_from_active(struct)
     if not struct or not struct.unit_number then
         return
@@ -205,32 +205,44 @@ local function reopen_train_gui(watchers, train)
     return count
 end
 
--- 辅助函数：判断车厢在列车中的连接方向 (照搬 SE)
--- 返回 1 (正接) 或 -1 (反接)
-local function get_train_forward_sign(carriage_a)
-    local sign = 1
-    if #carriage_a.train.carriages == 1 then
-        return sign
+-- =================================================================================
+-- 速度方向计算函数 (基于铁轨端点距离)
+-- =================================================================================
+--- 计算列车相对于一个参考点的逻辑方向。
+-- @param train (LuaTrain) 要计算的列车。
+-- @param origin_pos (Position) 参考点坐标 (通常是传送门出口)。
+-- @return (number) 1 代表逻辑正向 (Front更远), -1 代表逻辑反向 (Back更远)。
+local function calculate_speed_sign(train, origin_pos)
+    -- 安全检查
+    if not (train and train.valid and origin_pos) then
+        return 1
     end
 
-    -- 检查前连接点
-    local carriage_b = carriage_a.get_connected_rolling_stock(defines.rail_direction.front)
-    if not carriage_b then
-        -- 如果前连接点没车，说明是用后连接点连的 (反接)
-        carriage_b = carriage_a.get_connected_rolling_stock(defines.rail_direction.back)
-        sign = -sign
-    end
+    local rail_front = train.front_end and train.front_end.rail
+    local rail_back = train.back_end and train.back_end.rail
 
-    -- 遍历列车确定相对顺序
-    for _, carriage in pairs(carriage_a.train.carriages) do
-        if carriage == carriage_b then
-            return sign
+    if rail_front and rail_back then
+        -- 计算距离平方 (dx^2 + dy^2), 避免开方运算
+        local df_x = rail_front.position.x - origin_pos.x
+        local df_y = rail_front.position.y - origin_pos.y
+        local dist_sq_f = (df_x * df_x) + (df_y * df_y)
+
+        local db_x = rail_back.position.x - origin_pos.x
+        local db_y = rail_back.position.y - origin_pos.y
+        local dist_sq_b = (db_x * db_x) + (db_y * db_y)
+
+        -- 哪一头离参考点更远，列车就是要往哪一头开
+        if dist_sq_f > dist_sq_b then
+            -- 前端跑得远 -> 逻辑正向
+            return 1
+        else
+            -- 后端跑得远 -> 逻辑反向
+            return -1
         end
-        if carriage == carriage_a then
-            return -sign
-        end
+    else
+        -- 异常情况，返回默认正向
+        return 1
     end
-    return sign
 end
 
 -- 专门用于在 on_load 中初始化的 SE 事件获取函数
@@ -326,23 +338,6 @@ end
 local function finish_teleport(entry_struct, exit_struct)
     log_tp("传送结束: 清理状态 (入口ID: " .. entry_struct.id .. ", 出口ID: " .. exit_struct.id .. ")")
 
-    -- [新增] 预先计算方向系数 (默认为1)
-    -- 必须在销毁引导车之前，利用 first_carriage 进行拓扑判断
-    local speed_direction_mult = 1
-
-    if exit_struct.leadertrain and exit_struct.leadertrain.valid and exit_struct.first_carriage and exit_struct.first_carriage.valid then
-        -- 检查第一节车厢是用"脸(Front)"连着引导车吗？
-        local front_connection = exit_struct.first_carriage.get_connected_rolling_stock(defines.rail_direction.front)
-
-        if front_connection == exit_struct.leadertrain then
-            -- 脸对屁股 -> 朝向一致 -> 正向
-            speed_direction_mult = 1
-        else
-            -- 屁股对屁股 -> 朝向相反 -> 反向
-            speed_direction_mult = -1
-        end
-    end
-
     -- 1. 直接炸掉引导车
     if exit_struct.leadertrain and exit_struct.leadertrain.valid then
         exit_struct.leadertrain.destroy()
@@ -369,11 +364,13 @@ local function finish_teleport(entry_struct, exit_struct)
         -- go_to_station 已经把列车改成自动，现在恢复到之前的状态
         final_train.manual_mode = exit_struct.saved_manual_mode or false
 
-        -- 3. 恢复速度：优先使用最后保存的出口实际速度，其次引导车销毁前速度，最后才用入口速度
-        -- 这样可以保持传送过程中获得的动量，避免结束时骤降
-        -- 使用 final_train_speed (最准)，取绝对值后乘以方向系数
+        -- 3. 恢复速度 (已重构为距离比对法)
         local raw_speed = exit_struct.final_train_speed or exit_struct.saved_speed or 0
-        final_train.speed = math.abs(raw_speed) * speed_direction_mult
+        local speed_mag = math.abs(raw_speed)
+        -- 调用新函数，以出口传送门为参考点
+        local required_sign = calculate_speed_sign(final_train, exit_struct.shell.position)
+        log_tp("【Finish】最终速度判定: ReqSign=" .. required_sign .. " | SpeedMag=" .. speed_mag)
+        final_train.speed = speed_mag * required_sign
 
         -- 数据恢复 (注入灵魂)
         if exit_struct.old_train_id and exit_struct.cybersyn_snapshot then
@@ -406,7 +403,6 @@ local function finish_teleport(entry_struct, exit_struct)
     exit_struct.carriage_behind = nil
     exit_struct.carriage_ahead = nil
     exit_struct.old_train_id = nil
-    exit_struct.first_carriage = nil -- [新增] 清理引用
 
     -- 6. 【关键】标记需要重建入口碰撞器
     -- 我们不在这里直接创建，而是交给 on_tick 去计算正确的坐标并创建
@@ -450,22 +446,22 @@ function Teleport.teleport_next(entry_struct, exit_struct)
     if dir == 0 then -- North (出口在下)
         check_area = {
             left_top = { x = spawn_pos.x - 1, y = spawn_pos.y },
-            right_bottom = { x = spawn_pos.x + 1, y = spawn_pos.y + 8 },
+            right_bottom = { x = spawn_pos.x + 1, y = spawn_pos.y + 10 },
         }
     elseif dir == 8 then -- South (出口在上)
         check_area = {
-            left_top = { x = spawn_pos.x - 1, y = spawn_pos.y - 8 },
+            left_top = { x = spawn_pos.x - 1, y = spawn_pos.y - 10 },
             right_bottom = { x = spawn_pos.x + 1, y = spawn_pos.y },
         }
     elseif dir == 4 then -- East (出口在左)
         check_area = {
-            left_top = { x = spawn_pos.x - 8, y = spawn_pos.y - 1 },
+            left_top = { x = spawn_pos.x - 10, y = spawn_pos.y - 1 },
             right_bottom = { x = spawn_pos.x, y = spawn_pos.y + 1 },
         }
     elseif dir == 12 then -- West (出口在右)
         check_area = {
             left_top = { x = spawn_pos.x, y = spawn_pos.y - 1 },
-            right_bottom = { x = spawn_pos.x + 8, y = spawn_pos.y + 1 },
+            right_bottom = { x = spawn_pos.x + 10, y = spawn_pos.y + 1 },
         }
     end
 
@@ -494,7 +490,7 @@ function Teleport.teleport_next(entry_struct, exit_struct)
             local station_entity = nil
             if entry_struct.children then
                 for _, child_data in pairs(entry_struct.children) do
-                    -- [修复] 从子数据表中取出 entity 对象，因为 children 存的是 {entity=..., ...}
+                    -- 从子数据表中取出 entity 对象，因为 children 存的是 {entity=..., ...}
                     local child = child_data.entity
                     if child and child.valid and child.name == "rift-rail-station" then
                         station_entity = child
@@ -574,7 +570,7 @@ function Teleport.teleport_next(entry_struct, exit_struct)
             -- 打标签：告诉 Cybersyn 别删
             remote.call("cybersyn", "write_global", true, "trains", carriage.train.id, "se_is_being_teleported")
 
-            -- [优化] 只有在无 SE 时才需要存快照
+            -- 只有在无 SE 时才需要存快照
             if not script.active_mods["space-exploration"] then
                 local _, snap = pcall(remote.call, "cybersyn", "read_global", "trains", carriage.train.id)
                 if snap then
@@ -612,7 +608,7 @@ function Teleport.teleport_next(entry_struct, exit_struct)
 
     log_tp("方向计算: 车厢ori=" .. carriage_ori .. ", 建筑ori=" .. entry_shell_ori .. ", 判定=" .. (is_nose_in and "顺向" or "逆向"))
 
-    -- >>>>> [修改] 1. 提前计算目标朝向 (target_ori) >>>>>
+    -- 1. 提前计算目标朝向 (target_ori)
     local exit_base_ori = geo.direction / 16.0
     local target_ori = exit_base_ori
 
@@ -635,12 +631,6 @@ function Teleport.teleport_next(entry_struct, exit_struct)
         force = carriage.force,
         quality = carriage.quality,
     })
-
-    -- 专门记录第一节传送过来的车厢，用于 finish_teleport 时检测与引导车的连接方向
-    -- is_first_carriage 是函数开头定义的变量
-    if is_first_carriage then
-        exit_struct.first_carriage = new_carriage
-    end
 
     if not new_carriage then
         log_tp("严重错误: 无法在出口创建车厢！")
@@ -893,35 +883,23 @@ function Teleport.manage_speed(struct)
             -- 移除了强制出口火车 (train_exit) 手动模式的代码
             -- 允许出口火车保持自动模式，以便引擎能够检测红绿灯信号
 
-            -- 2. 维持出口动力
+            -- 2. 维持出口动力 (已重构为距离比对法)
             local target_speed = 0.5
 
-            -- [保留] 基于引导车链接符号的动力逻辑 (SE算法)
-            local required_sign = 1
-            local leadertrain = exit_struct.leadertrain
+            -- 使用新函数计算出口列车所需的速度方向
+            -- 以出口传送门的位置为参考点
+            local required_sign = calculate_speed_sign(train_exit, exit_struct.shell.position)
 
-            if leadertrain and leadertrain.valid then
-                local link_sign = get_train_forward_sign(leadertrain)
-                required_sign = link_sign
-            else
-                local geo_exit = GEOMETRY[exit_struct.shell.direction] or GEOMETRY[0]
-                local out_orientation = geo_exit.direction / 16.0
-                local head_orientation = train_exit.front_stock.orientation
-                local diff = math.abs(head_orientation - out_orientation)
-                if diff > 0.5 then
-                    diff = 1.0 - diff
-                end
-                if diff > 0.25 then
-                    required_sign = -1
-                end
+            -- 每60tick(1秒)打印一次，监控计算结果
+            if game.tick % 60 == struct.unit_number % 60 then
+                log_tp("【Speed Exit】ReqSign=" .. required_sign .. " | TrainSpeed=" .. train_exit.speed)
             end
 
-            -- 应用速度前增加状态检查
-            -- 只有当火车处于手动模式，或者自动模式下的“正在行驶”/“无路径”状态时，才施加动力
-            -- 如果是 wait_signal (红灯) 或 destination_full (终点满)，则不推，让其自然停下
+            -- 应用速度前增加状态检查 (保持不变)
             local should_push = train_exit.manual_mode or (train_exit.state == defines.train_state.on_the_path) or (train_exit.state == defines.train_state.no_path)
 
             if should_push then
+                -- 当速度过低或方向错误时，施加动力
                 if math.abs(train_exit.speed) < target_speed or (train_exit.speed * required_sign < 0) then
                     train_exit.speed = target_speed * required_sign
                 end
@@ -931,18 +909,22 @@ function Teleport.manage_speed(struct)
             -- 这样传送结束时使用的就是被维持的高速，而不是刚生成时的 0 速度
             exit_struct.final_train_speed = train_exit.speed
 
-            -- 3. 终极修正 太空电梯三方符号算法 (保持不变)
-            local dir = struct.shell.direction
-            local portal_sign = -1
-            if dir == 0 or dir == 4 then
-                portal_sign = 1
+            -- 3. 入口动力 (已重构为距离比对法)
+            -- 使用新函数计算入口列车的逻辑方向
+            -- 以入口传送门的位置为参考点
+            local entry_sign = calculate_speed_sign(train_entry, struct.shell.position)
+
+            -- [关键] 反转符号
+            -- calculate_speed_sign 计算的是"远离"的方向 (1 或 -1)
+            -- 对于入口，我们需要的是"靠近"，所以将结果乘以 -1
+            local final_sign = entry_sign * -1
+
+            -- 每60tick打印一次
+            if game.tick % 60 == struct.unit_number % 60 then
+                log_tp("【Speed Entry】CalcSign=" .. entry_sign .. " -> FinalSign=" .. final_sign)
             end
 
-            local ori = carriage_entry.orientation
-            local car_sign = (ori < 0.5) and 1 or -1
-            local link_sign = get_train_forward_sign(carriage_entry)
-
-            local final_sign = portal_sign * car_sign * link_sign
+            -- 应用与出口速度大小同步的、方向修正后的速度
             train_entry.speed = math.abs(train_exit.speed) * final_sign
         end
     end
