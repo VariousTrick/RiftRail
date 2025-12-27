@@ -304,7 +304,6 @@ script.on_event(defines.events.on_entity_cloned, function(event)
     end
 
     -- 清除旧的坐标缓存，强制 teleport.lua 在下次使用时重新计算 ("懒加载")
-    new_data.collider_position = nil
     new_data.blocker_position = nil
 
     -- 4. 保存新数据

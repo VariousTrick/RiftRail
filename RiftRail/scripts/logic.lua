@@ -59,55 +59,59 @@ end
 -- ============================================================================
 -- [新增] 物理状态管理 (精准定点清除版)
 -- ============================================================================
+-- [修改] 物理状态管理 (带 children 列表同步)
 local function update_collider_state(struct)
     if not (struct and struct.shell and struct.shell.valid) then
         return
     end
 
-    local surface = struct.shell.surface
-    local center = struct.shell.position
-    local direction = struct.shell.direction
-
-    -- 1. 计算碰撞器的精确相对坐标
-    -- 基于 Builder.lua 的旋转逻辑 (顺时针: N->E->S->W)
-    -- 基础位置 (North): {x=0, y=-2}
-    local offset = { x = 0, y = 0 }
-
-    if direction == 0 then -- North (上)
-        offset = { x = 0, y = -2 }
-    elseif direction == 4 then -- East (右) -> Builder 旋转逻辑 x=-y, y=x -> -(-2), 0 -> 2, 0
-        offset = { x = 2, y = 0 } -- [修正] 确保是右边 (2, 0)
-    elseif direction == 8 then -- South (下)
-        offset = { x = 0, y = 2 }
-    elseif direction == 12 then -- West (左) -> Builder 旋转逻辑 x=y, y=-x -> -2, 0
-        offset = { x = -2, y = 0 } -- [修正] 确保是左边 (-2, 0)
-    end
-
-    -- 2. 计算碰撞器的绝对世界坐标
-    local target_pos = { x = center.x + offset.x, y = center.y + offset.y }
-
-    -- 3. 精准定点清理
-    -- 只在 target_pos 周围 0.5 格内寻找碰撞器
-    -- 这样绝对不会误伤隔壁邻居 (因为邻居的碰撞器至少在 2 格以外)
-    local existing = surface.find_entities_filtered({
-        name = "rift-rail-collider",
-        position = target_pos, -- 锁定目标点
-        radius = 0.5, -- 极小范围
-    })
-
-    for _, e in pairs(existing) do
-        if e.valid then
-            e.destroy()
+    -- 1. 清理旧的碰撞器 (同时从户口本上除名)
+    if struct.children then
+        -- 使用倒序遍历，安全地在循环中移除元素
+        for i = #struct.children, 1, -1 do
+            local child_data = struct.children[i]
+            if child_data and child_data.entity and child_data.entity.valid and child_data.entity.name == "rift-rail-collider" then
+                -- 从地图上销毁
+                child_data.entity.destroy()
+                -- 从 children 列表中移除
+                table.remove(struct.children, i)
+            end
         end
     end
 
-    -- 4. 如果是 [入口] 模式，则在原地创建新的碰撞器
-    if struct.mode == "entry" then
-        local collider = surface.create_entity({
+    -- 2. 如果是 [入口] 或 [中立] 模式，则创建新的碰撞器并登记
+    if struct.mode == "entry" or struct.mode == "neutral" then
+        local surface = struct.shell.surface
+        local center = struct.shell.position
+        local direction = struct.shell.direction
+
+        -- 计算碰撞器的精确相对坐标
+        local relative_pos = { x = 0, y = -2 } -- 基准 (North)
+        if direction == 4 then -- East
+            relative_pos = { x = 2, y = 0 }
+        elseif direction == 8 then -- South
+            relative_pos = { x = 0, y = 2 }
+        elseif direction == 12 then -- West
+            relative_pos = { x = -2, y = 0 }
+        end
+
+        -- 计算绝对世界坐标
+        local target_pos = { x = center.x + relative_pos.x, y = center.y + relative_pos.y }
+
+        -- 创建新实体
+        local new_collider = surface.create_entity({
             name = "rift-rail-collider",
-            position = target_pos, -- 使用相同的坐标
+            position = target_pos,
             force = struct.shell.force,
         })
+
+        -- [核心修复] 将新创建的碰撞器登记到 children 列表中
+        if new_collider and struct.children then
+            table.insert(struct.children, {
+                entity = new_collider,
+                relative_pos = relative_pos,
+            })
+        end
     end
 end
 

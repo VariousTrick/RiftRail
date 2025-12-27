@@ -204,10 +204,7 @@ function Builder.on_built(event)
     -- 6. 创建触发器
     if recovered_mode == "entry" or recovered_mode == "neutral" then
         local col_offset = rotate_point(MASTER_LAYOUT.collider, direction)
-        local collider_entity = create_child("rift-rail-collider", col_offset, direction)
-        if collider_entity then
-            storage.temp_collider_pos = collider_entity.position
-        end
+        create_child("rift-rail-collider", col_offset, direction)
     end
 
     -- 7. 创建物理堵头
@@ -243,10 +240,8 @@ function Builder.on_built(event)
         cybersyn_enabled = false,
         shell = shell,
         children = children,
-        collider_position = storage.temp_collider_pos,
         blocker_position = storage.temp_blocker_pos,
     }
-    storage.temp_collider_pos = nil
     storage.temp_blocker_pos = nil
 
     -- 维护 id_map 缓存
@@ -280,7 +275,7 @@ local function clear_trains_inside(shell_entity)
 end
 
 -- ============================================================================
--- 拆除函数 (兼容性修复版)
+-- 拆除函数 (最终修复版，整合精准抢救与清理逻辑)
 -- ============================================================================
 function Builder.on_destroy(event)
     local entity = event.entity
@@ -295,32 +290,79 @@ function Builder.on_destroy(event)
         return
     end
 
+    -- 1: "精准抢救"核心信息
+    -- 在任何销毁操作开始前，必须先确定建筑的中心位置和方向
+    local final_center_pos = nil
+    local final_direction = nil
     local surface = entity.surface
-    local center_pos = entity.position
-    local target_unit_number = nil
+    local shell_entity_ref = nil -- 用于后续操作的 shell 实体引用
 
-    if storage.rift_rails then
-        if entity.name == "rift-rail-entity" then
-            target_unit_number = entity.unit_number
-        else
-            for unit_num, data in pairs(storage.rift_rails) do
-                if data.children then
-                    -- 从新的 children 结构中查找
-                    for _, child_data in pairs(data.children) do
-                        if child_data.entity == entity then
-                            target_unit_number = unit_num
-                            break
-                        end
-                    end
-                end
-                if target_unit_number then
-                    break
-                end
+    if entity.name == "rift-rail-entity" then
+        -- 情况 A: 拆除的就是外壳本身
+        log_debug("[Destroy] Triggered by Shell entity.")
+        shell_entity_ref = entity
+    elseif entity.name == "rift-rail-core" then
+        -- 情况 B: 拆除的是核心，在极小范围内反查外壳
+        log_debug("[Destroy] Triggered by Core entity. Searching for shell nearby...")
+        local shells = surface.find_entities_filtered({
+            name = "rift-rail-entity",
+            position = entity.position, -- 核心和外壳在同一中心点
+            radius = 0.5, -- 极小范围，杜绝误伤
+        })
+        if shells and shells[1] then
+            shell_entity_ref = shells[1]
+            log_debug("  - Shell found via core lookup.")
+        end
+    end
+
+    -- 如果成功找到了外壳，就"抢救"它的信息
+    if shell_entity_ref and shell_entity_ref.valid then
+        final_center_pos = shell_entity_ref.position
+        final_direction = shell_entity_ref.direction
+        log_debug("[Destroy] Core info salvaged: Direction=" .. final_direction)
+    else
+        log_debug("[Destroy] Warning: Could not salvage core info (shell not found). Cleanup may be incomplete.")
+    end
+    -- [抢救结束]
+
+    -- 2: 封装"最终清扫"逻辑
+    -- 这个函数负责对最容易变"幽灵"的 collider 进行精准的点清除
+    local function final_cleanup()
+        if not (final_center_pos and final_direction) then
+            log_debug("[Destroy] Final cleanup skipped: Missing position or direction.")
+            return
+        end
+
+        log_debug("[Destroy] Executing final cleanup for collider...")
+        -- 计算并清理碰撞器 (Collider)
+        local col_relative_pos = { x = 0, y = -2 }
+        if final_direction == 4 then
+            col_relative_pos = { x = 2, y = 0 }
+        elseif final_direction == 8 then
+            col_relative_pos = { x = 0, y = 2 }
+        elseif final_direction == 12 then
+            col_relative_pos = { x = -2, y = 0 }
+        end
+        local collider_pos = { x = final_center_pos.x + col_relative_pos.x, y = final_center_pos.y + col_relative_pos.y }
+        local colliders_found = surface.find_entities_filtered({ name = "rift-rail-collider", position = collider_pos, radius = 0.5 })
+        for _, c in pairs(colliders_found) do
+            if c.valid then
+                log_debug("  - Found and destroyed a ghost collider via final cleanup.")
+                c.destroy()
             end
         end
     end
 
-    if target_unit_number and storage.rift_rails[target_unit_number] then
+    -- 开始查找 struct 以执行精准销毁
+    local target_unit_number = nil
+    local struct = State.get_struct(entity)
+    if struct then
+        target_unit_number = struct.unit_number
+    end
+
+    -- 路径 A: "精准销毁"
+    if target_unit_number and storage.rift_rails and storage.rift_rails[target_unit_number] then
+        log_debug("[Destroy] Path A: Precise cleanup based on struct.")
         local data = storage.rift_rails[target_unit_number]
 
         if data.paired_to_id then
@@ -338,9 +380,9 @@ function Builder.on_destroy(event)
             end
         end
 
-        local shell_entity = data.shell
-        if shell_entity and shell_entity.valid then
-            clear_trains_inside(shell_entity)
+        local shell_to_check = data.shell
+        if shell_to_check and shell_to_check.valid then
+            clear_trains_inside(shell_to_check)
         end
 
         if data.children then
@@ -352,43 +394,27 @@ function Builder.on_destroy(event)
             end
         end
 
-        if shell_entity and shell_entity.valid and shell_entity ~= entity then
-            shell_entity.destroy()
+        if shell_to_check and shell_to_check.valid and shell_to_check ~= entity then
+            shell_to_check.destroy()
         end
 
         -- 维护 id_map 缓存
         storage.rift_rail_id_map[data.id] = nil
         storage.rift_rails[target_unit_number] = nil
+
+        -- 3: 在路径 A 的出口调用清理
+        final_cleanup()
+
+        log_debug("[Destroy] Path A finished.")
         return
     end
 
-    -- [保底措施] 暴力扫荡 (逻辑不变)
-    local sweep_area = {
-        left_top = { x = center_pos.x - 6, y = center_pos.y - 6 },
-        right_bottom = { x = center_pos.x + 6, y = center_pos.y + 6 },
-    }
-    local trains = surface.find_entities_filtered({ area = sweep_area, type = { "locomotive", "cargo-wagon", "fluid-wagon", "artillery-wagon" } })
-    for _, t in pairs(trains) do
-        t.destroy()
-    end
-    local junk = surface.find_entities_filtered({
-        area = sweep_area,
-        name = {
-            "rift-rail-entity",
-            "rift-rail-core",
-            "rift-rail-station",
-            "rift-rail-signal",
-            "rift-rail-internal-rail",
-            "rift-rail-collider",
-            "rift-rail-blocker",
-            "rift-rail-lamp",
-        },
-    })
-    for _, item in pairs(junk) do
-        if item.valid and item ~= entity then
-            item.destroy()
-        end
-    end
+    -- 路径 B: 如果前面的"精准销毁"失败了
+    log_debug("[Destroy] Path B: Fallback cleanup (struct not found).")
+    -- 我们不再需要旧的“暴力扫荡”了，因为 final_cleanup 已经足够精准且能处理所有情况
+    -- 4: 在路径 B 的出口调用清理
+    final_cleanup()
+    log_debug("[Destroy] Path B finished.")
 end
 
 return Builder

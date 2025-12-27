@@ -451,6 +451,8 @@ local function finish_teleport(entry_struct, exit_struct)
     exit_struct.carriage_ahead = nil
     exit_struct.old_train_id = nil
     exit_struct.cached_geo = nil
+    -- 清理本次传送记录的峰值速度，防止其“污染”下一次传送
+    exit_struct.final_train_speed = nil
 
     -- 6. 【关键】标记需要重建入口碰撞器
     -- 我们不在这里直接创建，而是交给 on_tick 去计算正确的坐标并创建
@@ -1051,35 +1053,30 @@ function Teleport.on_tick(event)
             -- A. 重建碰撞器逻辑
             if struct.collider_needs_rebuild then
                 if struct.shell and struct.shell.valid then
-                    -- 优先从缓存读取碰撞器坐标
-                    local collider_pos = struct.collider_position
+                    -- [还原] 根据建筑方向实时计算偏移量
+                    local dir = struct.shell.direction
+                    local offset = { x = 0, y = 0 }
 
-                    -- 如果缓存不存在 (旧存档/克隆体)，则现场计算一次并写回
-                    if not collider_pos then
-                        local shell = struct.shell
-                        local shell_pos = shell.position
-                        local shell_dir = shell.direction
-                        local col_relative_pos = { x = 0, y = -2 }
-
-                        local rotated_offset
-                        if shell_dir == 0 then
-                            rotated_offset = { x = col_relative_pos.x, y = col_relative_pos.y }
-                        elseif shell_dir == 4 then
-                            rotated_offset = { x = -col_relative_pos.y, y = col_relative_pos.x }
-                        elseif shell_dir == 8 then
-                            rotated_offset = { x = -col_relative_pos.x, y = -col_relative_pos.y }
-                        else
-                            rotated_offset = { x = col_relative_pos.y, y = -col_relative_pos.x }
-                        end
-
-                        collider_pos = { x = shell_pos.x + rotated_offset.x, y = shell_pos.y + rotated_offset.y }
-                        struct.collider_position = collider_pos
+                    if dir == 0 then
+                        offset = { x = 0, y = -2 } -- North
+                    elseif dir == 4 then
+                        offset = { x = 2, y = 0 } -- East
+                    elseif dir == 8 then
+                        offset = { x = 0, y = 2 } -- South
+                    elseif dir == 12 then
+                        offset = { x = -2, y = 0 } -- West
                     end
 
-                    -- 使用最终坐标创建实体
+                    -- 计算绝对坐标
+                    local final_pos = {
+                        x = struct.shell.position.x + offset.x,
+                        y = struct.shell.position.y + offset.y,
+                    }
+
+                    -- 使用计算出的坐标创建实体
                     struct.surface.create_entity({
                         name = "rift-rail-collider",
-                        position = collider_pos,
+                        position = final_pos,
                         force = struct.shell.force,
                     })
 
