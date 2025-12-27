@@ -977,7 +977,16 @@ function Teleport.manage_speed(struct)
 
             -- 关键修复: 在速度管理过程中持续保存出口列车速度
             -- 这样传送结束时使用的就是被维持的高速，而不是刚生成时的 0 速度
-            exit_struct.final_train_speed = train_exit.speed
+            -- 峰值速度锁定：只在当前速度大于已记录速度时才更新
+            -- 这样可以忽略因拼接车厢导致的瞬时降速，最终恢复的是传送过程中的最高速
+            -- 使用 math.abs 比较速度大小，忽略方向
+            local current_speed_abs = math.abs(train_exit.speed)
+            local saved_speed_abs = math.abs(exit_struct.final_train_speed or 0)
+
+            if current_speed_abs > saved_speed_abs then
+                -- 保存当前带有正确符号的速度
+                exit_struct.final_train_speed = train_exit.speed
+            end
 
             -- 3. 入口动力 (已重构为距离比对法)
             -- 使用新函数计算入口列车的逻辑方向
