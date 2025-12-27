@@ -204,12 +204,18 @@ function Builder.on_built(event)
     -- 6. 创建触发器
     if recovered_mode == "entry" or recovered_mode == "neutral" then
         local col_offset = rotate_point(MASTER_LAYOUT.collider, direction)
-        create_child("rift-rail-collider", col_offset, direction)
+        local collider_entity = create_child("rift-rail-collider", col_offset, direction)
+        if collider_entity then
+            storage.temp_collider_pos = collider_entity.position
+        end
     end
 
     -- 7. 创建物理堵头
     local blk_offset = rotate_point(MASTER_LAYOUT.blocker, direction)
-    create_child("rift-rail-blocker", blk_offset, direction)
+    local blocker_entity = create_child("rift-rail-blocker", blk_offset, direction)
+    if blocker_entity then
+        storage.temp_blocker_pos = blocker_entity.position
+    end
 
     -- 8. 创建照明灯
     local lamp_offset = rotate_point(MASTER_LAYOUT.lamp, direction)
@@ -237,8 +243,11 @@ function Builder.on_built(event)
         cybersyn_enabled = false,
         shell = shell,
         children = children,
-        paired_to_id = nil,
+        collider_position = storage.temp_collider_pos, -- [新增]
+        blocker_position = storage.temp_blocker_pos, -- [新增]
     }
+    storage.temp_collider_pos = nil -- [新增]
+    storage.temp_blocker_pos = nil -- [新增]
 
     -- 【新增】维护 id_map 缓存
     storage.rift_rail_id_map[custom_id] = shell.unit_number

@@ -4,8 +4,8 @@
 local Logic = {}
 local State = nil
 local GUI = nil
-local CybersynSE = nil -- [新增] 本地变量
-local LTN = nil -- [新增] LTN 兼容
+local CybersynSE = nil
+local LTN = nil
 
 local log_debug = function() end
 
@@ -13,8 +13,8 @@ function Logic.init(deps)
     State = deps.State
     GUI = deps.GUI
     log_debug = deps.log_debug
-    CybersynSE = deps.CybersynSE -- [新增] 获取依赖
-    LTN = deps.LTN -- [新增]
+    CybersynSE = deps.CybersynSE
+    LTN = deps.LTN
 end
 
 -- ============================================================================
@@ -108,7 +108,6 @@ local function update_collider_state(struct)
             position = target_pos, -- 使用相同的坐标
             force = struct.shell.force,
         })
-        log_debug("[RiftRail:Logic] 已在精准坐标 (" .. target_pos.x .. "," .. target_pos.y .. ") 重建碰撞器。")
     end
 end
 

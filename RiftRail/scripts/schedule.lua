@@ -30,7 +30,9 @@ end
 -- @param new_train LuaTrain: 在出口处新创建的火车实体
 -- @param entry_portal_station_name string: 入口传送门内部火车站的完整名称
 function Schedule.transfer_schedule(old_train, new_train, entry_portal_station_name)
-    log_schedule("DEBUG (transfer_schedule v3.0): 开始为新火车 (ID: " .. new_train.id .. ") 转移时刻表...")
+    if RiftRail.DEBUG_MODE_ENABLED then
+        log_schedule("DEBUG (transfer_schedule v3.0): 开始为新火车 (ID: " .. new_train.id .. ") 转移时刻表...")
+    end
 
     if not (old_train and old_train.valid and new_train and new_train.valid) then
         return
@@ -48,7 +50,9 @@ function Schedule.transfer_schedule(old_train, new_train, entry_portal_station_n
     end
 
     local current_index = schedule_old.current
-    log_schedule("DEBUG: 初始状态 - 站点数: " .. #records .. ", 当前索引: " .. current_index)
+    if RiftRail.DEBUG_MODE_ENABLED then
+        log_schedule("DEBUG: 初始状态 - 站点数: " .. #records .. ", 当前索引: " .. current_index)
+    end
 
     -- ========================================================================
     -- 步骤 1: 清理防堵塞路障 (Rail Stops)
@@ -60,7 +64,9 @@ function Schedule.transfer_schedule(old_train, new_train, entry_portal_station_n
         if record.rail then
             -- 如果当前火车正停在这个路障上 (堵塞情况)
             if i == current_index then
-                log_schedule("DEBUG: 发现当前停靠在 Rail 路障 (Index " .. i .. ")，索引回退。")
+                if RiftRail.DEBUG_MODE_ENABLED then
+                    log_schedule("DEBUG: 发现当前停靠在 Rail 路障 (Index " .. i .. ")，索引回退。")
+                end
                 current_index = current_index - 1
 
             -- 如果这个路障在当前索引之前
@@ -82,8 +88,9 @@ function Schedule.transfer_schedule(old_train, new_train, entry_portal_station_n
         log_schedule("DEBUG: 警告 - 时刻表被清空。")
         return
     end
-
-    log_schedule("DEBUG: 路障清理完毕 - 剩余站点数: " .. #records .. ", 修正后索引: " .. current_index)
+    if RiftRail.DEBUG_MODE_ENABLED then
+        log_schedule("DEBUG: 路障清理完毕 - 剩余站点数: " .. #records .. ", 修正后索引: " .. current_index)
+    end
 
     -- ========================================================================
     -- 步骤 2: 处理当前传送门站点
@@ -105,7 +112,9 @@ function Schedule.transfer_schedule(old_train, new_train, entry_portal_station_n
         else
             -- [情况 B] 永久的传送门站 -> 跳转下一站
             current_index = (current_index % #records) + 1
-            log_schedule("DEBUG: 当前是永久传送门站，推进到下一站索引: " .. current_index)
+            if RiftRail.DEBUG_MODE_ENABLED then
+                log_schedule("DEBUG: 当前是永久传送门站，推进到下一站索引: " .. current_index)
+            end
         end
     else
         log_schedule("DEBUG: 当前不是传送门站 (或手动模式)，保持目标不变。")
@@ -134,7 +143,9 @@ function Schedule.transfer_schedule(old_train, new_train, entry_portal_station_n
     -- 命令新火车前往计算出的目标索引
     if #records > 0 then
         schedule_new.go_to_station(current_index)
-        log_schedule("DEBUG: 时刻表转移完成，最终目标 Index: " .. current_index)
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_schedule("DEBUG: 时刻表转移完成，最终目标 Index: " .. current_index)
+        end
     end
 
     -- 清空旧火车时刻表

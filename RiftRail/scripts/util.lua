@@ -90,8 +90,9 @@ function Util.transfer_burner_contents(source_entity, destination_entity)
     if not (burner_a and burner_b) then
         return
     end
-
-    log_util("DEBUG: 检测到燃烧室，正在转移燃料与燃烧进度...")
+    if RiftRail.DEBUG_MODE_ENABLED then
+        log_util("DEBUG: 检测到燃烧室，正在转移燃料与燃烧进度...")
+    end
 
     -- 1. 转移燃料库存
     if burner_a.inventory then
@@ -124,7 +125,9 @@ function Util.transfer_fluids(source_entity, destination_entity)
         return
     end
 
-    log_util("DEBUG: 开始转移流体，流体盒数量: " .. source_entity.fluids_count)
+    if RiftRail.DEBUG_MODE_ENABLED then
+        log_util("DEBUG: 开始转移流体，流体盒数量: " .. source_entity.fluids_count)
+    end
 
     -- [恢复老文件 API] 循环
     for i = 1, source_entity.fluids_count do
@@ -151,7 +154,9 @@ function Util.transfer_equipment_grid(source_entity, destination_entity)
         return
     end
 
-    log_util("DEBUG: 发现装备网格，开始转移装备...")
+    if RiftRail.DEBUG_MODE_ENABLED then
+        log_util("DEBUG: 发现装备网格，开始转移装备...")
+    end
     for _, item in pairs(grid_a.equipment) do
         if item and item.valid then
             local new_item = grid_b.put({
@@ -171,7 +176,9 @@ function Util.transfer_equipment_grid(source_entity, destination_entity)
                     Util.transfer_burner_contents(item, new_item)
                 end
             else
-                log_util("!! 警告: 无法在目标网格位置创建装备: " .. item.name)
+                if RiftRail.DEBUG_MODE_ENABLED then
+                    log_util("!! 警告: 无法在目标网格位置创建装备: " .. item.name)
+                end
             end
         end
     end
@@ -179,7 +186,9 @@ end
 
 -- 转移所有物品栏 (智能判断类型 - 调整顺序版：先判断类型，后尝试通用接口)
 function Util.transfer_all_inventories(source_entity, destination_entity)
-    log_util("DEBUG: 开始转移实体所有物品栏 (ID: " .. source_entity.unit_number .. " -> " .. destination_entity.unit_number .. ")")
+    if RiftRail.DEBUG_MODE_ENABLED then
+        log_util("DEBUG: 开始转移实体所有物品栏 (ID: " .. source_entity.unit_number .. " -> " .. destination_entity.unit_number .. ")")
+    end
 
     if not (source_entity and source_entity.valid and destination_entity and destination_entity.valid) then
         log_util("错误: 源或目标实体无效，无法转移物品。")
@@ -187,34 +196,46 @@ function Util.transfer_all_inventories(source_entity, destination_entity)
     end
 
     local entity_type = source_entity.type
-    log_util("DEBUG: 正在检查实体类型 (Type: " .. entity_type .. ")...")
+    if RiftRail.DEBUG_MODE_ENABLED then
+        log_util("DEBUG: 正在检查实体类型 (Type: " .. entity_type .. ")...")
+    end
 
     if entity_type == "cargo-wagon" then
-        log_util("DEBUG: 匹配到货运车厢，执行标准转移。")
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_util("DEBUG: 匹配到货运车厢，执行标准转移。")
+        end
         local source_inv = source_entity.get_inventory(defines.inventory.cargo_wagon)
         local dest_inv = destination_entity.get_inventory(defines.inventory.cargo_wagon)
 
         Util.move_inventory_items(source_inv, dest_inv)
     elseif entity_type == "locomotive" then
-        log_util("DEBUG: 匹配到机车，执行燃烧室与燃料转移。")
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_util("DEBUG: 匹配到机车，执行燃烧室与燃料转移。")
+        end
 
         Util.transfer_burner_contents(source_entity, destination_entity)
     elseif entity_type == "artillery-wagon" then
-        log_util("DEBUG: 匹配到火炮车厢，执行弹药转移。")
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_util("DEBUG: 匹配到火炮车厢，执行弹药转移。")
+        end
         local source_inv = source_entity.get_inventory(defines.inventory.artillery_wagon_ammo)
         local dest_inv = destination_entity.get_inventory(defines.inventory.artillery_wagon_ammo)
 
         Util.move_inventory_items(source_inv, dest_inv)
     elseif entity_type == "fluid-wagon" then
         -- [修改] 显式调用流体转移函数
-        log_util("DEBUG: 匹配到流体车厢，执行流体转移。")
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_util("DEBUG: 匹配到流体车厢，执行流体转移。")
+        end
         Util.transfer_fluids(source_entity, destination_entity)
     else
         -- 尝试获取主物品栏作为通用后备方案
         local source_inv = source_entity.get_main_inventory()
         local dest_inv = destination_entity.get_main_inventory()
         if source_inv and dest_inv then
-            log_util("DEBUG: 未匹配到特定类型，执行通用主物品栏转移。")
+            if RiftRail.DEBUG_MODE_ENABLED then
+                log_util("DEBUG: 未匹配到特定类型，执行通用主物品栏转移。")
+            end
             -- [修改] 调用我们新的函数
             Util.move_inventory_items(source_inv, dest_inv)
         end
@@ -235,7 +256,9 @@ function Util.transfer_inventory_filters(source_entity, destination_entity, inve
     end
 
     if source_inv.is_filtered() then
-        log_util("DEBUG: 检测到过滤器，正在复制过滤设置...")
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_util("DEBUG: 检测到过滤器，正在复制过滤设置...")
+        end
         for i = 1, #dest_inv do
             local filter = source_inv.get_filter(i)
             if filter then

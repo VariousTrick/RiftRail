@@ -8,10 +8,10 @@
 -- ============================================================================
 RiftRail = {} -- 创建一个全局可访问的表
 
--- 【修改】将调试开关挂载到全局表上
+-- 将调试开关挂载到全局表上
 RiftRail.DEBUG_MODE_ENABLED = settings.global["rift-rail-debug-mode"].value
 
--- 【修改】定义一个纯粹的、只负责打印的日志函数
+-- 定义一个纯粹的、只负责打印的日志函数
 local function log_debug(msg)
     if not RiftRail.DEBUG_MODE_ENABLED then
         return
@@ -35,7 +35,7 @@ local CybersynSE = require("scripts.cybersyn_compat") -- [新增] 加载兼容�
 local CybersynScheduler = require("scripts.cybersyn_scheduler") -- [新增]
 local LTN = require("scripts.ltn_compat") -- [新增] LTN 兼容模块
 
--- [修改] 给 Builder 注入 CybersynSE (用于拆除清理)
+-- 给 Builder 注入 CybersynSE (用于拆除清理)
 if Builder.init then
     Builder.init({
         log_debug = log_debug,
@@ -45,7 +45,7 @@ if Builder.init then
     })
 end
 
--- [新增] 初始化 Cybersyn 模块
+-- 初始化 Cybersyn 模块
 if CybersynSE.init then
     CybersynSE.init({
         State = State,
@@ -53,7 +53,7 @@ if CybersynSE.init then
     })
 end
 
--- [新增] 初始化 LTN 模块（仅依赖注入，实际接口运行时检查）
+-- 初始化 LTN 模块（仅依赖注入，实际接口运行时检查）
 if LTN.init then
     LTN.init({
         State = State,
@@ -69,7 +69,7 @@ if Util.init then
     Util.init({ log_debug = log_debug })
 end
 
--- [新增] 注入 Teleport 依赖
+-- 注入 Teleport 依赖
 if Teleport.init then
     Teleport.init({
         State = State,
@@ -79,14 +79,14 @@ if Teleport.init then
     })
 end
 
--- [修改] 给 Logic 注入 CybersynSE (用于GUI开关)
+-- 给 Logic 注入 CybersynSE (用于GUI开关)
 if Logic.init then
     Logic.init({
         State = State,
         GUI = GUI,
         log_debug = log_debug,
-        CybersynSE = CybersynSE, -- [新增] 正式注入
-        LTN = LTN, -- [新增] 注入 LTN 兼容
+        CybersynSE = CybersynSE,
+        LTN = LTN,
     })
 end
 
@@ -98,7 +98,7 @@ end
 -- 5. 事件注册
 -- ============================================================================
 
--- [新增] 实体过滤器：只监听本模组相关的实体
+-- 实体过滤器：只监听本模组相关的实体
 local rr_filters = {
     { filter = "name", name = "rift-rail-entity" },
     { filter = "name", name = "rift-rail-placer-entity" },
@@ -148,8 +148,8 @@ script.on_event(defines.events.on_robot_mined_entity, on_mined_handler, rr_filte
 -- 3. 脚本拆除: 不使用过滤器 (无变化)
 script.on_event(defines.events.script_raised_destroy, on_mined_handler)
 
--- C. [核心修改] 死亡事件分流 (on_entity_died)
--- [优化] 加入过滤器，此时虫子死亡绝对不会触发此函数，彻底消除战斗卡顿
+-- C. 死亡事件分流 (on_entity_died)
+-- 加入过滤器，此时虫子死亡绝对不会触发此函数，彻底消除战斗卡顿
 script.on_event(defines.events.on_entity_died, function(event)
     local entity = event.entity
     if not (entity and entity.valid) then
@@ -170,12 +170,12 @@ script.on_event(defines.events.on_entity_died, function(event)
     -- 对于其他任何实体（火车、虫子、树）的死亡，我们一概不管
 end, rr_filters) -- <--- 过滤器加在这里 (作为第三个参数)
 
--- D. [修改] Tick 循环
+-- D. Tick 循环
 script.on_event(defines.events.on_tick, function(event)
     -- 1. 执行传送逻辑
     Teleport.on_tick(event)
 
-    -- 2. [新增] 执行 Cybersyn 调度器逻辑
+    -- 2. 执行 Cybersyn 调度器逻辑
     if CybersynScheduler.on_tick then
         CybersynScheduler.on_tick()
     end
@@ -187,7 +187,9 @@ local function register_ltn_events()
         local ok1, ev1 = pcall(remote.call, "logistic-train-network", "on_stops_updated")
         if ok1 and ev1 then
             script.on_event(ev1, function(e)
-                if LTN and LTN.on_stops_updated then LTN.on_stops_updated(e) end
+                if LTN and LTN.on_stops_updated then
+                    LTN.on_stops_updated(e)
+                end
             end)
             log_debug("[LTN] 已注册 on_stops_updated 事件")
         end
@@ -195,7 +197,9 @@ local function register_ltn_events()
         local ok2, ev2 = pcall(remote.call, "logistic-train-network", "on_dispatcher_updated")
         if ok2 and ev2 then
             script.on_event(ev2, function(e)
-                if LTN and LTN.on_dispatcher_updated then LTN.on_dispatcher_updated(e) end
+                if LTN and LTN.on_dispatcher_updated then
+                    LTN.on_dispatcher_updated(e)
+                end
             end)
             log_debug("[LTN] 已注册 on_dispatcher_updated 事件")
         end
@@ -221,7 +225,7 @@ script.on_event(defines.events.on_gui_confirmed, GUI.handle_confirmed)
 -- 当玩家按 E 或 ESC 关闭窗口时触发
 script.on_event(defines.events.on_gui_closed, GUI.handle_close)
 -- ============================================================================
--- [最终修复版] 克隆/传送事件处理
+-- 克隆/传送事件处理
 -- ============================================================================
 script.on_event(defines.events.on_entity_cloned, function(event)
     local new_entity = event.destination
@@ -231,7 +235,7 @@ script.on_event(defines.events.on_entity_cloned, function(event)
         return
     end
 
-    -- 分支 A: Cybersyn 控制器 (逻辑不变)
+    -- 分支 A: Cybersyn 控制器
     if new_entity.name == "cybersyn-combinator" then
         if script.active_mods["zzzzz"] then
             return
@@ -261,7 +265,7 @@ script.on_event(defines.events.on_entity_cloned, function(event)
     new_data.shell = new_entity
     new_data.surface = new_entity.surface
 
-    -- 【修改】使用“精准且容错的定位”重建 children 列表
+    -- 使用“精准且容错的定位”重建 children 列表
     local old_children_list = new_data.children
     new_data.children = {}
     local new_center_pos = new_entity.position
@@ -299,6 +303,10 @@ script.on_event(defines.events.on_entity_cloned, function(event)
         end
     end
 
+    -- 清除旧的坐标缓存，强制 teleport.lua 在下次使用时重新计算 ("懒加载")
+    new_data.collider_position = nil
+    new_data.blocker_position = nil
+
     -- 4. 保存新数据
     storage.rift_rails[new_unit_number] = new_data
     if storage.rift_rail_id_map then
@@ -331,7 +339,7 @@ script.on_event(defines.events.on_player_setup_blueprint, function(event)
 
     local player = game.get_player(event.player_index)
 
-    -- [关键修复] 智能获取正在编辑的蓝图
+    -- 智能获取正在编辑的蓝图
     -- 优先检查 "新建蓝图" 界面 (Alt+B)，其次检查鼠标上的蓝图 (Ctrl+C)
     local blueprint = player.blueprint_to_setup
     if not (blueprint and blueprint.valid and blueprint.is_blueprint) then
@@ -396,7 +404,7 @@ script.on_event(defines.events.on_player_setup_blueprint, function(event)
 end)
 
 -- ============================================================================
--- [新增] 复制粘贴设置 (Shift+右键 -> Shift+左键)
+-- 复制粘贴设置 (Shift+右键 -> Shift+左键)
 -- ============================================================================
 script.on_event(defines.events.on_entity_settings_pasted, function(event)
     local source = event.source
@@ -447,7 +455,7 @@ script.on_event(defines.events.on_entity_settings_pasted, function(event)
     end
 end)
 -- ============================================================================
--- [新增] 监听设置变更：处理紧急修复指令
+-- 监听设置变更：处理紧急修复指令
 -- ============================================================================
 script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
     -- 只有当开关被打开时才执行
@@ -496,14 +504,14 @@ script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
         settings.global["rift-rail-reset-colliders"] = { value = false }
 
         game.print({ "messages.rift-rail-colliders-reset" })
-        -- 【新增】监听调试模式的变更
+        -- 监听调试模式的变更
     elseif event.setting == "rift-rail-debug-mode" then
         RiftRail.DEBUG_MODE_ENABLED = settings.global["rift-rail-debug-mode"].value
     end
 end)
 
 -- ============================================================================
--- [最终修复] 延迟加载事件注册 (正确 API 调用版)
+-- 延迟加载事件注册
 -- ============================================================================
 
 -- on_init: 只在创建新游戏时运行
@@ -605,7 +613,7 @@ remote.add_interface("RiftRail", {
         Logic.set_ltn_enabled(player_index, portal_id, enabled)
     end,
 
-    -- [修改] 玩家传送逻辑：传送到当前建筑外部，而非配对目标
+    -- 玩家传送逻辑：传送到当前建筑外部，而非配对目标
     teleport_player = function(player_index, portal_id)
         local player = game.get_player(player_index)
         local struct = State.get_struct_by_id(portal_id)
@@ -640,16 +648,13 @@ remote.add_interface("RiftRail", {
             -- 执行传送
             player.teleport(safe_pos, struct.shell.surface)
 
-            -- >>>>> [修改开始] >>>>>
-            -- 原代码: player.opened = nil
-            -- 新代码: 强制查找并销毁 GUI，不再依赖事件监听
+            -- 强制查找并销毁 GUI，不再依赖事件监听
             if player.gui.screen.rift_rail_main_frame then
                 player.gui.screen.rift_rail_main_frame.destroy()
             end
 
             -- 清空 opened 状态，确保逻辑闭环
             player.opened = nil
-            -- <<<<< [修改结束] <<<<<
         else
             if player then
                 player.print({ "messages.rift-rail-error-self-invalid" })

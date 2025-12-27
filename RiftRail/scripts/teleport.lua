@@ -212,10 +212,40 @@ end
 -- @param train (LuaTrain) 要计算的列车。
 -- @param origin_pos (Position) 参考点坐标 (通常是传送门出口)。
 -- @return (number) 1 代表逻辑正向 (Front更远), -1 代表逻辑反向 (Back更远)。
-local function calculate_speed_sign(train, origin_pos)
-    -- 安全检查
-    if not (train and train.valid and origin_pos) then
+local function calculate_speed_sign(train, portal_struct)
+    -- 安全检查：如果输入无效，默认返回正向
+    if not (train and train.valid and portal_struct) then
         return 1
+    end
+
+    -- [核心逻辑] 使用缓存，并为旧存档/克隆体提供懒加载
+    local origin_pos = portal_struct.blocker_position
+
+    -- 如果缓存不存在 (旧存档)，则计算一次并写回
+    if not origin_pos then
+        local shell = portal_struct.shell
+        -- 再次安全检查，防止 shell 失效
+        if not (shell and shell.valid) then
+            return 1
+        end
+
+        local shell_pos = shell.position
+        local shell_dir = shell.direction
+        local blocker_relative_pos = { x = 0, y = -6 }
+
+        local rotated_offset
+        if shell_dir == 0 then
+            rotated_offset = { x = blocker_relative_pos.x, y = blocker_relative_pos.y }
+        elseif shell_dir == 4 then
+            rotated_offset = { x = -blocker_relative_pos.y, y = blocker_relative_pos.x }
+        elseif shell_dir == 8 then
+            rotated_offset = { x = -blocker_relative_pos.x, y = -blocker_relative_pos.y }
+        else
+            rotated_offset = { x = blocker_relative_pos.y, y = -blocker_relative_pos.x }
+        end
+
+        origin_pos = { x = shell_pos.x + rotated_offset.x, y = shell_pos.y + rotated_offset.y }
+        portal_struct.blocker_position = origin_pos -- 将计算结果写回缓存
     end
 
     local rail_front = train.front_end and train.front_end.rail
@@ -231,18 +261,19 @@ local function calculate_speed_sign(train, origin_pos)
         local db_y = rail_back.position.y - origin_pos.y
         local dist_sq_b = (db_x * db_x) + (db_y * db_y)
 
-        -- 哪一头离参考点更远，列车就是要往哪一头开
-        if dist_sq_f > dist_sq_b then
-            -- 前端跑得远 -> 逻辑正向
-            return 1
-        else
-            -- 后端跑得远 -> 逻辑反向
-            return -1
+        -- [最终决策]
+        -- API定义: 正速度驶向 front_end, 负速度驶向 back_end
+        -- 如果后端(Back)离参考点更远，说明列车需要向后端行驶才能“远离”，即需要负速度。
+        if dist_sq_b > dist_sq_f then
+            return -1 -- 后端更远 -> 逻辑反向
         end
-    else
-        -- 异常情况，返回默认正向
+        -- 在所有其他情况下 (前端更远，或两端距离相等)，都判定为逻辑正向。
+        -- 这可以完美处理单节车厢(距离相等)时需要正向启动的问题。
         return 1
     end
+
+    -- 异常情况 (无法获取铁轨端点)，返回默认正向
+    return 1
 end
 
 -- 专门用于在 on_load 中初始化的 SE 事件获取函数
@@ -336,7 +367,9 @@ end
 
 -- 结束传送：清理状态，恢复数据
 local function finish_teleport(entry_struct, exit_struct)
-    log_tp("传送结束: 清理状态 (入口ID: " .. entry_struct.id .. ", 出口ID: " .. exit_struct.id .. ")")
+    if RiftRail.DEBUG_MODE_ENABLED then
+        log_tp("传送结束: 清理状态 (入口ID: " .. entry_struct.id .. ", 出口ID: " .. exit_struct.id .. ")")
+    end
 
     -- 1. 直接炸掉引导车
     if exit_struct.leadertrain and exit_struct.leadertrain.valid then
@@ -368,8 +401,10 @@ local function finish_teleport(entry_struct, exit_struct)
         local raw_speed = exit_struct.final_train_speed or exit_struct.saved_speed or 0
         local speed_mag = math.abs(raw_speed)
         -- 调用新函数，以出口传送门为参考点
-        local required_sign = calculate_speed_sign(final_train, exit_struct.shell.position)
-        log_tp("【Finish】最终速度判定: ReqSign=" .. required_sign .. " | SpeedMag=" .. speed_mag)
+        local required_sign = calculate_speed_sign(final_train, exit_struct)
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_tp("【Finish】最终速度判定: ReqSign=" .. required_sign .. " | SpeedMag=" .. speed_mag)
+        end
         final_train.speed = speed_mag * required_sign
 
         -- 数据恢复 (注入灵魂)
@@ -380,8 +415,10 @@ local function finish_teleport(entry_struct, exit_struct)
 
         -- 4. SE 事件触发 (Finished)
         if SE_TELEPORT_FINISHED_EVENT_ID and exit_struct.old_train_id then
-            log_tp("【DEBUG】准备触发 FINISHED 事件: new_train_id = " .. tostring(final_train.id) .. ", old_train_id = " .. tostring(exit_struct.old_train_id))
-            log_tp("SE 兼容: 触发 on_train_teleport_finished")
+            if RiftRail.DEBUG_MODE_ENABLED then
+                log_tp("【DEBUG】准备触发 FINISHED 事件: new_train_id = " .. tostring(final_train.id) .. ", old_train_id = " .. tostring(exit_struct.old_train_id))
+                log_tp("SE 兼容: 触发 on_train_teleport_finished")
+            end
             script.raise_event(SE_TELEPORT_FINISHED_EVENT_ID, {
                 train = final_train,
                 old_train_id = exit_struct.old_train_id,
@@ -394,7 +431,9 @@ local function finish_teleport(entry_struct, exit_struct)
         -- 恢复被记录的 GUI 观察者到最终列车
         local restored = reopen_train_gui(exit_struct.gui_watchers, final_train)
         exit_struct.gui_watchers = nil
-        log_tp("恢复 GUI 观察者: " .. tostring(restored) .. " 人, final_train_id=" .. tostring(final_train.id))
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_tp("恢复 GUI 观察者: " .. tostring(restored) .. " 人, final_train_id=" .. tostring(final_train.id))
+        end
     end
 
     -- 5. 重置状态变量
@@ -403,6 +442,7 @@ local function finish_teleport(entry_struct, exit_struct)
     exit_struct.carriage_behind = nil
     exit_struct.carriage_ahead = nil
     exit_struct.old_train_id = nil
+    exit_struct.cached_geo = nil
 
     -- 6. 【关键】标记需要重建入口碰撞器
     -- 我们不在这里直接创建，而是交给 on_tick 去计算正确的坐标并创建
@@ -436,7 +476,13 @@ function Teleport.teleport_next(entry_struct, exit_struct)
     end
 
     -- 检查出口是否堵塞
-    local geo = GEOMETRY[exit_struct.shell.direction] or GEOMETRY[0]
+    -- 优先从缓存读取，如果缓存不存在 (如读档后)，则现场计算一次并存入缓存
+    local geo = exit_struct.cached_geo
+    if not geo then
+        -- 如果 geo 是 nil，说明缓存未命中，立即计算并写入
+        geo = GEOMETRY[exit_struct.shell.direction] or GEOMETRY[0]
+        exit_struct.cached_geo = geo
+    end
     local spawn_pos = Util.vectors_add(exit_struct.shell.position, geo.spawn_offset)
 
     -- 动态生成出口检测区域 (宽度修正为2)
@@ -539,12 +585,16 @@ function Teleport.teleport_next(entry_struct, exit_struct)
     end
 
     -- 开始传送当前车厢
-    log_tp("正在传送车厢: " .. carriage.name)
+    if RiftRail.DEBUG_MODE_ENABLED then
+        log_tp("正在传送车厢: " .. carriage.name)
+    end
 
     -- 第一节车时记录正在查看该列车 GUI 的玩家
     if is_first_carriage and carriage.train then
         exit_struct.gui_watchers = collect_gui_watchers(carriage.train.id)
-        log_tp("记录 GUI 观察者: " .. tostring(#exit_struct.gui_watchers) .. " 人, old_train_id=" .. tostring(carriage.train.id))
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_tp("记录 GUI 观察者: " .. tostring(#exit_struct.gui_watchers) .. " 人, old_train_id=" .. tostring(carriage.train.id))
+        end
     end
 
     -- 获取下一节车 (用于更新循环)
@@ -581,7 +631,9 @@ function Teleport.teleport_next(entry_struct, exit_struct)
 
         -- [SE] Started 事件
         if SE_TELEPORT_STARTED_EVENT_ID then
-            log_tp("【DEBUG】准备触发 STARTED 事件: old_train_id = " .. tostring(carriage.train.id))
+            if RiftRail.DEBUG_MODE_ENABLED then
+                log_tp("【DEBUG】准备触发 STARTED 事件: old_train_id = " .. tostring(carriage.train.id))
+            end
             script.raise_event(SE_TELEPORT_STARTED_EVENT_ID, {
                 train = carriage.train,
                 old_train_id_1 = carriage.train.id,
@@ -605,9 +657,9 @@ function Teleport.teleport_next(entry_struct, exit_struct)
         diff = 1.0 - diff
     end
     local is_nose_in = diff < 0.125
-
-    log_tp("方向计算: 车厢ori=" .. carriage_ori .. ", 建筑ori=" .. entry_shell_ori .. ", 判定=" .. (is_nose_in and "顺向" or "逆向"))
-
+    if RiftRail.DEBUG_MODE_ENABLED then
+        log_tp("方向计算: 车厢ori=" .. carriage_ori .. ", 建筑ori=" .. entry_shell_ori .. ", 判定=" .. (is_nose_in and "顺向" or "逆向"))
+    end
     -- 1. 提前计算目标朝向 (target_ori)
     local exit_base_ori = geo.direction / 16.0
     local target_ori = exit_base_ori
@@ -615,9 +667,13 @@ function Teleport.teleport_next(entry_struct, exit_struct)
     if not is_nose_in then
         -- 逆向进入 -> 逆向离开 (翻转 180 度)
         target_ori = (target_ori + 0.5) % 1.0
-        log_tp("方向计算: 逆向翻转 (Ori " .. exit_base_ori .. " -> " .. target_ori .. ")")
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_tp("方向计算: 逆向翻转 (Ori " .. exit_base_ori .. " -> " .. target_ori .. ")")
+        end
     else
-        log_tp("方向计算: 顺向保持 (Ori " .. target_ori .. ")")
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_tp("方向计算: 顺向保持 (Ori " .. target_ori .. ")")
+        end
     end
 
     -- 直接使用上面算好的 target_ori 进行生成
@@ -653,7 +709,7 @@ function Teleport.teleport_next(entry_struct, exit_struct)
         new_carriage.train.go_to_station(saved_ahead_index)
     end
 
-    -- 司机转移逻辑 (严格照搬传送门)
+    -- 司机转移逻辑
     local driver = carriage.get_driver()
     if driver then
         carriage.set_driver(nil) -- 第一步：必须先从旧车“下车”，防止被留在入口
@@ -673,8 +729,9 @@ function Teleport.teleport_next(entry_struct, exit_struct)
     if not entry_struct.carriage_ahead then
         -- 1. 获取带图标的真实站名 (解决比对失败问题)
         local real_station_name = get_real_station_name(entry_struct)
-        log_tp("时刻表转移: 使用真实站名 '" .. real_station_name .. "' 进行比对")
-
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_tp("时刻表转移: 使用真实站名 '" .. real_station_name .. "' 进行比对")
+        end
         -- 2. 转移时刻表
         Schedule.transfer_schedule(carriage.train, new_carriage.train, real_station_name)
 
@@ -721,9 +778,9 @@ function Teleport.teleport_next(entry_struct, exit_struct)
     if is_first_carriage then
         -- 计算位于前方的引导车坐标 (leadertrain_offset 已改为前方)
         local leadertrain_pos = Util.vectors_add(exit_struct.shell.position, geo.leadertrain_offset)
-
-        log_tp("正在创建引导车 (Leader)... 坐标偏移: x=" .. geo.leadertrain_offset.x .. ", y=" .. geo.leadertrain_offset.y)
-
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_tp("正在创建引导车 (Leader)... 坐标偏移: x=" .. geo.leadertrain_offset.x .. ", y=" .. geo.leadertrain_offset.y)
+        end
         local leadertrain = exit_struct.surface.create_entity({
             name = "rift-rail-leader-train",
             position = leadertrain_pos,
@@ -734,7 +791,9 @@ function Teleport.teleport_next(entry_struct, exit_struct)
         if leadertrain then
             leadertrain.destructible = false
             exit_struct.leadertrain = leadertrain
-            log_tp("引导车创建成功 ID: " .. leadertrain.unit_number)
+            if RiftRail.DEBUG_MODE_ENABLED then
+                log_tp("引导车创建成功 ID: " .. leadertrain.unit_number)
+            end
         else
             log_tp("错误：引导车创建失败！")
         end
@@ -843,11 +902,20 @@ function Teleport.on_collider_died(event)
         struct.collider_needs_rebuild = true
     else
         -- 情况 B: 有火车，触发传送逻辑
-        log_tp("触发传送！入口ID: " .. struct.id .. " 火车ID: " .. train.id)
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_tp("触发传送检测: 入口ID=" .. struct.id .. ", 火车ID=" .. train.id)
+        end
 
         -- 优先用撞击者作为第一节
         struct.carriage_behind = event.cause or train.front_stock
         struct.is_teleporting = true
+
+        -- 预计算并缓存出口的几何数据，避免在 teleport_next 中重复计算
+        -- 仅在触发传送时计算一次
+        local exit_struct = State.get_struct_by_id(struct.paired_to_id)
+        if exit_struct and exit_struct.shell and exit_struct.shell.valid then
+            exit_struct.cached_geo = GEOMETRY[exit_struct.shell.direction] or GEOMETRY[0]
+        end
     end
 
     -- 使用辅助函数添加到活跃列表
@@ -888,11 +956,13 @@ function Teleport.manage_speed(struct)
 
             -- 使用新函数计算出口列车所需的速度方向
             -- 以出口传送门的位置为参考点
-            local required_sign = calculate_speed_sign(train_exit, exit_struct.shell.position)
+            local required_sign = calculate_speed_sign(train_exit, exit_struct)
 
             -- 每60tick(1秒)打印一次，监控计算结果
-            if game.tick % 60 == struct.unit_number % 60 then
-                log_tp("【Speed Exit】ReqSign=" .. required_sign .. " | TrainSpeed=" .. train_exit.speed)
+            if RiftRail.DEBUG_MODE_ENABLED then
+                if game.tick % 60 == struct.unit_number % 60 then
+                    log_tp("【Speed Exit】ReqSign=" .. required_sign .. " | TrainSpeed=" .. train_exit.speed)
+                end
             end
 
             -- 应用速度前增加状态检查 (保持不变)
@@ -912,7 +982,7 @@ function Teleport.manage_speed(struct)
             -- 3. 入口动力 (已重构为距离比对法)
             -- 使用新函数计算入口列车的逻辑方向
             -- 以入口传送门的位置为参考点
-            local entry_sign = calculate_speed_sign(train_entry, struct.shell.position)
+            local entry_sign = calculate_speed_sign(train_entry, struct)
 
             -- [关键] 反转符号
             -- calculate_speed_sign 计算的是"远离"的方向 (1 或 -1)
@@ -920,8 +990,10 @@ function Teleport.manage_speed(struct)
             local final_sign = entry_sign * -1
 
             -- 每60tick打印一次
-            if game.tick % 60 == struct.unit_number % 60 then
-                log_tp("【Speed Entry】CalcSign=" .. entry_sign .. " -> FinalSign=" .. final_sign)
+            if RiftRail.DEBUG_MODE_ENABLED then
+                if game.tick % 60 == struct.unit_number % 60 then
+                    log_tp("【Speed Entry】CalcSign=" .. entry_sign .. " -> FinalSign=" .. final_sign)
+                end
             end
 
             -- 应用与出口速度大小同步的、方向修正后的速度
@@ -947,30 +1019,35 @@ function Teleport.on_tick(event)
             -- A. 重建碰撞器逻辑
             if struct.collider_needs_rebuild then
                 if struct.shell and struct.shell.valid then
-                    -- 1. 根据建筑方向计算偏移量 (North: y-2, East: x+2, South: y+2, West: x-2)
-                    local dir = struct.shell.direction
-                    local offset = { x = 0, y = 0 }
+                    -- 优先从缓存读取碰撞器坐标
+                    local collider_pos = struct.collider_position
 
-                    if dir == 0 then
-                        offset = { x = 0, y = -2 } -- North
-                    elseif dir == 4 then
-                        offset = { x = 2, y = 0 } -- East
-                    elseif dir == 8 then
-                        offset = { x = 0, y = 2 } -- South
-                    elseif dir == 12 then
-                        offset = { x = -2, y = 0 } -- West
+                    -- 如果缓存不存在 (旧存档/克隆体)，则现场计算一次并写回
+                    if not collider_pos then
+                        local shell = struct.shell
+                        local shell_pos = shell.position
+                        local shell_dir = shell.direction
+                        local col_relative_pos = { x = 0, y = -2 }
+
+                        local rotated_offset
+                        if shell_dir == 0 then
+                            rotated_offset = { x = col_relative_pos.x, y = col_relative_pos.y }
+                        elseif shell_dir == 4 then
+                            rotated_offset = { x = -col_relative_pos.y, y = col_relative_pos.x }
+                        elseif shell_dir == 8 then
+                            rotated_offset = { x = -col_relative_pos.x, y = -col_relative_pos.y }
+                        else
+                            rotated_offset = { x = col_relative_pos.y, y = -col_relative_pos.x }
+                        end
+
+                        collider_pos = { x = shell_pos.x + rotated_offset.x, y = shell_pos.y + rotated_offset.y }
+                        struct.collider_position = collider_pos
                     end
 
-                    -- 2. 计算绝对坐标
-                    local final_pos = {
-                        x = struct.shell.position.x + offset.x,
-                        y = struct.shell.position.y + offset.y,
-                    }
-
-                    -- 3. 创建实体
+                    -- 使用最终坐标创建实体
                     struct.surface.create_entity({
                         name = "rift-rail-collider",
-                        position = final_pos,
+                        position = collider_pos,
                         force = struct.shell.force,
                     })
 
