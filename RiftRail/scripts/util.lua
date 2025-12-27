@@ -49,12 +49,11 @@ function Util.get_rolling_stock_train_id(rolling_stock)
 end
 
 ---------------------------------------------------------------------------
--- 2. 底层内容转移 (原创实现替换)
+-- 2. 底层内容转移
 ---------------------------------------------------------------------------
-
 -- =========================================================================
--- 核心物品栏转移函数
--- 功能：将一个物品栏的内容移动到另一个，不处理掉落。
+-- 核心物品栏转移函数 (重构版：使用 set_stack)
+-- 功能：将一个物品栏的内容 1:1 克隆到另一个，完美保留位置布局、耐久度和元数据。
 -- @param source_inv 源物品栏
 -- @param destination_inv 目标物品栏
 -- =========================================================================
@@ -63,12 +62,25 @@ function Util.move_inventory_items(source_inv, destination_inv)
         return
     end
 
-    for i = 1, #source_inv do
-        local stack = source_inv[i]
-        if stack.valid_for_read and stack.count > 0 then
-            destination_inv.insert(stack)
+    -- 安全检查：获取两者的最小容量 (理论上同种实体的容量是一样的)
+    -- 防止万一模组冲突导致两边大小不一致时报错
+    local limit = math.min(#source_inv, #destination_inv)
+
+    -- 遍历每一个格子
+    for i = 1, limit do
+        local source_stack = source_inv[i]
+        local dest_stack = destination_inv[i]
+
+        -- 只有当源格子有东西时 (valid_for_read) 才执行操作
+        if source_stack.valid_for_read then
+            -- 使用 set_stack 替代 insert
+            -- 这会直接把源格子的内存数据（包括蓝图内容、弹药量、耐久度等）
+            -- 拷贝到目标格子的【相同位置】
+            dest_stack.set_stack(source_stack)
         end
     end
+
+    -- 转移完成后，清空源物品栏
     source_inv.clear()
 end
 
