@@ -89,6 +89,18 @@ data:extend({
     -- 物品与配方
     {
         type = "item",
+        name = "rift-rail-station-item",
+        icon = "__base__/graphics/icons/train-stop.png",
+        icon_size = 64,
+        icon_mipmaps = 4,
+        hidden = true,
+        flags = { "only-in-cursor" },
+        subgroup = "train-transport",
+        order = "z-[rift-rail-station]",
+        stack_size = 1,
+    },
+    {
+        type = "item",
         name = "rift-rail-placer",
         icon = "__RiftRail__/graphics/icon/riftrail.png",
         icon_size = 64,
@@ -143,7 +155,6 @@ data:extend({
         flags = { "placeable-neutral", "player-creation", "placeable-off-grid", "not-rotatable" },
         -- 原理：强制告诉引擎，当对着这个实体按 Q 时，选取 "rift-rail-placer" 这个物品
         placeable_by = { { item = "rift-rail-placer", count = 1 } },
-
 
         minable = { mining_time = 1, result = "rift-rail-placer" },
         max_health = 100000,
@@ -369,11 +380,13 @@ local internal_station = data.raw["train-stop"]["rift-rail-station"]
 table_merge(internal_station, table.deepcopy(data.raw["train-stop"]["train-stop"]))
 internal_station.name = "rift-rail-station"
 internal_station.minable = nil
-internal_station.flags = { "hide-alt-info", "not-repairable", "not-blueprintable", "not-deconstructable", "not-on-map" }
+internal_station.flags = { "player-creation", "hide-alt-info", "not-repairable", "not-deconstructable", "not-on-map" }
 internal_station.hidden = true
 internal_station.selectable_in_game = false
 internal_station.collision_mask = { layers = {} }
-internal_station.selection_box = create_centered_box(0, 0)
+internal_station.selection_box = create_centered_box(1, 1)
+-- 虽然玩家没有这个物品，但这允许幽灵存在于世界上
+internal_station.placeable_by = { item = "rift-rail-station-item", count = 1 }
 
 -- [修正] 隐藏贴图：将所有视觉元素替换为透明或移除
 internal_station.animations = blank_sprite

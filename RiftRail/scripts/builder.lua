@@ -190,12 +190,76 @@ function Builder.on_built(event)
 
     -- 4. 创建车站
     local st_offset = rotate_point(MASTER_LAYOUT.station, direction)
+
+    -- 计算搜索坐标
+    -- 这样搜索点就位于 (2, 7) 而不是 (0, 6.5)，完美避开铁轨
+    local search_pos = { x = position.x, y = position.y }
+
+    if direction == 0 then
+        search_pos.x = search_pos.x + 2
+        search_pos.y = search_pos.y + 7
+    elseif direction == 4 then
+        search_pos.x = search_pos.x - 7
+        search_pos.y = search_pos.y + 2
+    elseif direction == 8 then
+        search_pos.x = search_pos.x - 2
+        search_pos.y = search_pos.y - 7
+    elseif direction == 12 then
+        search_pos.x = search_pos.x + 7
+        search_pos.y = search_pos.y - 2
+    end
+
+    if RiftRail.DEBUG_MODE_ENABLED then
+        log_debug("[Builder] 正在侧面安全区搜寻幽灵: " .. search_pos.x .. ", " .. search_pos.y)
+    end
+
+    local ghosts = surface.find_entities_filtered({
+        type = "entity-ghost",
+        ghost_name = "rift-rail-station",
+        position = search_pos,
+        radius = 2, -- 范围 1.0 足够覆盖了
+        limit = 1,
+    })
+
+    -- 幽灵数据解析与重组
+    if ghosts[1] and ghosts[1].valid then
+        local ghost = ghosts[1]
+        local snatched_str = ghost.backer_name
+
+        if snatched_str and snatched_str ~= "" then
+            if RiftRail.DEBUG_MODE_ENABLED then
+                log_debug("[Builder] 窃取到原始名字: " .. snatched_str)
+            end
+
+            -- 1. 清洗：移除专用图标
+            local clean_str = string.gsub(snatched_str, "%[item=rift%-rail%-placer%]", "")
+
+            -- 2. 解析：提取自定义图标和名字
+            local icon_type, icon_name, separator, plain_name = string.match(clean_str, "^%s*%[([%w%-]+)=([%w%-]+)%](%s*)(.*)")
+
+            if icon_type and icon_name then
+                recovered_icon = { type = icon_type, name = icon_name }
+                recovered_name = (separator or "") .. (plain_name or "")
+            else
+                recovered_icon = nil
+                recovered_name = string.match(clean_str, "^%s*(.*)") or ""
+            end
+        end
+        ghost.destroy()
+    end
+
+    -- 3. 标准化重组 (这一步确保了无论蓝图怎么改，生成的格式永远是标准的)
     local master_icon = "[item=rift-rail-placer]"
+
     local user_icon_str = ""
     if recovered_icon then
         user_icon_str = "[" .. recovered_icon.type .. "=" .. recovered_icon.name .. "]"
     end
-    create_child("rift-rail-station", st_offset, direction, { backer_name = master_icon .. user_icon_str .. recovered_name })
+
+    local final_backer_name = master_icon .. user_icon_str .. recovered_name
+
+    -- 创建实体
+    create_child("rift-rail-station", st_offset, direction, { backer_name = final_backer_name })
 
     -- 5. 创建 GUI 核心
     local core_offset = rotate_point(MASTER_LAYOUT.core, direction)

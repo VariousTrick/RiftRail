@@ -212,8 +212,19 @@ end
 
 script.on_event(defines.events.on_gui_opened, function(event)
     local entity = event.entity
-    if entity and entity.valid and State.get_struct(entity) then
-        GUI.build_or_update(game.get_player(event.player_index), entity)
+
+    -- [修改] 增加例外判断
+    if entity and entity.valid then
+        -- 如果打开的是内部车站，直接返回，不执行拦截
+        -- 这样引擎就会默认打开车站的原生 GUI
+        if entity.name == "rift-rail-station" then
+            return
+        end
+
+        -- 其他组件（外壳、核心等）继续保持拦截，打开自定义 GUI
+        if State.get_struct(entity) then
+            GUI.build_or_update(game.get_player(event.player_index), entity)
+        end
     end
 end)
 
@@ -284,7 +295,6 @@ script.on_event(defines.events.on_entity_cloned, function(event)
                 }
 
                 -- 3. 在这个精确位置的稍大范围内，按名字查找克隆体
-
                 -- 为 'lamp' 使用更大的搜索半径，以应对克隆时的坐标漂移
                 local search_radius = 0.5 -- 默认使用高精度半径
                 if child_name == "rift-rail-lamp" then
@@ -304,7 +314,9 @@ script.on_event(defines.events.on_entity_cloned, function(event)
                         relative_pos = old_child_data.relative_pos,
                     })
                 else
-                    log_debug("RiftRail Clone Error: 在位置 " .. serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
+                    if RiftRail.DEBUG_MODE_ENABLED then
+                        log_debug("RiftRail Clone Error: 在位置 " .. serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
+                    end
                 end
             end
         end
@@ -330,29 +342,25 @@ script.on_event(defines.events.on_entity_cloned, function(event)
 
     -- 6. 删除旧数据
     storage.rift_rails[old_unit_number] = nil
-
-    log_debug("[RiftRail] 克隆迁移成功: ID " .. new_data.id .. " | 实体ID " .. old_unit_number .. " -> " .. new_unit_number)
+    if RiftRail.DEBUG_MODE_ENABLED then
+        log_debug("[RiftRail] 克隆迁移成功: ID " .. new_data.id .. " | 实体ID " .. old_unit_number .. " -> " .. new_unit_number)
+    end
 end)
 
 -- ============================================================================
--- [最终修复版] 蓝图创建时“源头掉包” (修复 "not-rotatable" 报错)
+-- [最终进阶版] 蓝图增强：放置器 + 车站数据注入 (安全坐标修正版)
 -- ============================================================================
 script.on_event(defines.events.on_player_setup_blueprint, function(event)
-    -- 这个事件只在“创建蓝图(Ctrl+C)”时有 mapping，我们只处理这种情况
     if not event.mapping then
         return
     end
 
     local player = game.get_player(event.player_index)
-
-    -- 智能获取正在编辑的蓝图
-    -- 优先检查 "新建蓝图" 界面 (Alt+B)，其次检查鼠标上的蓝图 (Ctrl+C)
+    -- 智能获取蓝图
     local blueprint = player.blueprint_to_setup
     if not (blueprint and blueprint.valid and blueprint.is_blueprint) then
         blueprint = player.cursor_stack
     end
-
-    -- 如果两种情况都不是有效的蓝图，则退出
     if not (blueprint and blueprint.valid and blueprint.is_blueprint) then
         return
     end
@@ -363,19 +371,23 @@ script.on_event(defines.events.on_player_setup_blueprint, function(event)
     end
 
     local mapping = event.mapping.get()
-
     local modified = false
-    local new_entities = {} -- 创建一个新的实体列表
+    local new_entities = {}
 
-    -- 1. 遍历原始蓝图实体，寻找主体并进行“掉包”
+    -- 用于生成唯一的 entity_number
+    local max_entity_number = 0
+    for _, e in pairs(entities) do
+        if e.entity_number > max_entity_number then
+            max_entity_number = e.entity_number
+        end
+    end
+
     for i, bp_entity in pairs(entities) do
         local source_entity = mapping[bp_entity.entity_number]
 
         if source_entity and source_entity.valid and source_entity.name == "rift-rail-entity" then
-            -- 找到了“顽固”的主体，我们不把它加入新列表
-            -- 而是创建一个全新的、“灵活”的放置器来替换它
+            -- 1. 处理主建筑 -> 替换为放置器
             modified = true
-
             local data = storage.rift_rails[source_entity.unit_number]
 
             local placer_entity = {
@@ -383,32 +395,73 @@ script.on_event(defines.events.on_player_setup_blueprint, function(event)
                 name = "rift-rail-placer-entity",
                 position = bp_entity.position,
                 direction = bp_entity.direction,
-                tags = {}, -- 初始化 tags
+                tags = {},
             }
-
-            -- 将配置信息保存到这个新放置器的 tags 中
             if data then
                 placer_entity.tags.rr_name = data.name
                 placer_entity.tags.rr_mode = data.mode
                 placer_entity.tags.rr_icon = data.icon
             end
-
-            -- 将改造后的“安装包”加入新列表
             table.insert(new_entities, placer_entity)
-            log_debug("蓝图源头掉包: RiftRail Entity -> Placer")
-        elseif not (source_entity and source_entity.valid and source_entity.name:find("rift-rail-")) then
-            -- 如果这个实体不是任何 RiftRail 的组件，就把它保留下来
+
+            -- 2. 注入内部车站 (实现蓝图参数化)
+            if data and data.children then
+                for _, child_data in pairs(data.children) do
+                    local child = child_data.entity
+                    if child and child.valid and child.name == "rift-rail-station" then
+                        -- 计算原始相对坐标 (保留横向偏移 x=2)
+                        local offset_x = child.position.x - source_entity.position.x
+                        local offset_y = child.position.y - source_entity.position.y
+                        local dir = source_entity.direction
+
+                        -- 纵向保持 6.5 (红绿灯下方)
+                        -- 横向从 2.0 改为 3.5 (确保边缘不重叠)
+                        if dir == 0 then -- North
+                            offset_x = 2 -- 向右更远一点
+                            offset_y = 7
+                        elseif dir == 4 then -- East
+                            offset_x = -7
+                            offset_y = 2 -- 向下更远一点
+                        elseif dir == 8 then -- South
+                            offset_x = -2 -- 向左更远一点
+                            offset_y = -7
+                        elseif dir == 12 then -- West
+                            offset_x = 7
+                            offset_y = -2 -- 向上更远一点
+                        end
+
+                        max_entity_number = max_entity_number + 1
+
+                        local station_bp_entity = {
+                            entity_number = max_entity_number,
+                            name = "rift-rail-station",
+                            position = {
+                                x = bp_entity.position.x + offset_x,
+                                y = bp_entity.position.y + offset_y,
+                            },
+                            direction = child.direction,
+                            station = child.backer_name,
+                        }
+
+                        table.insert(new_entities, station_bp_entity)
+                        if RiftRail.DEBUG_MODE_ENABLED then
+                            log_debug("[Control] 蓝图注入车站: 偏移修正 (" .. offset_x .. ", " .. offset_y .. ")")
+                        end
+                        break
+                    end
+                end
+            end
+
+        -- [重要] 允许车站通过过滤器
+        elseif not (source_entity and source_entity.valid and source_entity.name:find("rift-rail-")) or (source_entity.name == "rift-rail-station") then
             table.insert(new_entities, bp_entity)
         end
-        -- 注意: 所有 RiftRail 的内部组件 (core, station 等) 都会被自动忽略，不会加入 new_entities
     end
 
-    -- 2. 如果发生了“掉包”，就用我们净化过的新列表覆盖整个蓝图
     if modified then
         blueprint.set_blueprint_entities(new_entities)
     end
 end)
-
 -- ============================================================================
 -- 复制粘贴设置 (Shift+右键 -> Shift+左键)
 -- ============================================================================
@@ -460,10 +513,12 @@ script.on_event(defines.events.on_entity_settings_pasted, function(event)
 
         -- 手动播放原版粘贴音效
         -- 这会让 Shift+左键 时也能听到熟悉的“咔嚓”声
-        player.play_sound{path = "utility/entity_settings_pasted"}
+        player.play_sound({ path = "utility/entity_settings_pasted" })
 
         -- 6. Debug 信息
-        log_debug("设置已粘贴: " .. source_data.name .. " -> " .. dest_data.name)
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_debug("设置已粘贴: " .. source_data.name .. " -> " .. dest_data.name)
+        end
     end
 end)
 -- ============================================================================
