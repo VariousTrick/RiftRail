@@ -39,7 +39,7 @@ function GUI.build_display_name_flow(parent_flow, my_data)
     end
 
     -- 2. 拼接: [图标] 名字 (ID: xx)
-    local display_caption = icon_str .. " " .. my_data.name .. " (ID: " .. my_data.id .. ")"
+    local display_caption = icon_str .. my_data.name .. " (ID: " .. my_data.id .. ")"
 
     -- 3. 创建 Label
     parent_flow.add({ type = "label", caption = display_caption, style = "bold_label" })
@@ -57,10 +57,10 @@ end
 function GUI.build_edit_name_flow(parent_flow, my_data)
     parent_flow.clear()
 
-    -- 1. 确定初始文本 (默认图标 + 名字)
-    local current_icon_str = "[item=rift-rail-placer] " -- 默认预填
+-- 1. 确定初始文本 (默认图标 + 名字)
+    local current_icon_str = "[item=rift-rail-placer]" 
     if my_data.icon and my_data.icon.type and my_data.icon.name then
-        current_icon_str = "[" .. my_data.icon.type .. "=" .. my_data.icon.name .. "] "
+        current_icon_str = "[" .. my_data.icon.type .. "=" .. my_data.icon.name .. "]"
     end
 
     local textfield = parent_flow.add({

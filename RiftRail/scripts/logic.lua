@@ -126,38 +126,40 @@ function Logic.update_name(player_index, portal_id, new_string)
         return
     end
 
-    -- 1. 解析输入
-    local icon_type, icon_name, plain_name = string.match(new_string, "%[([%w%-]+)=([%w%-]+)%]%s*(.*)")
+    -- 1. 解析输入 (显式捕获间隔符 %s* 和剩余文本)
+    -- 原正则: "%[([%w%-]+)=([%w%-]+)%]%s*(.*)"
+    local icon_type, icon_name, separator, plain_name = string.match(new_string, "%[([%w%-]+)=([%w%-]+)%](%s*)(.*)")
 
-    -- 2. 智能去重
+    -- 2. 智能去重与数据更新
     if icon_type and icon_name then
         if icon_name == "rift-rail-placer" then
+            -- 玩家手动输入了主图标 -> 去重
             my_data.icon = nil
+            -- [关键] 名字 = 原始间隔符 + 原始名字 (忠实还原)
+            my_data.name = (separator or "") .. (plain_name or "")
         else
+            -- 玩家输入了自定义图标 -> 记录
             my_data.icon = { type = icon_type, name = icon_name }
+            -- [关键] 名字同样包含原始间隔符
+            my_data.name = (separator or "") .. (plain_name or "")
         end
-        my_data.name = plain_name
     else
+        -- 没有检测到图标，整个字符串就是名字
         my_data.name = new_string
         my_data.icon = nil
     end
 
     -- 3. 更新实体显示名称
     if my_data.children then
-        -- 适配新的 children 结构
         for _, child_data in pairs(my_data.children) do
-            local child = child_data.entity -- <<-- [核心修复] 先从表中取出实体
+            local child = child_data.entity
             if child and child.valid and child.name == "rift-rail-station" then
-                -- 强制添加的主图标
-                local master_icon = "[item=rift-rail-placer] "
-
-                -- 用户自定义图标字符串
+                local master_icon = "[item=rift-rail-placer]"
                 local user_icon_str = ""
                 if my_data.icon then
-                    user_icon_str = "[" .. my_data.icon.type .. "=" .. my_data.icon.name .. "] "
+                    user_icon_str = "[" .. my_data.icon.type .. "=" .. my_data.icon.name .. "]"
                 end
-
-                -- 拼接：[主图标] + [用户图标(如果有)] + 名字
+                -- 拼接：主图标 + 自定义图标 + 名字(名字里现在包含了用户输入的空格)
                 child.backer_name = master_icon .. user_icon_str .. my_data.name
                 break
             end

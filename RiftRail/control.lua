@@ -440,21 +440,27 @@ script.on_event(defines.events.on_entity_settings_pasted, function(event)
         Logic.set_mode(event.player_index, dest_data.id, source_data.mode)
 
         -- 5. 刷新车站显示名称 (backer_name)
-        -- 因为 Logic.update_name 是处理 GUI 原始字符串输入的，这里直接操作实体更方便
         if dest_data.children then
-            for _, child in pairs(dest_data.children) do
-                if child.valid and child.name == "rift-rail-station" then
-                    -- 重建显示名称：[主图标] + [自定义图标] + 名字
-                    local master_icon = "[item=rift-rail-placer] "
+            for _, child_data in pairs(dest_data.children) do
+                -- 先从数据结构中取出实体对象
+                local child = child_data.entity
+                if child and child.valid and child.name == "rift-rail-station" then
+                    -- 移除强制空格，保持与 Logic/Builder 一致
+                    local master_icon = "[item=rift-rail-placer]"
                     local user_icon_str = ""
                     if dest_data.icon then
-                        user_icon_str = "[" .. dest_data.icon.type .. "=" .. dest_data.icon.name .. "] "
+                        user_icon_str = "[" .. dest_data.icon.type .. "=" .. dest_data.icon.name .. "]"
                     end
+                    -- dest_data.name 此时已包含必要的空格（如果有），直接拼接
                     child.backer_name = master_icon .. user_icon_str .. dest_data.name
                     break
                 end
             end
         end
+
+        -- 手动播放原版粘贴音效
+        -- 这会让 Shift+左键 时也能听到熟悉的“咔嚓”声
+        player.play_sound{path = "utility/entity_settings_pasted"}
 
         -- 6. Debug 信息
         log_debug("设置已粘贴: " .. source_data.name .. " -> " .. dest_data.name)
@@ -763,7 +769,6 @@ remote.add_interface("RiftRail", {
             else
                 return "storage.rift_rails not found!"
             end
-
         elseif key == "find_ghosts" then
             local report = {}
             local data_ghosts = {}
@@ -813,7 +818,6 @@ remote.add_interface("RiftRail", {
             }
 
             return report
-
         elseif key == "selected" or key == "get_by_id" or key == "get_by_unit" then
             return get_struct(key, param)
         end

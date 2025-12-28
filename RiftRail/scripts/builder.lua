@@ -190,10 +190,10 @@ function Builder.on_built(event)
 
     -- 4. 创建车站
     local st_offset = rotate_point(MASTER_LAYOUT.station, direction)
-    local master_icon = "[item=rift-rail-placer] "
+    local master_icon = "[item=rift-rail-placer]"
     local user_icon_str = ""
     if recovered_icon then
-        user_icon_str = "[" .. recovered_icon.type .. "=" .. recovered_icon.name .. "] "
+        user_icon_str = "[" .. recovered_icon.type .. "=" .. recovered_icon.name .. "]"
     end
     create_child("rift-rail-station", st_offset, direction, { backer_name = master_icon .. user_icon_str .. recovered_name })
 
