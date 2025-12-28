@@ -284,10 +284,17 @@ script.on_event(defines.events.on_entity_cloned, function(event)
                 }
 
                 -- 3. 在这个精确位置的稍大范围内，按名字查找克隆体
+
+                -- [核心修复] 为 'lamp' 使用更大的搜索半径，以应对克隆时的坐标漂移
+                local search_radius = 0.5 -- 默认使用高精度半径
+                if child_name == "rift-rail-lamp" then
+                    search_radius = 2.0 -- 只为灯放宽到 1.0
+                end
+
                 local found_clone = new_entity.surface.find_entities_filtered({
-                    name = child_name, -- <<-- [核心修复1] 指定名字
+                    name = child_name,
                     position = expected_pos,
-                    radius = 0.5, -- <<-- [核心修复2] 稍微扩大范围以容错
+                    radius = search_radius, -- [修改] 使用动态半径
                     limit = 1,
                 })
 
@@ -487,11 +494,28 @@ script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
                             offset = { x = -2, y = 0 } -- West
                         end
 
-                        struct.surface.create_entity({
+                        -- 获取新创建的 collider 实体
+                        local new_collider = struct.surface.create_entity({
                             name = "rift-rail-collider",
                             position = { x = struct.shell.position.x + offset.x, y = struct.shell.position.y + offset.y },
                             force = struct.shell.force,
                         })
+
+                        -- 将新 collider 同步回 children 列表
+                        if new_collider and struct.children then
+                            -- 1. 清理旧的 collider 引用
+                            for i = #struct.children, 1, -1 do
+                                local child_data = struct.children[i]
+                                if child_data and child_data.entity and (not child_data.entity.valid or child_data.entity.name == "rift-rail-collider") then
+                                    table.remove(struct.children, i)
+                                end
+                            end
+                            -- 2. 注册新的 collider
+                            table.insert(struct.children, {
+                                entity = new_collider,
+                                relative_pos = offset, -- "offset" 就是我们刚算好的相对坐标
+                            })
+                        end
                     end
                     -- 重置标记
                     struct.collider_needs_rebuild = false
@@ -686,9 +710,11 @@ remote.add_interface("RiftRail", {
         5. 通过实体Unit Number查询 (旧方法):
         /c local id=12345; game.print(serpent.block(remote.call("RiftRail", "debug_storage", "get_by_unit", id)))
 
+        6. 查找幽灵数据报告:
+        /c game.print(serpent.block(remote.call("RiftRail", "debug_storage", "find_ghosts")))
     ]]
-    debug_storage = function(key, param, player_index) -- [修改] 增加 player_index 参数
-        -- 内部辅助函数，用于获取 struct
+    debug_storage = function(key, param, player_index)
+        -- 内部辅助函数，用于获取 struct (保持不变)
         local function get_struct(struct_key, search_param)
             if struct_key == "selected" then
                 if not player_index then
@@ -698,19 +724,15 @@ remote.add_interface("RiftRail", {
                 if not (player and player.valid) then
                     return "Error: Invalid player."
                 end
-
                 local selected = player.selected
                 if not (selected and selected.valid) then
                     return "Error: No entity selected. Hover mouse over a Rift Rail building."
                 end
-
-                -- 通过 State 模块反查
                 return State.get_struct(selected) or "Error: Selected entity is not a Rift Rail portal."
             elseif struct_key == "get_by_id" then
                 if not search_param then
                     return "Error: 'get_by_id' requires a custom ID parameter."
                 end
-                -- 通过 State 模块的 ID 映射查找
                 return State.get_struct_by_id(search_param) or "Error: Struct with custom ID " .. tostring(search_param) .. " not found."
             elseif struct_key == "get_by_unit" then
                 if not search_param then
@@ -741,10 +763,62 @@ remote.add_interface("RiftRail", {
             else
                 return "storage.rift_rails not found!"
             end
+
+        elseif key == "find_ghosts" then
+            local report = {}
+            local data_ghosts = {}
+            local entity_ghosts = {}
+            local total_structs = 0
+
+            -- 1. 查找"数据幽灵" (数据存在，实体已消失)
+            if storage.rift_rails then
+                for unit_number, struct in pairs(storage.rift_rails) do
+                    total_structs = total_structs + 1
+                    if not (struct.shell and struct.shell.valid) then
+                        table.insert(data_ghosts, "Struct for unit_number " .. unit_number .. " (ID: " .. (struct.id or "N/A") .. ") has an invalid shell.")
+                    end
+                end
+            end
+            report["Data Ghosts (Data exists, Entity gone)"] = data_ghosts
+
+            -- 2. 查找"实体幽灵" (实体存在，数据已消失)
+            local component_names = {
+                "rift-rail-entity",
+                "rift-rail-core",
+                "rift-rail-station",
+                "rift-rail-signal",
+                "rift-rail-internal-rail",
+                "rift-rail-collider",
+                "rift-rail-blocker",
+                "rift-rail-lamp",
+            }
+            local total_components = 0
+            for _, surface in pairs(game.surfaces) do
+                for _, entity in pairs(surface.find_entities_filtered({ name = component_names })) do
+                    total_components = total_components + 1
+                    if not State.get_struct(entity) then
+                        -- [修正] 对 entity.unit_number 进行安全转换，防止 simple-entity (如 collider) 因没有 unit_number 而报错
+                        table.insert(entity_ghosts, "Entity '" .. entity.name .. "' (Unit No: " .. tostring(entity.unit_number) .. ") at [gps=" .. entity.position.x .. "," .. entity.position.y .. "," .. entity.surface.name .. "] has no corresponding struct data.")
+                    end
+                end
+            end
+            report["Entity Ghosts (Entity exists, Data gone)"] = entity_ghosts
+
+            -- 3. 总结
+            report["Summary"] = {
+                ["Total structs in storage"] = total_structs,
+                ["Total Rift Rail components in world"] = total_components, -- 修正了描述
+                ["Data ghosts found"] = #data_ghosts,
+                ["Entity ghosts found"] = #entity_ghosts,
+            }
+
+            return report
+
         elseif key == "selected" or key == "get_by_id" or key == "get_by_unit" then
             return get_struct(key, param)
         end
 
-        return "Unknown debug key. Available: 'count', 'size', 'selected', 'get_by_id', 'get_by_unit'."
+        -- 更新可用键列表
+        return "Unknown debug key. Available: 'count', 'size', 'find_ghosts', 'selected', 'get_by_id', 'get_by_unit'."
     end,
 })

@@ -84,6 +84,21 @@ function State.get_struct(entity)
         end
     end
 
+    -- 如果以上快速查找都失败，则遍历所有 struct 的 children 列表
+    -- 这是查找任何子实体 (如 station, signal, rail 等) 的最终保底方案
+    if storage.rift_rails then
+        for unit_num, data in pairs(storage.rift_rails) do
+            if data.children then
+                for _, child_data in pairs(data.children) do
+                    if child_data.entity == entity then
+                        -- 找到了！返回它所属的父级 struct
+                        return data
+                    end
+                end
+            end
+        end
+    end
+
     return nil
 end
 

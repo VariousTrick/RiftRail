@@ -895,6 +895,7 @@ function Teleport.on_collider_died(event)
     -- 只有入口模式响应
     if struct.mode ~= "entry" then
         struct.collider_needs_rebuild = true
+        add_to_active(struct)
         return
     end
 
@@ -902,6 +903,7 @@ function Teleport.on_collider_died(event)
     if not struct.paired_to_id then
         game.print({ "messages.rift-rail-error-unpaired-or-collider" })
         struct.collider_needs_rebuild = true
+        add_to_active(struct)
         return
     end
 
@@ -1073,12 +1075,35 @@ function Teleport.on_tick(event)
                         y = struct.shell.position.y + offset.y,
                     }
 
-                    -- 使用计算出的坐标创建实体
-                    struct.surface.create_entity({
+                    -- 创建实体碰撞器
+                    local new_collider = struct.surface.create_entity({
                         name = "rift-rail-collider",
                         position = final_pos,
                         force = struct.shell.force,
                     })
+
+                    -- 将新创建的碰撞器同步回 children 列表
+                    if new_collider and struct.children then
+                        -- 1. 清理掉列表中所有旧的、无效的 collider 引用
+                        for i = #struct.children, 1, -1 do
+                            local child_data = struct.children[i]
+                            if child_data and child_data.entity and (not child_data.entity.valid or child_data.entity.name == "rift-rail-collider") then
+                                table.remove(struct.children, i)
+                            end
+                        end
+
+                        -- 2. 计算新碰撞器的相对坐标
+                        local relative_pos = {
+                            x = final_pos.x - struct.shell.position.x,
+                            y = final_pos.y - struct.shell.position.y,
+                        }
+
+                        -- 3. 将新碰撞器注册到 children 列表中
+                        table.insert(struct.children, {
+                            entity = new_collider,
+                            relative_pos = relative_pos,
+                        })
+                    end
 
                     -- 4. 标记完成
                     struct.collider_needs_rebuild = false
