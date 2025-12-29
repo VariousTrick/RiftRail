@@ -25,7 +25,7 @@ function Teleport.init(deps)
     if deps.log_debug then
         log_debug = deps.log_debug
     end
-    -- [新增] 接收兼容模块
+    -- 接收兼容模块
     CybersynCompat = deps.CybersynCompat
     LtnCompat = deps.LtnCompat
 end
@@ -52,9 +52,7 @@ local GEOMETRY = {
         direction = defines.direction.south,
         leadertrain_offset = { x = 0, y = 4.0 },
         velocity_mult = { x = 0, y = 1 },
-        -- [新增] 碰撞器重建偏移
         collider_offset = { x = 0, y = -2 },
-        -- [新增] 堵车检测区域相对坐标 (左上, 右下)
         check_area_rel = { lt = { x = -1, y = 0 }, rb = { x = 1, y = 10 } },
     },
     [4] = { -- East (出口在左方 X-)
@@ -62,7 +60,6 @@ local GEOMETRY = {
         direction = defines.direction.west,
         leadertrain_offset = { x = -4.0, y = 0 },
         velocity_mult = { x = -1, y = 0 },
-        -- [新增]
         collider_offset = { x = 2, y = 0 },
         check_area_rel = { lt = { x = -10, y = -1 }, rb = { x = 0, y = 1 } },
     },
@@ -71,7 +68,6 @@ local GEOMETRY = {
         direction = defines.direction.north,
         leadertrain_offset = { x = 0, y = -4.0 },
         velocity_mult = { x = 0, y = -1 },
-        -- [新增]
         collider_offset = { x = 0, y = 2 },
         check_area_rel = { lt = { x = -1, y = -10 }, rb = { x = 1, y = 0 } },
     },
@@ -80,7 +76,6 @@ local GEOMETRY = {
         direction = defines.direction.east,
         leadertrain_offset = { x = 4.0, y = 0 },
         velocity_mult = { x = 1, y = 0 },
-        -- [新增]
         collider_offset = { x = -2, y = 0 },
         check_area_rel = { lt = { x = 0, y = -1 }, rb = { x = 10, y = 1 } },
     },
@@ -563,10 +558,10 @@ local function finish_teleport(entry_struct, exit_struct)
     end
 
     if final_train and final_train.valid then
-        -- [重构] 使用统一函数恢复状态 (参数 true 代表同时恢复速度)
+        -- 使用统一函数恢复状态 (参数 true 代表同时恢复速度)
         restore_train_state(final_train, exit_struct, true)
 
-        -- [重构] 触发 Cybersyn 完成钩子 (自动处理数据恢复)
+        -- 触发 Cybersyn 完成钩子 (自动处理数据恢复)
         if CybersynCompat and exit_struct.old_train_id then
             CybersynCompat.on_teleport_end(final_train, exit_struct.old_train_id, exit_struct.cybersyn_snapshot)
             exit_struct.cybersyn_snapshot = nil
@@ -641,15 +636,14 @@ function Teleport.teleport_next(entry_struct, exit_struct)
     end
 
     -- 检查出口是否堵塞
-    -- [重构] 使用统一函数获取缓存
+    -- 使用统一函数获取缓存
     local geo = ensure_geometry_cache(exit_struct)
     if not geo then
         return
     end -- 保护性检查
     local spawn_pos = Util.vectors_add(exit_struct.shell.position, geo.spawn_offset)
 
-    -- 动态生成出口检测区域 (宽度修正为2)
-    -- [重构] 动态生成出口检测区域 (使用配置表)
+    -- 动态生成出口检测区域 (使用配置表)
     local check_area = {
         left_top = Util.vectors_add(spawn_pos, geo.check_area_rel.lt),
         right_bottom = Util.vectors_add(spawn_pos, geo.check_area_rel.rb),
@@ -674,7 +668,7 @@ function Teleport.teleport_next(entry_struct, exit_struct)
             log_tp("出口堵塞，暂停传送...")
         end
 
-        -- [重构] 调用独立函数处理等待逻辑
+        -- 调用独立函数处理等待逻辑
         apply_congestion_wait(entry_struct, carriage.train)
 
         return -- 必须返回，中断传送
@@ -725,7 +719,7 @@ function Teleport.teleport_next(entry_struct, exit_struct)
         exit_struct.saved_speed = carriage.train.speed
         exit_struct.old_train_id = carriage.train.id
 
-        -- [重构] 触发模组开始钩子 (自动处理标签和快照)
+        -- 触发模组开始钩子 (自动处理标签和快照)
         if CybersynCompat then
             exit_struct.cybersyn_snapshot = CybersynCompat.on_teleport_start(carriage.train)
         end
@@ -744,11 +738,11 @@ function Teleport.teleport_next(entry_struct, exit_struct)
         end
     end
 
-    -- [重构] 计算目标朝向
+    -- 计算目标朝向
     -- 参数：入口方向, 出口几何预设方向, 车厢当前方向
     local target_ori = calculate_arrival_orientation(entry_struct.shell.direction, geo.direction, carriage.orientation)
 
-    -- [重构] 使用克隆工厂一键生成
+    -- 使用克隆工厂一键生成
     local new_carriage = spawn_cloned_carriage(carriage, exit_struct.surface, spawn_pos, target_ori)
 
     if not new_carriage then
@@ -776,7 +770,7 @@ function Teleport.teleport_next(entry_struct, exit_struct)
         -- 3. 保存新火车的时刻表索引 (解决重置问题)
         -- transfer_schedule 内部已经调用了 go_to_station，所以现在的 current 是正确的下一站
 
-        -- [重构] 触发 LTN 到达钩子 (自动处理重指派)
+        -- 触发 LTN 到达钩子 (自动处理重指派)
         -- 注意：LTN 比较特殊，通常需要在生成第一节车后立刻指派，以支持后续的时刻表操作
         if LtnCompat then
             LtnCompat.on_teleport_end(new_carriage.train, exit_struct.old_train_id)
@@ -827,7 +821,7 @@ function Teleport.teleport_next(entry_struct, exit_struct)
     -- 无论是否为第一节车，只要发生了拼接，引擎都会重置列车状态为手动。
     -- 所以必须对每一节新车都执行"先恢复进度，再恢复模式"的操作。
     -- =========================================================================
-    -- [重构] 状态一致性维护 (参数 false 代表此处暂不重置速度，交给 manage_speed 控制)
+    -- 状态一致性维护 (参数 false 代表此处暂不重置速度，交给 manage_speed 控制)
     restore_train_state(new_carriage.train, exit_struct, false)
 
     -- 2. 准备下一节 (简化版：只更新指针，不再生成引导车)
