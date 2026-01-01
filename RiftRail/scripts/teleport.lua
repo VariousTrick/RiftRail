@@ -448,16 +448,26 @@ local function apply_congestion_wait(portaldata, train)
         return
     end
 
-    -- 5. 执行插入逻辑
-    -- 在当前索引的下一位插入临时站，确保列车立即执行
-    table.insert(sched.records, sched.current + 1, {
+    -- 5. 执行插入逻辑 (使用正确的 API 对象)
+    -- 必须先通过 get_schedule() 获取可操作的对象
+    local sched = train.get_schedule()
+    if not sched then
+        return
+    end -- 安全检查
+
+    -- 在 get_schedule() 返回的对象上调用 add_record
+    sched.add_record({
+        -- 站点定义
         rail = station_entity.connected_rail,
         temporary = true,
         wait_conditions = { { type = "time", ticks = 4294967295 } },
+
+        -- 插入位置：在当前站点的下一位
+        index = { schedule_index = sched.current + 1 },
     })
 
-    -- 6. 应用更改
-    train.schedule = sched
+    -- 6. 应用更改 (让列车立即前往新插入的站点)
+    -- 注意：这里也应该使用 sched.current
     train.go_to_station(sched.current + 1)
 
     -- 7. 调试日志
