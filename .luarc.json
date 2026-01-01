@@ -1,0 +1,21 @@
+{
+    "$schema": "https://raw.githubusercontent.com/sumneko/vscode-lua/master/setting/schema.json",
+    "Lua.format.enable": true,
+    "Lua.format.defaultConfig": {
+        "indent_style": "space",
+        "indent_size": "4",
+        "quote_style": "double",
+        "max_line_length": "300",
+
+        "-- [需求1] 强制拆分单行代码 (if/function等) --": "",
+        "keep_simple_control_block_one_line": false,
+        "keep_simple_function_one_line": false,
+        "keep_simple_block_one_line": false,
+
+        "-- [需求2 & 3] 对齐设置 --": "",
+        "align_continuous_assign_statement": false,     
+        "align_continuous_rect_table_field": false,
+        
+        "align_continuous_inline_comment": true
+    }
+}

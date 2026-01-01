@@ -1,0 +1,19 @@
+# stylua.toml
+
+# 缩进风格：使用空格
+indent_type = "Spaces"
+indent_width = 4
+
+# 括号风格：强制函数调用时保留括号（避免 func "arg" 这种写法）
+call_parentheses = "Always"
+
+# 字符串引号：统一使用双引号（或 Single，看您喜好）
+quote_style = "AutoPreferDouble"
+
+# 【关键】单行语句处理：绝不折叠！
+# 这会将所有的 if x then return end 强制展开为三行
+collapse_simple_statement = "Never"
+
+# 空行处理：保留最少的空行，保持紧凑但清晰
+column_width = 300
+line_endings = "Unix"
