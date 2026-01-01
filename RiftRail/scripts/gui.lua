@@ -299,6 +299,24 @@ function GUI.build_or_update(player, entity)
         end
     end
 
+    local station_exists = false
+    if my_data.children then
+        for _, child_data in pairs(my_data.children) do
+            local child = child_data.entity
+            if child and child.valid and child.name == "rift-rail-station" then
+                station_exists = true
+                break
+            end
+        end
+    end
+
+    btn_flow.add({
+        type = "button",
+        name = "rift_rail_open_station_button",
+        caption = { "gui.rift-rail-btn-open-station" },
+        enabled = station_exists,
+    })
+
     -- 8. Cybersyn 开关（仅在安装 Cybersyn 时显示）
     if script.active_mods["cybersyn"] then
         inner_flow.add({ type = "line", direction = "horizontal" })
@@ -488,6 +506,24 @@ function GUI.handle_click(event)
         -- 解绑
     elseif el_name == "rift_rail_unpair_button" then
         remote.call("RiftRail", "unpair_portals", player.index, my_data.id)
+
+    elseif el_name == "rift_rail_open_station_button" then
+        local station = nil
+        if my_data.children then
+            for _, child_data in pairs(my_data.children) do
+                local child = child_data.entity
+                if child and child.valid and child.name == "rift-rail-station" then
+                    station = child
+                    break
+                end
+            end
+        end
+
+        if station then
+            player.opened = station
+        else
+            player.print({ "messages.rift-rail-error-station-missing" })
+        end
 
         -- 重命名
     elseif el_name == "rift_rail_rename_button" then

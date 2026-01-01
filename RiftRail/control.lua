@@ -213,6 +213,54 @@ end
 -- 6. GUI 事件 (保持不变)
 -- ============================================================================
 
+script.on_event(defines.events.on_entity_renamed, function(event)
+    local entity = event.entity
+    if not (entity and entity.valid and entity.name == "rift-rail-station") then
+        return
+    end
+
+    local portaldata = State.get_portaldata(entity)
+    if not portaldata then
+        return
+    end
+
+    local master_icon = "[item=rift-rail-placer]"
+    local raw_name = entity.backer_name or ""
+    local clean_str = raw_name:gsub("%[item=rift%-rail%-placer%]", "", 1)
+
+    local icon_type, icon_name, separator, plain_name = string.match(clean_str, "^%s*%[([%w%-]+)=([%w%-]+)%](%s*)(.*)")
+
+    if icon_type and icon_name then
+        if icon_name == "rift-rail-placer" then
+            portaldata.icon = nil
+            portaldata.name = (separator or "") .. (plain_name or "")
+        else
+            portaldata.icon = { type = icon_type, name = icon_name }
+            portaldata.name = (separator or "") .. (plain_name or "")
+        end
+    else
+        portaldata.icon = nil
+        portaldata.name = string.match(clean_str, "^%s*(.*)") or ""
+    end
+
+    local user_icon_str = ""
+    if portaldata.icon then
+        user_icon_str = "[" .. portaldata.icon.type .. "=" .. portaldata.icon.name .. "]"
+    end
+
+    local final_backer_name = master_icon .. user_icon_str .. portaldata.name
+    entity.backer_name = final_backer_name
+
+    if portaldata.shell and portaldata.shell.valid then
+        for _, player in pairs(game.connected_players) do
+            local frame = player.gui.screen.rift_rail_main_frame
+            if frame and frame.valid and frame.tags.unit_number == portaldata.unit_number then
+                GUI.build_or_update(player, portaldata.shell)
+            end
+        end
+    end
+end)
+
 script.on_event(defines.events.on_gui_opened, function(event)
     local entity = event.entity
 
