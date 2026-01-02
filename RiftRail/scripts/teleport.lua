@@ -417,66 +417,6 @@ local function try_start_teleport(entry_portaldata, car)
     return true
 end
 -- =================================================================================
--- 【独立函数】应用堵塞等待逻辑
--- =================================================================================
--- 功能：当检测到出口堵塞时，在入口列车当前位置插入一个临时等待站
--- 参数：portaldata (入口建筑数据), train (入口列车对象)
-local function apply_congestion_wait(portaldata, train)
-    -- 1. 基础校验：必须是自动模式才需要处理
-    if not (train and train.valid and not train.manual_mode) then
-        return
-    end
-
-    -- 2. 获取必要的铁轨组件
-    -- 使用我们之前定义的辅助函数查找车站实体
-    local station_entity = find_child_entity(portaldata, "rift-rail-station")
-    if not (station_entity and station_entity.connected_rail) then
-        return
-    end
-
-    -- 3. 获取时刻表
-    local sched = train.schedule
-    if not (sched and sched.records) then
-        return
-    end
-
-    -- 4. 幂等性检查：防止重复插入
-    -- 检查当前正在前往/停靠的站点，是不是已经是我们要插的这个了
-    local current_record = sched.records[sched.current]
-    if current_record and current_record.rail == station_entity.connected_rail then
-        -- 已经在等待了，无需重复操作
-        return
-    end
-
-    -- 5. 执行插入逻辑 (使用正确的 API 对象)
-    -- 必须先通过 get_schedule() 获取可操作的对象
-    local sched = train.get_schedule()
-    if not sched then
-        return
-    end -- 安全检查
-
-    -- 在 get_schedule() 返回的对象上调用 add_record
-    sched.add_record({
-        -- 站点定义
-        rail = station_entity.connected_rail,
-        temporary = true,
-        wait_conditions = { { type = "time", ticks = 4294967295 } },
-
-        -- 插入位置：在当前站点的下一位
-        index = { schedule_index = sched.current + 1 },
-    })
-
-    -- 6. 应用更改 (让列车立即前往新插入的站点)
-    -- 注意：这里也应该使用 sched.current
-    train.go_to_station(sched.current + 1)
-
-    -- 7. 调试日志
-    if RiftRail.DEBUG_MODE_ENABLED then
-        log_tp("堵塞处理: 已为列车 " .. train.id .. " 插入临时等待路障。")
-    end
-end
-
--- =================================================================================
 -- 新增辅助函数 (代码提纯)
 -- =================================================================================
 -- =================================================================================
@@ -673,9 +613,6 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         if RiftRail.DEBUG_MODE_ENABLED then
             log_tp("出口堵塞，暂停传送...")
         end
-
-        -- 调用独立函数处理等待逻辑
-        apply_congestion_wait(entry_portaldata, car.train)
 
         return -- 必须返回，中断传送
     end
