@@ -282,6 +282,38 @@ function Builder.on_built(event)
     local lamp_offset = rotate_point(MASTER_LAYOUT.lamp, direction)
     create_child("rift-rail-lamp", lamp_offset, direction)
 
+    -- 9. 连接车站和核心的信号线（红线+绿线，不连接电力线）
+    local station_entity = nil
+    local core_entity = nil
+    for _, child_data in pairs(children) do
+        local child = child_data.entity
+        if child and child.valid then
+            if child.name == "rift-rail-station" then
+                station_entity = child
+            elseif child.name == "rift-rail-core" then
+                core_entity = child
+            end
+        end
+    end
+
+    if station_entity and core_entity then
+        -- 连接红色信号线
+        core_entity.get_wire_connector(defines.wire_connector_id.circuit_red, true).connect_to(
+            station_entity.get_wire_connector(defines.wire_connector_id.circuit_red, true),
+            false,
+            defines.wire_origin.script
+        )
+        -- 连接绿色信号线
+        core_entity.get_wire_connector(defines.wire_connector_id.circuit_green, true).connect_to(
+            station_entity.get_wire_connector(defines.wire_connector_id.circuit_green, true),
+            false,
+            defines.wire_origin.script
+        )
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_debug("[Builder] 车站和核心的红绿信号线已连接")
+        end
+    end
+
     -- 批量设置内部组件属性
     for _, child_data in pairs(children) do
         local child = child_data.entity
