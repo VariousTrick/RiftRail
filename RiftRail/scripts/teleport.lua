@@ -37,6 +37,31 @@ local function log_tp(msg)
     end
 end
 
+-- =================================================================================
+-- 统一列车时刻表索引读取函数（处理不同列车状态）
+-- =================================================================================
+local function read_train_schedule_index(train, phase_name)
+    if not (train and train.valid and train.schedule) then
+        return nil
+    end
+
+    local index
+    local state = train.state
+
+    if state == defines.train_state.wait_station then
+        -- 列车正在等待，读取下一个索引
+        index = train.schedule.current + 1
+        if index > #train.schedule.records then
+            index = 1
+        end
+    elseif state == defines.train_state.on_the_path or state == defines.train_state.wait_signal or state == defines.train_state.arrive_signal or state == defines.train_state.arrive_station then
+        -- 这些状态都使用当前索引
+        index = train.schedule.current
+    end
+
+    return index
+end
+
 -- SE 事件 ID (初始化时获取)
 local SE_TELEPORT_STARTED_EVENT_ID = nil
 local SE_TELEPORT_FINISHED_EVENT_ID = nil
@@ -306,9 +331,9 @@ local function spawn_cloned_car(old_entity, surface, position, orientation)
     end
 
     -- 3. 内容转移 (调用 Util)
-    Util.transfer_all_inventories(old_entity, new_entity)
-    Util.transfer_fluids(old_entity, new_entity)
-    Util.transfer_equipment_grid(old_entity, new_entity)
+    Util.clone_all_inventories(old_entity, new_entity)
+    Util.clone_fluid_contents(old_entity, new_entity)
+    Util.clone_grid(old_entity, new_entity)
 
     -- 4. 司机转移 (特殊处理)
     local driver = old_entity.get_driver()
@@ -422,7 +447,7 @@ end
 -- =================================================================================
 -- 统一列车状态恢复函数
 -- =================================================================================
-local function restore_train_state(train, portaldata, apply_speed)
+local function restore_train_state(train, portaldata, apply_speed, target_index)
     if not (train and train.valid) then
         return
     end
@@ -432,8 +457,10 @@ local function restore_train_state(train, portaldata, apply_speed)
     end
 
     -- A. 恢复时刻表索引 (副作用：列车变为自动模式)
-    if portaldata.saved_schedule_index then
-        train.go_to_station(portaldata.saved_schedule_index)
+    -- 优先使用传入的 target_index，其次使用 saved_schedule_index
+    local index_to_restore = target_index or portaldata.saved_schedule_index
+    if index_to_restore then
+        train.go_to_station(index_to_restore)
     end
 
     -- B. 恢复手动/自动模式
@@ -487,25 +514,37 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         log_tp("传送结束: 清理状态 (入口ID: " .. entry_portaldata.id .. ", 出口ID: " .. exit_portaldata.id .. ")")
     end
 
-    -- 1. 直接炸掉引导车
-    if exit_portaldata.leadertrain and exit_portaldata.leadertrain.valid then
-        exit_portaldata.leadertrain.destroy()
-        exit_portaldata.leadertrain = nil
-    end
-
-    -- 安全获取 train 对象，防止 exit_car 已销毁(invalid)时访问 .train 导致崩溃
+    -- 1. 在销毁引导车前读取列车索引
     local final_train = nil
+    local actual_index_before_cleanup = nil
     if exit_portaldata.exit_car and exit_portaldata.exit_car.valid then
         final_train = exit_portaldata.exit_car.train
+        if final_train and final_train.valid then
+            actual_index_before_cleanup = read_train_schedule_index(final_train)
+        end
     else
         if RiftRail.DEBUG_MODE_ENABLED then
             log_tp("警告: finalize_sequence 时出口车厢无效或丢失，跳过列车恢复逻辑。")
         end
     end
 
+    -- 2. 销毁引导车（会导致列车对象失效并重新创建）
+    if exit_portaldata.leadertrain and exit_portaldata.leadertrain.valid then
+        exit_portaldata.leadertrain.destroy()
+        exit_portaldata.leadertrain = nil
+    end
+
+    -- 3. 销毁后重新获取新的列车对象
+    if exit_portaldata.exit_car and exit_portaldata.exit_car.valid then
+        final_train = exit_portaldata.exit_car.train
+    end
+
     if final_train and final_train.valid then
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_tp("【销毁后】准备恢复: actual_index=" .. tostring(actual_index_before_cleanup) .. ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index))
+        end
         -- 使用统一函数恢复状态 (参数 true 代表同时恢复速度)
-        restore_train_state(final_train, exit_portaldata, true)
+        restore_train_state(final_train, exit_portaldata, true, actual_index_before_cleanup)
 
         -- 触发 Cybersyn 完成钩子 (自动处理数据恢复)
         if CybersynCompat and exit_portaldata.old_train_id then
@@ -587,12 +626,12 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     if not geo then
         return
     end -- 保护性检查
-    local spawn_pos = Util.vectors_add(exit_portaldata.shell.position, geo.spawn_offset)
+    local spawn_pos = Util.add_offset(exit_portaldata.shell.position, geo.spawn_offset)
 
     -- 动态生成出口检测区域 (使用配置表)
     local check_area = {
-        left_top = Util.vectors_add(spawn_pos, geo.check_area_rel.lt),
-        right_bottom = Util.vectors_add(spawn_pos, geo.check_area_rel.rb),
+        left_top = Util.add_offset(spawn_pos, geo.check_area_rel.lt),
+        right_bottom = Util.add_offset(spawn_pos, geo.check_area_rel.rb),
     }
 
     -- 如果前面有车 (exit_car)，说明正在传送中，不需要检查堵塞 (我们是接在它后面的)
@@ -685,6 +724,16 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     -- 参数：入口方向, 出口几何预设方向, 车厢当前方向
     local target_ori = calculate_arrival_orientation(entry_portaldata.shell.direction, geo.direction, car.orientation)
 
+    -- 【关键】在创建新车厢前，读取当前出口列车的实际索引
+    -- 因为 create_entity 时新车厢会立即拼接，索引会回退到1
+    local index_before_spawn = nil
+    if not is_first_car and exit_portaldata.exit_car and exit_portaldata.exit_car.valid then
+        local current_train = exit_portaldata.exit_car.train
+        if current_train and current_train.valid then
+            index_before_spawn = read_train_schedule_index(current_train)
+        end
+    end
+
     -- 使用克隆工厂一键生成
     local new_car = spawn_cloned_car(car, exit_portaldata.surface, spawn_pos, target_ori)
 
@@ -704,14 +753,14 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
             log_tp("时刻表转移: 使用真实站名 '" .. real_station_name .. "' 进行比对")
         end
         -- 2. 转移时刻表
-        Schedule.transfer_schedule(car.train, new_car.train, real_station_name)
+        Schedule.copy_schedule(car.train, new_car.train, real_station_name)
 
         -- 关键修复: 在被引导车重置前，立刻备份正确的索引！
         if new_car.train and new_car.train.schedule then
             exit_portaldata.saved_schedule_index = new_car.train.schedule.current
         end
         -- 3. 保存新火车的时刻表索引 (解决重置问题)
-        -- transfer_schedule 内部已经调用了 go_to_station，所以现在的 current 是正确的下一站
+        -- copy_schedule 内部已经调用了 go_to_station，所以现在的 current 是正确的下一站
 
         -- 触发 LTN 到达钩子 (自动处理重指派)
         -- 注意：LTN 比较特殊，通常需要在生成第一节车后立刻指派，以支持后续的时刻表操作
@@ -735,7 +784,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     -- 1. 如果是第一节车，生成引导车 (Leader)
     if is_first_car then
         -- 计算位于前方的引导车坐标 (leadertrain_offset 已改为前方)
-        local leadertrain_pos = Util.vectors_add(exit_portaldata.shell.position, geo.leadertrain_offset)
+        local leadertrain_pos = Util.add_offset(exit_portaldata.shell.position, geo.leadertrain_offset)
         if RiftRail.DEBUG_MODE_ENABLED then
             log_tp("正在创建引导车 (Leader)... 坐标偏移: x=" .. geo.leadertrain_offset.x .. ", y=" .. geo.leadertrain_offset.y)
         end
@@ -760,12 +809,17 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     end
 
     -- =========================================================================
-    -- 状态一致性维护
-    -- 无论是否为第一节车，只要发生了拼接，引擎都会重置列车状态为手动。
-    -- 所以必须对每一节新车都执行"先恢复进度，再恢复模式"的操作。
+    -- 状态一致性维护：每次拼接后恢复索引和模式
+    -- 使用创建前读取的索引（如果有），否则用 saved_schedule_index
     -- =========================================================================
-    -- 状态一致性维护 (参数 false 代表此处暂不重置速度，交给 sync_momentum 控制)
-    restore_train_state(new_car.train, exit_portaldata, false)
+    if exit_portaldata.exit_car and exit_portaldata.exit_car.valid then
+        local merged_train = exit_portaldata.exit_car.train
+        if merged_train and merged_train.valid then
+            local target_index = index_before_spawn or exit_portaldata.saved_schedule_index
+            log_tp("【创建后】准备恢复: index_before_spawn=" .. tostring(index_before_spawn) .. ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index) .. ", 使用target=" .. tostring(target_index))
+            restore_train_state(merged_train, exit_portaldata, false, target_index)
+        end
+    end
 
     -- 2. 准备下一节 (简化版：只更新指针，不再生成引导车)
     if next_car and next_car.valid then
@@ -900,7 +954,7 @@ function Teleport.sync_momentum(portaldata)
             end
 
             -- 应用速度前增加状态检查 (保持不变)
-            local should_push = train_exit.manual_mode or (train_exit.state == defines.train_state.on_the_path) or (train_exit.state == defines.train_state.no_path)
+            local should_push = train_exit.manual_mode or (train_exit.state == defines.train_state.on_the_path)
 
             if should_push then
                 -- 直接赋值，不管它现在是快了还是慢了
@@ -945,7 +999,7 @@ local function process_rebuild_collider(portaldata)
     local geo = GEOMETRY[portaldata.shell.direction] or GEOMETRY[0]
 
     -- 2. 计算绝对坐标
-    local final_pos = Util.vectors_add(portaldata.shell.position, geo.collider_offset)
+    local final_pos = Util.add_offset(portaldata.shell.position, geo.collider_offset)
 
     -- 3. 创建实体碰撞器
     local new_collider = portaldata.surface.create_entity({

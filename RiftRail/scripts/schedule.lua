@@ -25,13 +25,13 @@ local function log_schedule(message)
     end
 end
 
---- 核心函数：转移时刻表和中断机制 (v3.0 SE重构版)
+--- 核心函数：转移时刻表和中断机制
 -- @param old_train LuaTrain: 即将被销毁的、进入传送门的旧火车实体
 -- @param new_train LuaTrain: 在出口处新创建的火车实体
 -- @param entry_portal_station_name string: 入口传送门内部火车站的完整名称
-function Schedule.transfer_schedule(old_train, new_train, entry_portal_station_name)
+function Schedule.copy_schedule(old_train, new_train, entry_portal_station_name)
     if RiftRail.DEBUG_MODE_ENABLED then
-        log_schedule("DEBUG (transfer_schedule v3.0): 开始为新火车 (ID: " .. new_train.id .. ") 转移时刻表...")
+        log_schedule("DEBUG (copy_schedule v3.0): 开始为新火车 (ID: " .. new_train.id .. ") 转移时刻表...")
     end
 
     if not (old_train and old_train.valid and new_train and new_train.valid) then
@@ -55,22 +55,17 @@ function Schedule.transfer_schedule(old_train, new_train, entry_portal_station_n
     end
 
     -- ========================================================================
-    -- 步骤 1: 清理防堵塞路障 (Rail Stops)
-    -- SE 逻辑：倒序遍历，移除所有基于铁轨的站点，并修正当前索引。
+    -- 步骤 1: 清理临时 rail 坐标
+    -- 目的：移除时刻表中所有基于 rail 坐标的临时站点
+    -- 原因：rail 坐标在跨地表传送后会指向错误的地表，必须清理
+    -- 注意：列车传送时停在 RiftRail 站点，不会停在 rail 坐标上
     -- ========================================================================
 
     for i = #records, 1, -1 do
         local record = records[i]
         if record.rail then
-            -- 如果当前火车正停在这个路障上 (堵塞情况)
-            if i == current_index then
-                if RiftRail.DEBUG_MODE_ENABLED then
-                    log_schedule("DEBUG: 发现当前停靠在 Rail 路障 (Index " .. i .. ")，索引回退。")
-                end
-                current_index = current_index - 1
-
-            -- 如果这个路障在当前索引之前
-            elseif i < current_index then
+            -- 如果这个 rail 坐标在当前索引之前，需要调整索引
+            if i < current_index then
                 current_index = current_index - 1
             end
 
@@ -85,9 +80,12 @@ function Schedule.transfer_schedule(old_train, new_train, entry_portal_station_n
     end
 
     if #records == 0 then
-        log_schedule("DEBUG: 警告 - 时刻表被清空。")
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_schedule("DEBUG: 警告 - 时刻表被清空。")
+        end
         return
     end
+
     if RiftRail.DEBUG_MODE_ENABLED then
         log_schedule("DEBUG: 路障清理完毕 - 剩余站点数: " .. #records .. ", 修正后索引: " .. current_index)
     end
@@ -102,7 +100,9 @@ function Schedule.transfer_schedule(old_train, new_train, entry_portal_station_n
     if not old_train.manual_mode and current_record and current_record.station == entry_portal_station_name then
         if current_record.temporary then
             -- [情况 A] 临时的传送门站 -> 删除
-            log_schedule("DEBUG: 当前是临时传送门站，执行删除。")
+            if RiftRail.DEBUG_MODE_ENABLED then
+                log_schedule("DEBUG: 当前是临时传送门站，执行删除。")
+            end
             table.remove(records, current_index)
 
             -- 删除后索引自动指向下一条记录，只需处理越界
@@ -117,7 +117,9 @@ function Schedule.transfer_schedule(old_train, new_train, entry_portal_station_n
             end
         end
     else
-        log_schedule("DEBUG: 当前不是传送门站 (或手动模式)，保持目标不变。")
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_schedule("DEBUG: 当前不是传送门站 (或手动模式)，保持目标不变。")
+        end
     end
 
     -- ========================================================================
@@ -129,15 +131,37 @@ function Schedule.transfer_schedule(old_train, new_train, entry_portal_station_n
         return
     end
 
-    -- 设置清理后的记录列表
-    schedule_new.set_records(records)
-
-    -- 复制中断设置
-    schedule_new.set_interrupts(schedule_old.get_interrupts())
-
-    -- 复制组信息
     if schedule_old.group then
+        -- 【有车组】先设置车组，车组会自动恢复其基础时刻表
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_schedule("DEBUG: 检测到车组: " .. tostring(schedule_old.group) .. "，先设置车组...")
+        end
+
         schedule_new.group = schedule_old.group
+
+        -- 设置了车组后，车组的基础时刻表已被应用
+        -- 现在需要添加被group覆盖掉的临时站点
+        for i = 1, #records do
+            local record = records[i]
+            if record.temporary then
+                record.index = { schedule_index = i }
+                schedule_new.add_record(record)
+                if RiftRail.DEBUG_MODE_ENABLED then
+                    log_schedule("DEBUG: 添加临时站点 (索引: " .. i .. ")")
+                end
+            end
+        end
+
+        -- 复制中断设置
+        schedule_new.set_interrupts(schedule_old.get_interrupts())
+    else
+        -- 【无车组】直接设置所有记录
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_schedule("DEBUG: 无车组，直接设置所有时刻表记录...")
+        end
+
+        schedule_new.set_records(records)
+        schedule_new.set_interrupts(schedule_old.get_interrupts())
     end
 
     -- 命令新火车前往计算出的目标索引

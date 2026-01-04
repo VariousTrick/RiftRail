@@ -27,9 +27,9 @@ end
 -- 1. 向量与几何计算
 ---------------------------------------------------------------------------
 
--- 向量相加
-function Util.vectors_add(a, b)
-    return { x = a.x + b.x, y = a.y + b.y }
+-- 坐标偏移：返回基准坐标应用偏移后的新坐标
+function Util.add_offset(base, offset)
+    return { x = base.x + offset.x, y = base.y + offset.y }
 end
 
 -- 判断坐标是否在矩形区域内
@@ -57,7 +57,7 @@ end
 -- @param source_inv 源物品栏
 -- @param destination_inv 目标物品栏
 -- =========================================================================
-function Util.move_inventory_items(source_inv, destination_inv)
+function Util.clone_inventory_contents(source_inv, destination_inv)
     if not (source_inv and destination_inv) then
         return
     end
@@ -90,35 +90,40 @@ end
 -- @param source_entity 源实体
 -- @param destination_entity 目标实体
 -- =========================================================================
-function Util.transfer_burner_contents(source_entity, destination_entity)
+function Util.clone_burner_state(source_entity, destination_entity)
     if not (source_entity and source_entity.valid and destination_entity and destination_entity.valid) then
         return
     end
 
-    -- 直接访问 .burner 属性，而不是调用不存在的 get_burner() 函数
-    local burner_a = source_entity.burner
-    local burner_b = destination_entity.burner
+    local source_burner = source_entity.burner
+    local dest_burner = destination_entity.burner
 
-    if not (burner_a and burner_b) then
-        return
-    end
-    if RiftRail.DEBUG_MODE_ENABLED then
-        log_util("DEBUG: 检测到燃烧室，正在转移燃料与燃烧进度...")
+    -- 1. 如果有燃烧室，转移燃料相关
+    if source_burner and dest_burner then
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_util("DEBUG: 检测到燃烧室，正在转移燃料与燃烧进度...")
+        end
+
+        -- 转移燃料库存
+        if source_burner.inventory then
+            Util.clone_inventory_contents(source_burner.inventory, dest_burner.inventory)
+        end
+
+        -- 转移废料库存 (例如核燃料棒烧完的乏燃料)
+        if source_burner.burnt_result_inventory then
+            Util.clone_inventory_contents(source_burner.burnt_result_inventory, dest_burner.burnt_result_inventory)
+        end
+
+        -- 转移燃烧进度
+        if source_burner.currently_burning then
+            dest_burner.currently_burning = source_burner.currently_burning.name
+            dest_burner.remaining_burning_fuel = source_burner.remaining_burning_fuel
+        end
     end
 
-    -- 1. 转移燃料库存
-    if burner_a.inventory then
-        Util.move_inventory_items(burner_a.inventory, burner_b.inventory)
-    end
-
-    -- 2. 转移废料库存 (例如核燃料棒烧完的乏燃料)
-    if burner_a.burnt_result_inventory then
-        Util.move_inventory_items(burner_a.burnt_result_inventory, burner_b.burnt_result_inventory)
-    end
-
-    -- 3. 转移燃烧进度
-    if burner_a.currently_burning then
-        burner_b.remaining_burning_fuel = burner_a.remaining_burning_fuel
+    -- 2. 如果有电力存储，转移电量（用于电力机车）(模组兼容)
+    if source_entity.energy and destination_entity.energy ~= nil then
+        destination_entity.energy = source_entity.energy
     end
 end
 
@@ -127,7 +132,7 @@ end
 ---------------------------------------------------------------------------
 
 -- 转移流体
-function Util.transfer_fluids(source_entity, destination_entity)
+function Util.clone_fluid_contents(source_entity, destination_entity)
     if not (source_entity and source_entity.valid and destination_entity and destination_entity.valid) then
         return
     end
@@ -155,23 +160,23 @@ function Util.transfer_fluids(source_entity, destination_entity)
 end
 
 -- 转移装备网格 (模块装甲/车辆装备)
-function Util.transfer_equipment_grid(source_entity, destination_entity)
+function Util.clone_grid(source_entity, destination_entity)
     if not (source_entity and source_entity.valid and destination_entity and destination_entity.valid) then
         return
     end
 
-    local grid_a = source_entity.grid
-    local grid_b = destination_entity.grid
-    if not (grid_a and grid_b) then
+    local source_grid = source_entity.grid
+    local dest_grid = destination_entity.grid
+    if not (source_grid and dest_grid) then
         return
     end
 
     if RiftRail.DEBUG_MODE_ENABLED then
         log_util("DEBUG: 发现装备网格，开始转移装备...")
     end
-    for _, item in pairs(grid_a.equipment) do
+    for _, item in pairs(source_grid.equipment) do
         if item and item.valid then
-            local new_item = grid_b.put({
+            local new_item = dest_grid.put({
                 name = item.name,
                 position = item.position,
                 quality = item.quality,
@@ -185,7 +190,7 @@ function Util.transfer_equipment_grid(source_entity, destination_entity)
                     new_item.energy = item.energy
                 end
                 if item.burner and new_item.burner then
-                    Util.transfer_burner_contents(item, new_item)
+                    Util.clone_burner_state(item, new_item)
                 end
             else
                 if RiftRail.DEBUG_MODE_ENABLED then
@@ -197,7 +202,7 @@ function Util.transfer_equipment_grid(source_entity, destination_entity)
 end
 
 -- 转移所有物品栏 (智能判断类型 - 调整顺序版：先判断类型，后尝试通用接口)
-function Util.transfer_all_inventories(source_entity, destination_entity)
+function Util.clone_all_inventories(source_entity, destination_entity)
     if RiftRail.DEBUG_MODE_ENABLED then
         log_util("DEBUG: 开始转移实体所有物品栏 (ID: " .. source_entity.unit_number .. " -> " .. destination_entity.unit_number .. ")")
     end
@@ -220,13 +225,13 @@ function Util.transfer_all_inventories(source_entity, destination_entity)
         end
         local source_inv = source_entity.get_inventory(defines.inventory.cargo_wagon)
         local dest_inv = destination_entity.get_inventory(defines.inventory.cargo_wagon)
-        Util.move_inventory_items(source_inv, dest_inv)
+        Util.clone_inventory_contents(source_inv, dest_inv)
         Util.transfer_inventory_filters(source_entity, destination_entity, defines.inventory.cargo_wagon)
     elseif entity_type == "locomotive" then
         if RiftRail.DEBUG_MODE_ENABLED then
             log_util("DEBUG: 匹配到机车，执行燃烧室与燃料转移。")
         end
-        Util.transfer_burner_contents(source_entity, destination_entity)
+        Util.clone_burner_state(source_entity, destination_entity)
         Util.transfer_inventory_filters(source_entity, destination_entity, defines.inventory.fuel)
     elseif entity_type == "artillery-wagon" then
         if RiftRail.DEBUG_MODE_ENABLED then
@@ -234,14 +239,14 @@ function Util.transfer_all_inventories(source_entity, destination_entity)
         end
         local source_inv = source_entity.get_inventory(defines.inventory.artillery_wagon_ammo)
         local dest_inv = destination_entity.get_inventory(defines.inventory.artillery_wagon_ammo)
-        Util.move_inventory_items(source_inv, dest_inv)
+        Util.clone_inventory_contents(source_inv, dest_inv)
         Util.transfer_inventory_filters(source_entity, destination_entity, defines.inventory.artillery_wagon_ammo)
     elseif entity_type == "fluid-wagon" then
         -- 显式调用流体转移函数
         if RiftRail.DEBUG_MODE_ENABLED then
             log_util("DEBUG: 匹配到流体车厢，执行流体转移。")
         end
-        Util.transfer_fluids(source_entity, destination_entity)
+        Util.clone_fluid_contents(source_entity, destination_entity)
     else
         -- 尝试获取主物品栏作为通用后备方案
         local source_inv = source_entity.get_main_inventory()
@@ -251,7 +256,7 @@ function Util.transfer_all_inventories(source_entity, destination_entity)
                 log_util("DEBUG: 未匹配到特定类型，执行通用主物品栏转移。")
             end
             -- 调用我们新的函数
-            Util.move_inventory_items(source_inv, dest_inv)
+            Util.clone_inventory_contents(source_inv, dest_inv)
         end
     end
 end
