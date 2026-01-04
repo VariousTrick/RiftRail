@@ -816,7 +816,9 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         local merged_train = exit_portaldata.exit_car.train
         if merged_train and merged_train.valid then
             local target_index = index_before_spawn or exit_portaldata.saved_schedule_index
-            log_tp("【创建后】准备恢复: index_before_spawn=" .. tostring(index_before_spawn) .. ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index) .. ", 使用target=" .. tostring(target_index))
+            if RiftRail.DEBUG_MODE_ENABLED then
+                log_tp("【创建后】准备恢复: index_before_spawn=" .. tostring(index_before_spawn) .. ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index) .. ", 使用target=" .. tostring(target_index))
+            end
             restore_train_state(merged_train, exit_portaldata, false, target_index)
         end
     end
