@@ -56,6 +56,24 @@ local function build_display_name(portaldata)
     return richtext
 end
 
+-- 辅助函数：根据当前模式强制刷新车站限制 (防止引擎自动同步或未初始化)
+function Logic.refresh_station_limit(portaldata)
+    if not (portaldata and portaldata.children) then
+        return
+    end
+
+    for _, child_data in pairs(portaldata.children) do
+        local entity = child_data.entity
+        if entity and entity.valid and entity.name == "rift-rail-station" then
+            if portaldata.mode == "exit" then
+                entity.trains_limit = 0
+            else
+                entity.trains_limit = nil -- 恢复默认
+            end
+            break
+        end
+    end
+end
 -- ============================================================================
 -- 物理状态管理 (精准定点清除版)
 -- ============================================================================
@@ -128,23 +146,27 @@ function Logic.update_name(player_index, portal_id, new_string)
 
     -- 1. 解析输入 (显式捕获间隔符 %s* 和剩余文本)
     -- 原正则: "%[([%w%-]+)=([%w%-]+)%]%s*(.*)"
-    local icon_type, icon_name, separator, plain_name = string.match(new_string, "%[([%w%-]+)=([%w%-]+)%](%s*)(.*)")
+    local prefix, icon_type, icon_name, separator, plain_name = string.match(new_string, "^(%s*)%[([%w%-]+)=([%w%-]+)%](%s*)(.*)")
 
     -- 2. 智能去重与数据更新
     if icon_type and icon_name then
         if icon_name == "rift-rail-placer" then
             -- 玩家手动输入了主图标 -> 去重
             my_data.icon = nil
+            my_data.prefix = prefix
             -- [关键] 名字 = 原始间隔符 + 原始名字 (忠实还原)
             my_data.name = (separator or "") .. (plain_name or "")
         else
             -- 玩家输入了自定义图标 -> 记录
             my_data.icon = { type = icon_type, name = icon_name }
+            my_data.prefix = prefix
             -- [关键] 名字同样包含原始间隔符
             my_data.name = (separator or "") .. (plain_name or "")
         end
     else
         -- 没有检测到图标，整个字符串就是名字
+        local p_space, p_name = string.match(new_string, "^(%s*)(.*)")
+        my_data.prefix = p_space
         my_data.name = new_string
         my_data.icon = nil
     end
@@ -160,13 +182,16 @@ function Logic.update_name(player_index, portal_id, new_string)
                     user_icon_str = "[" .. my_data.icon.type .. "=" .. my_data.icon.name .. "]"
                 end
                 -- 拼接：主图标 + 自定义图标 + 名字(名字里现在包含了用户输入的空格)
-                child.backer_name = master_icon .. user_icon_str .. my_data.name
+                child.backer_name = master_icon .. (my_data.prefix or "") .. user_icon_str .. my_data.name
                 break
             end
         end
     end
 
     player.print({ "messages.rift-rail-mode-changed", my_data.name })
+
+    -- 改名后强制刷新限制，防止引擎因为名字变动而错误同步限制
+    Logic.refresh_station_limit(my_data)
     refresh_all_guis()
 end
 
@@ -192,6 +217,9 @@ function Logic.set_mode(player_index, portal_id, mode, skip_sync)
 
     -- 立即更新物理碰撞器状态
     update_collider_state(my_data)
+
+    -- 使用统一函数刷新车站限制
+    Logic.refresh_station_limit(my_data)
 
     -- 消息提示
     if player then

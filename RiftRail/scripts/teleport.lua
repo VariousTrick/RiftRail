@@ -173,53 +173,55 @@ local function get_real_station_name(portaldata)
     return portaldata.name
 end
 -- =================================================================================
--- 记录/恢复正在查看列车 GUI 的玩家列表（兼容 train 和 entity 打开方式）
+-- 【重构】精准记录查看具体车厢的玩家（映射表模式）
 -- =================================================================================
-local function collect_gui_watchers(train_id)
-    local res = {}
-    if not train_id then
-        return res
+-- 参数：train (LuaTrain 对象)
+-- 返回：Map<UnitNumber, Player[]>  { [车厢ID] = {玩家A, 玩家B} }
+local function collect_gui_watchers(train)
+    local map = {}
+    if not (train and train.valid) then
+        return nil
     end
-    for _, p in pairs(game.players) do
-        if p and p.valid then
-            local opened = p.opened
-            if opened then
-                local gt = p.opened_gui_type
-                if gt == defines.gui_type.train or gt == defines.gui_type.entity then
-                    local typ = opened.object_name
-                    local watching = (typ == "LuaTrain" and opened.id == train_id) or (typ == "LuaEntity" and opened.train and opened.train.id == train_id)
-                    if watching then
-                        res[#res + 1] = p.index
-                    end
+
+    -- 遍历所有玩家，寻找正在查看该列车实体的玩家
+    for _, p in pairs(game.connected_players) do
+        local opened = p.opened
+        -- 仅处理 LuaEntity 类型（精准对应车厢），暂不处理 LuaTrain（时刻表）
+        if opened and opened.valid and opened.object_name == "LuaEntity" then
+            if opened.train == train then
+                local uid = opened.unit_number
+                if not map[uid] then
+                    map[uid] = {}
                 end
+                table.insert(map[uid], p)
             end
         end
     end
-    return res
+
+    -- 【关键修改】如果表是空的，返回 nil，而不是空表
+    -- next(map) 是 Lua 判断表是否为空最高效的方法
+    if next(map) == nil then
+        return nil
+    end
+
+    return map
 end
 -- =================================================================================
--- 恢复列车 GUI 给指定玩家列表
+-- 【重构】精准恢复 GUI 到指定车厢实体
 -- =================================================================================
-local function reopen_train_gui(watchers, train)
-    if not watchers or #watchers == 0 then
-        return 0
+-- 参数：watchers (玩家对象列表), entity (新生成的车厢实体)
+local function reopen_car_gui(watchers, entity)
+    -- 如果没人看这节车，或者实体无效，直接返回
+    if not (watchers and entity and entity.valid) then
+        return
     end
-    if not (train and train.valid) then
-        return 0
-    end
-    local stock = train.front_stock or train.back_stock
-    if not (stock and stock.valid) then
-        return 0
-    end
-    local count = 0
-    for _, idx in ipairs(watchers) do
-        local player = game.players[idx]
-        if player and player.valid then
-            player.opened = stock
-            count = count + 1
+
+    for _, p in ipairs(watchers) do
+        if p.valid then
+            -- [关键] 立即将玩家界面重定向到新车厢
+            p.opened = entity
         end
     end
-    return count
 end
 
 -- =================================================================================
@@ -392,7 +394,8 @@ local function calculate_arrival_orientation(entry_shell_dir, exit_geo_dir, curr
         log_tp("方向计算: 执行逆向翻转 -> " .. target_ori)
     end
 
-    return target_ori
+    -- 增加第二个返回值 is_nose_in
+    return target_ori, is_nose_in
 end
 -- =================================================================================
 -- 【辅助函数】确保几何数据缓存有效 (去重逻辑)
@@ -468,7 +471,7 @@ local function restore_train_state(train, portaldata, apply_speed, target_index)
 
     -- C. (可选) 恢复速度
     if apply_speed then
-        local speed_mag = 1.0
+        local speed_mag = settings.global["rift-rail-teleport-speed"].value
         local sign = calculate_speed_sign(train, portaldata)
         train.speed = speed_mag * sign
 
@@ -566,11 +569,9 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
             })
         end
 
-        -- 恢复被记录的 GUI 观察者到最终列车
-        local restored = reopen_train_gui(exit_portaldata.gui_watchers, final_train)
-        exit_portaldata.gui_watchers = nil
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_tp("恢复 GUI 观察者: " .. tostring(restored) .. " 人, final_train_id=" .. tostring(final_train.id))
+        -- 清理残留的 GUI 映射表（如果有）
+        if entry_portaldata.gui_map then
+            entry_portaldata.gui_map = nil
         end
     end
 
@@ -677,10 +678,8 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
 
     -- 第一节车时记录正在查看该列车 GUI 的玩家
     if is_first_car and car.train then
-        exit_portaldata.gui_watchers = collect_gui_watchers(car.train.id)
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_tp("记录 GUI 观察者: " .. tostring(#exit_portaldata.gui_watchers) .. " 人, old_train_id=" .. tostring(car.train.id))
-        end
+        -- 构建 GUI 映射表，存入 entry_portaldata (因为要在传送循环中用)
+        entry_portaldata.gui_map = collect_gui_watchers(car.train)
     end
 
     -- 获取下一节车 (用于更新循环)
@@ -722,7 +721,11 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
 
     -- 计算目标朝向
     -- 参数：入口方向, 出口几何预设方向, 车厢当前方向
-    local target_ori = calculate_arrival_orientation(entry_portaldata.shell.direction, geo.direction, car.orientation)
+    -- 接收 target_ori 和 is_nose_in 两个返回值
+    local target_ori, is_nose_in = calculate_arrival_orientation(entry_portaldata.shell.direction, geo.direction, car.orientation)
+
+    -- 判断是否需要引导车 (如果是正向车头则不需要)
+    local need_leader = is_first_car and (car.type ~= "locomotive" or not is_nose_in)
 
     -- 【关键】在创建新车厢前，读取当前出口列车的实际索引
     -- 因为 create_entity 时新车厢会立即拼接，索引会回退到1
@@ -734,6 +737,9 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         end
     end
 
+    -- 必须先保存旧车ID用于查表
+    local old_car_id = car.unit_number
+
     -- 使用克隆工厂一键生成
     local new_car = spawn_cloned_car(car, exit_portaldata.surface, spawn_pos, target_ori)
 
@@ -743,6 +749,24 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         end
         finalize_sequence(entry_portaldata, exit_portaldata)
         return
+    end
+
+    -- =========================================================================
+    -- 强制连接逻辑：防止高速传送断裂
+    -- =========================================================================
+    -- 获取上一节传送过去的车厢 (也就是 A)
+    local prev_car = entry_portaldata.exit_car
+
+    -- 只有当上一节车存在时，才需要连接 (第一节车不需要连谁)
+    if prev_car and prev_car.valid then
+        -- 盲连策略：让新车厢 (B) 向前后两个方向尝试抓取
+        -- 只要抓到了 prev_car，引擎会自动合并列车
+        local connected_front = new_car.connect_rolling_stock(defines.rail_direction.front)
+        local connected_back = new_car.connect_rolling_stock(defines.rail_direction.back)
+
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_tp("强制连接: 新车(ID" .. new_car.unit_number .. ") -> 前车(ID" .. prev_car.unit_number .. ") | 前向结果:" .. tostring(connected_front) .. " 后向结果:" .. tostring(connected_back))
+        end
     end
 
     -- 转移时刻表与保存索引
@@ -769,6 +793,17 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         end
     end
 
+    -- 立即恢复查看这节车厢的玩家界面
+    if entry_portaldata.gui_map then
+        -- 查表：O(1) 复杂度
+        local watchers = entry_portaldata.gui_map[old_car_id]
+        if watchers then
+            reopen_car_gui(watchers, new_car)
+            -- 恢复后从表中移除，释放内存
+            entry_portaldata.gui_map[old_car_id] = nil
+        end
+    end
+
     -- 销毁旧车厢
     car.destroy()
 
@@ -780,9 +815,8 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     -- =========================================================================
     -- 引导车 (Leader) 生成逻辑：只在第一节车时生成，且不再销毁
     -- =========================================================================
-
     -- 1. 如果是第一节车，生成引导车 (Leader)
-    if is_first_car then
+    if need_leader then
         -- 计算位于前方的引导车坐标 (leadertrain_offset 已改为前方)
         local leadertrain_pos = Util.add_offset(exit_portaldata.shell.position, geo.leadertrain_offset)
         if RiftRail.DEBUG_MODE_ENABLED then
@@ -805,6 +839,11 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
             if RiftRail.DEBUG_MODE_ENABLED then
                 log_tp("错误：引导车创建失败！")
             end
+        end
+    -- 如果是第一节车但不需要引导车时的日志
+    elseif is_first_car then
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_tp("优化：首节为正向车头，跳过引导车生成。")
         end
     end
 
@@ -939,12 +978,12 @@ function Teleport.sync_momentum(portaldata)
             -- 允许出口火车保持自动模式，以便引擎能够检测红绿灯信号
 
             -- 2. 维持出口动力 (已重构为距离比对法)
-            -- 直接锁定为安全极限速度 (1.0 tiles/tick ≈ 216 km/h)
-            -- 这是一个物理安全阈值，确保 4 tick 后车厢不会跑出引擎自动吸附范围。
+            -- 直接锁定为设定速度
+            -- 这是一个强制行为，确保列车不会因为传送而掉速或超速。
             -- 同时这会产生“弹射/吸入”效果，最大化吞吐量。
-            local target_speed = 1.0
+            local target_speed = settings.global["rift-rail-teleport-speed"].value
 
-            -- 使用新函数计算出口列车所需的速度方向
+            -- 计算出口列车所需的速度方向
             -- 以出口传送门的位置为参考点
             local required_sign = calculate_speed_sign(train_exit, exit_portaldata)
 
@@ -960,7 +999,6 @@ function Teleport.sync_momentum(portaldata)
 
             if should_push then
                 -- 直接赋值，不管它现在是快了还是慢了
-                -- 只要在这个状态下，我们就强权控制它的速度等于 safe_limit (1.0)
                 -- 这样既解决了掉速卡顿，也解决了超速断裂
                 train_exit.speed = target_speed * required_sign
             end
@@ -992,7 +1030,6 @@ end
 -- 【独立任务】处理碰撞器重建
 -- =================================================================================
 local function process_rebuild_collider(portaldata)
-    --[[     log(serpent.block(portaldata.children)) ]]
     if not (portaldata.shell and portaldata.shell.valid) then
         return
     end
@@ -1035,8 +1072,10 @@ end
 -- 【独立任务】处理传送序列步进
 -- =================================================================================
 local function process_teleport_sequence(portaldata, tick)
-    -- 频率控制：每 4 tick 一次 (分散负载)
-    if tick % 4 ~= portaldata.unit_number % 4 then
+    -- 频率控制：从游戏设置中读取间隔值
+    local interval = settings.global["rift-rail-placement-interval"].value
+    -- 只有当间隔大于1时，才启用频率控制，以获得最佳性能
+    if interval > 1 and tick % interval ~= portaldata.unit_number % interval then
         return
     end
 
