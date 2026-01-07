@@ -228,19 +228,23 @@ script.on_event(defines.events.on_entity_renamed, function(event)
     local raw_name = entity.backer_name or ""
     local clean_str = raw_name:gsub("%[item=rift%-rail%-placer%]", "", 1)
 
-    local icon_type, icon_name, separator, plain_name = string.match(clean_str, "^%s*%[([%w%-]+)=([%w%-]+)%](%s*)(.*)")
+    local prefix, icon_type, icon_name, separator, plain_name = string.match(clean_str, "^(%s*)%[([%w%-]+)=([%w%-]+)%](%s*)(.*)")
 
     if icon_type and icon_name then
         if icon_name == "rift-rail-placer" then
             portaldata.icon = nil
+            portaldata.prefix = prefix
             portaldata.name = (separator or "") .. (plain_name or "")
         else
             portaldata.icon = { type = icon_type, name = icon_name }
+            portaldata.prefix = prefix
             portaldata.name = (separator or "") .. (plain_name or "")
         end
     else
         portaldata.icon = nil
-        portaldata.name = string.match(clean_str, "^%s*(.*)") or ""
+        local p_space, p_name = string.match(clean_str, "^(%s*)(.*)")
+        portaldata.prefix = p_space
+        portaldata.name = p_name or ""
     end
 
     local user_icon_str = ""
@@ -248,8 +252,11 @@ script.on_event(defines.events.on_entity_renamed, function(event)
         user_icon_str = "[" .. portaldata.icon.type .. "=" .. portaldata.icon.name .. "]"
     end
 
-    local final_backer_name = master_icon .. user_icon_str .. portaldata.name
+    local final_backer_name = master_icon .. (portaldata.prefix or "") .. user_icon_str .. portaldata.name
     entity.backer_name = final_backer_name
+
+    -- 强制刷新列车限制，修正引擎因改名可能产生的自动同步错误
+    Logic.refresh_station_limit(portaldata)
 
     if portaldata.shell and portaldata.shell.valid then
         for _, player in pairs(game.connected_players) do
@@ -452,6 +459,7 @@ script.on_event(defines.events.on_player_setup_blueprint, function(event)
                 placer_entity.tags.rr_name = data.name
                 placer_entity.tags.rr_mode = data.mode
                 placer_entity.tags.rr_icon = data.icon
+                placer_entity.tags.rr_prefix = data.prefix
             end
             table.insert(new_entities, placer_entity)
 
@@ -537,6 +545,7 @@ script.on_event(defines.events.on_entity_settings_pasted, function(event)
         -- 3. 复制基础配置 (名字、图标)
         dest_data.name = source_data.name
         dest_data.icon = source_data.icon -- 这是一个 table，直接引用没问题，因为后续通常是读操作
+        dest_data.prefix = source_data.prefix
 
         -- 4. 应用模式 (Entry/Exit/Neutral)
         -- 我们调用 Logic.set_mode，这样它会自动处理碰撞器的生成/销毁，以及打印提示信息
@@ -556,7 +565,7 @@ script.on_event(defines.events.on_entity_settings_pasted, function(event)
                         user_icon_str = "[" .. dest_data.icon.type .. "=" .. dest_data.icon.name .. "]"
                     end
                     -- dest_data.name 此时已包含必要的空格（如果有），直接拼接
-                    child.backer_name = master_icon .. user_icon_str .. dest_data.name
+                    child.backer_name = master_icon .. (dest_data.prefix or "") .. user_icon_str .. dest_data.name
                     break
                 end
             end

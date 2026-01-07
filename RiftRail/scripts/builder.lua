@@ -118,6 +118,7 @@ function Builder.on_built(event)
     local recovered_mode = tags.rr_mode or "neutral"
     local recovered_name = tags.rr_name or tostring(custom_id)
     local recovered_icon = tags.rr_icon
+    local recovered_prefix = tags.rr_prefix
 
     local shell = nil
     local position = nil
@@ -221,6 +222,8 @@ function Builder.on_built(event)
         limit = 1,
     })
 
+    local prefix = recovered_prefix
+
     -- 幽灵数据解析与重组
     if ghosts[1] and ghosts[1].valid then
         local ghost = ghosts[1]
@@ -235,14 +238,17 @@ function Builder.on_built(event)
             local clean_str = string.gsub(snatched_str, "%[item=rift%-rail%-placer%]", "")
 
             -- 2. 解析：提取自定义图标和名字
-            local icon_type, icon_name, separator, plain_name = string.match(clean_str, "^%s*%[([%w%-]+)=([%w%-]+)%](%s*)(.*)")
+            local prefix, icon_type, icon_name, separator, plain_name = string.match(clean_str, "^(%s*)%[([%w%-]+)=([%w%-]+)%](%s*)(.*)")
 
             if icon_type and icon_name then
                 recovered_icon = { type = icon_type, name = icon_name }
                 recovered_name = (separator or "") .. (plain_name or "")
             else
                 recovered_icon = nil
-                recovered_name = string.match(clean_str, "^%s*(.*)") or ""
+                -- 纯文本模式也要分离出 prefix
+                local p_space, p_name = string.match(clean_str, "^(%s*)(.*)")
+                prefix = p_space
+                recovered_name = p_name or ""
             end
         end
         ghost.destroy()
@@ -256,10 +262,16 @@ function Builder.on_built(event)
         user_icon_str = "[" .. recovered_icon.type .. "=" .. recovered_icon.name .. "]"
     end
 
-    local final_backer_name = master_icon .. user_icon_str .. recovered_name
+    local final_backer_name = master_icon .. (prefix or "") .. user_icon_str .. recovered_name
 
-    -- 创建实体
-    create_child("rift-rail-station", st_offset, direction, { backer_name = final_backer_name })
+    -- 4. 创建实体车站
+    -- 捕获返回的车站实体，以便设置初始属性
+    local station_ent = create_child("rift-rail-station", st_offset, direction, { backer_name = final_backer_name })
+    
+    -- 如果蓝图/恢复时是出口模式，初始化为禁止驶入
+    if recovered_mode == "exit" and station_ent and station_ent.valid then
+        station_ent.trains_limit = 0
+    end
 
     -- 5. 创建 GUI 核心
     local core_offset = rotate_point(MASTER_LAYOUT.core, direction)
@@ -298,17 +310,9 @@ function Builder.on_built(event)
 
     if station_entity and core_entity then
         -- 连接红色信号线
-        core_entity.get_wire_connector(defines.wire_connector_id.circuit_red, true).connect_to(
-            station_entity.get_wire_connector(defines.wire_connector_id.circuit_red, true),
-            false,
-            defines.wire_origin.script
-        )
+        core_entity.get_wire_connector(defines.wire_connector_id.circuit_red, true).connect_to(station_entity.get_wire_connector(defines.wire_connector_id.circuit_red, true), false, defines.wire_origin.script)
         -- 连接绿色信号线
-        core_entity.get_wire_connector(defines.wire_connector_id.circuit_green, true).connect_to(
-            station_entity.get_wire_connector(defines.wire_connector_id.circuit_green, true),
-            false,
-            defines.wire_origin.script
-        )
+        core_entity.get_wire_connector(defines.wire_connector_id.circuit_green, true).connect_to(station_entity.get_wire_connector(defines.wire_connector_id.circuit_green, true), false, defines.wire_origin.script)
         if RiftRail.DEBUG_MODE_ENABLED then
             log_debug("[Builder] 车站和核心的红绿信号线已连接")
         end
@@ -334,6 +338,7 @@ function Builder.on_built(event)
         mode = recovered_mode,
         surface = shell.surface,
         cybersyn_enabled = false,
+        prefix = prefix,
         shell = shell,
         children = children,
         blocker_position = storage.temp_blocker_pos,
