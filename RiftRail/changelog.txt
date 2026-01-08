@@ -1,4 +1,12 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.7.31
+Date: 2026-01-09
+  Features:
+    - Added optional recipe and technology integration for Space Exploration and Krastorio 2 to improve progression balance. (Made by Ldmf/Bsaa)
+      新增了 Space Exploration 和 Krastorio 2 的可选配方和科技整合，以改善游戏进程平衡。（Ldmf/Bsaa 贡献）
+    - Added a startup setting to toggle the SE/K2 balance mode. (Made by Ldmf/Bsaa)
+      新增了一个启动设置，用于切换 SE/K2 平衡模式。（Ldmf/Bsaa 贡献）
+---------------------------------------------------------------------------------------------------
 Version: 0.7.30
 Date: 2026-01-07
   Features:
