@@ -2,6 +2,14 @@
 -- loaded after data.lua form all mods
 -- No thermofluid cant get it to work
 
+
+--check for setting to enable data updates
+if settings.startup["rift-rail-enabled-data-updates"] and settings.startup["rift-rail-enabled-data-updates"].value == true then
+  -- Proceed with the data updates only if the setting is enabled
+else
+  return -- Exit the script if the setting is not enabled
+end
+
 --ceck if the items exist before changing recipe
 local function item_exists(ingredients)
   for _, ingredient in pairs(ingredients) do
@@ -81,3 +89,4 @@ end
 if data.raw.recipe["rift-rail-placer"] and mods["space-exploration"] then
   data.raw.recipe["rift-rail-placer"].category = "space-manufacturing"
 end
+
