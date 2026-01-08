@@ -67,4 +67,13 @@ data:extend({
         localised_name = { "mod-setting-name.rift-rail-placement-interval" },
         localised_description = { "mod-setting-description.rift-rail-placement-interval" },
     },
+    {
+        type = "bool-setting",
+        name = "rift-rail-enabled-data-updates",
+        setting_type = "startup",
+        default_value = true,
+        order = "a",
+        localised_name = { "mod-setting-name.rift-rail-enabled-data-updates" },
+        localised_description = { "mod-setting-description.rift-rail-enabled-data-updates" }
+    }
 })
