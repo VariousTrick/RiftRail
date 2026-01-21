@@ -316,6 +316,7 @@ local function spawn_cloned_car(old_entity, surface, position, orientation)
         force = old_entity.force,
         quality = old_entity.quality,
         snap_to_train_stop = false, -- 建议设为 false 以提高位置精确度
+        raise_built = true,
     })
 
     if not new_entity then
