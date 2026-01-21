@@ -752,7 +752,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         return
     end
 
-    -- =========================================================================
+    --[[     -- =========================================================================
     -- 强制连接逻辑：防止高速传送断裂
     -- =========================================================================
     -- 获取上一节传送过去的车厢 (也就是 A)
@@ -768,7 +768,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         if RiftRail.DEBUG_MODE_ENABLED then
             log_tp("强制连接: 新车(ID" .. new_car.unit_number .. ") -> 前车(ID" .. prev_car.unit_number .. ") | 前向结果:" .. tostring(connected_front) .. " 后向结果:" .. tostring(connected_back))
         end
-    end
+    end ]]
 
     -- 转移时刻表与保存索引
     if not entry_portaldata.exit_car then

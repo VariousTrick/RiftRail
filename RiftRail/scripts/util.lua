@@ -176,25 +176,36 @@ function Util.clone_grid(source_entity, destination_entity)
     end
     for _, item in pairs(source_grid.equipment) do
         if item and item.valid then
+            -- 1. 识别是否为幽灵
+            local is_ghost = (item.type == "equipment-ghost")
+            -- 2. 获取真正的装备名称
+            -- 如果是幽灵，名字藏在 ghost_name 里；如果是实体，名字就是 name
+            local target_name = item.name
+            if is_ghost then
+                target_name = item.ghost_name
+            end
+
+            -- 3. 放置装备 (带上 ghost 参数)
             local new_item = dest_grid.put({
-                name = item.name,
+                name = target_name, -- 使用真正的产品名
                 position = item.position,
                 quality = item.quality,
+                ghost = is_ghost, -- 明确告诉引擎这是幽灵
             })
 
-            if new_item then
+            -- 4. 只有实体才需要复制状态
+            if new_item and not is_ghost then
+                -- 只有实体才有护盾值
                 if item.shield and item.shield > 0 then
                     new_item.shield = item.shield
                 end
+                -- 只有实体才有能量值
                 if item.energy and item.energy > 0 then
                     new_item.energy = item.energy
                 end
+                -- 只有实体才有燃烧室 (且目标也得有)
                 if item.burner and new_item.burner then
                     Util.clone_burner_state(item, new_item)
-                end
-            else
-                if RiftRail.DEBUG_MODE_ENABLED then
-                    log_util("!! 警告: 无法在目标网格位置创建装备: " .. item.name)
                 end
             end
         end
@@ -227,13 +238,19 @@ function Util.clone_all_inventories(source_entity, destination_entity)
         local dest_inv = destination_entity.get_inventory(defines.inventory.cargo_wagon)
         Util.clone_inventory_contents(source_inv, dest_inv)
         Util.transfer_inventory_filters(source_entity, destination_entity, defines.inventory.cargo_wagon)
-    elseif entity_type == "locomotive" then
+        return
+    end
+
+    if entity_type == "locomotive" then
         if RiftRail.DEBUG_MODE_ENABLED then
             log_util("DEBUG: 匹配到机车，执行燃烧室与燃料转移。")
         end
         Util.clone_burner_state(source_entity, destination_entity)
         Util.transfer_inventory_filters(source_entity, destination_entity, defines.inventory.fuel)
-    elseif entity_type == "artillery-wagon" then
+        return
+    end
+
+    if entity_type == "artillery-wagon" then
         if RiftRail.DEBUG_MODE_ENABLED then
             log_util("DEBUG: 匹配到火炮车厢，执行弹药转移。")
         end
@@ -241,13 +258,16 @@ function Util.clone_all_inventories(source_entity, destination_entity)
         local dest_inv = destination_entity.get_inventory(defines.inventory.artillery_wagon_ammo)
         Util.clone_inventory_contents(source_inv, dest_inv)
         Util.transfer_inventory_filters(source_entity, destination_entity, defines.inventory.artillery_wagon_ammo)
-    elseif entity_type == "fluid-wagon" then
+        return
+    end
+    
+    --[[ elseif entity_type == "fluid-wagon" then
         -- 显式调用流体转移函数
         if RiftRail.DEBUG_MODE_ENABLED then
             log_util("DEBUG: 匹配到流体车厢，执行流体转移。")
         end
-        Util.clone_fluid_contents(source_entity, destination_entity)
-    else
+        Util.clone_fluid_contents(source_entity, destination_entity) ]]
+    --[[ else
         -- 尝试获取主物品栏作为通用后备方案
         local source_inv = source_entity.get_main_inventory()
         local dest_inv = destination_entity.get_main_inventory()
@@ -257,8 +277,7 @@ function Util.clone_all_inventories(source_entity, destination_entity)
             end
             -- 调用我们新的函数
             Util.clone_inventory_contents(source_inv, dest_inv)
-        end
-    end
+        end ]]
 end
 
 -- 转移物品栏过滤器 (修复版)
