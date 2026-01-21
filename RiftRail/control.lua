@@ -815,7 +815,6 @@ remote.add_interface("RiftRail", {
     end,
 
     set_cybersyn_enabled = function(player_index, portal_id, enabled)
-        -- [修改] 连接到 Logic 模块
         Logic.set_cybersyn_enabled(player_index, portal_id, enabled)
     end,
 
@@ -825,51 +824,7 @@ remote.add_interface("RiftRail", {
 
     -- 玩家传送逻辑：传送到当前建筑外部，而非配对目标
     teleport_player = function(player_index, portal_id)
-        local player = game.get_player(player_index)
-        local portaldata = State.get_portaldata_by_id(portal_id)
-
-        if player and portaldata and portaldata.shell and portaldata.shell.valid then
-            -- 计算落点：位于建筑 "口子" 外面一点的位置，防止卡住
-            -- 建筑中心到口子是 6 格，我们传送在 8 格的位置
-            local dir = portaldata.shell.direction
-            local offset = { x = 0, y = 0 }
-
-            if dir == 0 then -- North (开口在下) -> 传送到上方
-                offset = { x = 0, y = -8 }
-            elseif dir == 4 then -- East (开口在左) -> 传送到右方
-                offset = { x = 8, y = 0 }
-            elseif dir == 8 then -- South (开口在上) -> 传送到下方
-                offset = { x = 0, y = 8 }
-            elseif dir == 12 then -- West (开口在右) -> 传送到左方
-                offset = { x = -8, y = 0 }
-            end
-
-            local target_pos = {
-                x = portaldata.shell.position.x + offset.x,
-                y = portaldata.shell.position.y + offset.y,
-            }
-
-            -- 尝试寻找附近的无碰撞位置 (防止传送到树或石头里)
-            local safe_pos = portaldata.shell.surface.find_non_colliding_position("character", target_pos, 5, 1)
-            if not safe_pos then
-                safe_pos = target_pos
-            end -- 如果找不到，强行传送
-
-            -- 执行传送
-            player.teleport(safe_pos, portaldata.shell.surface)
-
-            -- 强制查找并销毁 GUI，不再依赖事件监听
-            if player.gui.screen.rift_rail_main_frame then
-                player.gui.screen.rift_rail_main_frame.destroy()
-            end
-
-            -- 清空 opened 状态，确保逻辑闭环
-            player.opened = nil
-        else
-            if player then
-                player.print({ "messages.rift-rail-error-self-invalid" })
-            end
-        end
+        Logic.teleport_player(player_index, portal_id)
     end,
 
     open_remote_view = function(player_index, portal_id)

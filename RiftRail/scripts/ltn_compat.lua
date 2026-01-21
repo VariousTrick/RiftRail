@@ -163,6 +163,16 @@ local function add_station_to_schedule(train, station_entity, insert_index)
     if not (train and train.valid and station_entity and station_entity.valid) then
         return
     end
+
+    -- 身份验证
+    -- 只处理 Rift Rail 自己的车站。
+    -- 如果是 SE 太空电梯 (se-ltn-elevator-connector) 或其他模组的实体，直接忽略。
+    -- 这既防止了报错 (因为那些实体可能没有 backer_name)，
+    -- 也防止了功能冲突 (把处理权交给 se-ltn-glue)。
+    if station_entity.name ~= "rift-rail-station" then
+        return
+    end
+
     local schedule = train.get_schedule()
     if not schedule then
         return

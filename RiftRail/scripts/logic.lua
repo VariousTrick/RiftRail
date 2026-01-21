@@ -74,6 +74,7 @@ function Logic.refresh_station_limit(portaldata)
         end
     end
 end
+
 -- ============================================================================
 -- 物理状态管理 (精准定点清除版)
 -- ============================================================================
@@ -105,11 +106,11 @@ local function update_collider_state(portaldata)
 
         -- 计算碰撞器的精确相对坐标
         local relative_pos = { x = 0, y = -2 } -- 基准 (North)
-        if direction == 4 then -- East
+        if direction == 4 then                 -- East
             relative_pos = { x = 2, y = 0 }
-        elseif direction == 8 then -- South
+        elseif direction == 8 then             -- South
             relative_pos = { x = 0, y = 2 }
-        elseif direction == 12 then -- West
+        elseif direction == 12 then            -- West
             relative_pos = { x = -2, y = 0 }
         end
 
@@ -146,7 +147,8 @@ function Logic.update_name(player_index, portal_id, new_string)
 
     -- 1. 解析输入 (显式捕获间隔符 %s* 和剩余文本)
     -- 原正则: "%[([%w%-]+)=([%w%-]+)%]%s*(.*)"
-    local prefix, icon_type, icon_name, separator, plain_name = string.match(new_string, "^(%s*)%[([%w%-]+)=([%w%-]+)%](%s*)(.*)")
+    local prefix, icon_type, icon_name, separator, plain_name = string.match(new_string,
+        "^(%s*)%[([%w%-]+)=([%w%-]+)%](%s*)(.*)")
 
     -- 2. 智能去重与数据更新
     if icon_type and icon_name then
@@ -409,6 +411,59 @@ function Logic.set_ltn_enabled(player_index, portal_id, enabled)
     end
 
     refresh_all_guis()
+end
+
+-- ============================================================================
+-- 8. 传送玩家逻辑
+-- ============================================================================
+function Logic.teleport_player(player_index, portal_id)
+    local player = game.get_player(player_index)
+    local portaldata = State.get_portaldata_by_id(portal_id)
+    if not (player and portaldata) then
+        return
+    end
+    if player and portaldata and portaldata.shell and portaldata.shell.valid then
+        -- 计算落点：位于建筑 "口子" 外面一点的位置，防止卡住
+        -- 建筑中心到口子是 6 格，我们传送在 8 格的位置
+        local dir = portaldata.shell.direction
+        local offset = { x = 0, y = 0 }
+
+        if dir == 0 then      -- North (开口在下) -> 传送到上方
+            offset = { x = 0, y = -8 }
+        elseif dir == 4 then  -- East (开口在左) -> 传送到右方
+            offset = { x = 8, y = 0 }
+        elseif dir == 8 then  -- South (开口在上) -> 传送到下方
+            offset = { x = 0, y = 8 }
+        elseif dir == 12 then -- West (开口在右) -> 传送到左方
+            offset = { x = -8, y = 0 }
+        end
+
+        local target_pos = {
+            x = portaldata.shell.position.x + offset.x,
+            y = portaldata.shell.position.y + offset.y,
+        }
+
+        -- 尝试寻找附近的无碰撞位置 (防止传送到树或石头里)
+        local safe_pos = portaldata.shell.surface.find_non_colliding_position("character", target_pos, 5, 1)
+        if not safe_pos then
+            safe_pos = target_pos
+        end -- 如果找不到，强行传送
+
+        -- 执行传送
+        player.teleport(safe_pos, portaldata.shell.surface)
+
+        -- 强制查找并销毁 GUI，不再依赖事件监听
+        if player.gui.screen.rift_rail_main_frame then
+            player.gui.screen.rift_rail_main_frame.destroy()
+        end
+
+        -- 清空 opened 状态，确保逻辑闭环
+        player.opened = nil
+    else
+        if player then
+            player.print({ "messages.rift-rail-error-self-invalid" })
+        end
+    end
 end
 
 return Logic
