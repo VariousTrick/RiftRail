@@ -37,7 +37,8 @@ function Util.position_in_rect(rect, pos)
     if not (rect and rect.left_top and rect.right_bottom and pos) then
         return false
     end
-    return pos.x >= rect.left_top.x and pos.x <= rect.right_bottom.x and pos.y >= rect.left_top.y and pos.y <= rect.right_bottom.y
+    return pos.x >= rect.left_top.x and pos.x <= rect.right_bottom.x and pos.y >= rect.left_top.y and
+    pos.y <= rect.right_bottom.y
 end
 
 -- 获取车辆所属的火车ID (安全获取)
@@ -215,7 +216,8 @@ end
 -- 转移所有物品栏 (智能判断类型 - 调整顺序版：先判断类型，后尝试通用接口)
 function Util.clone_all_inventories(source_entity, destination_entity)
     if RiftRail.DEBUG_MODE_ENABLED then
-        log_util("DEBUG: 开始转移实体所有物品栏 (ID: " .. source_entity.unit_number .. " -> " .. destination_entity.unit_number .. ")")
+        log_util("DEBUG: 开始转移实体所有物品栏 (ID: " ..
+        source_entity.unit_number .. " -> " .. destination_entity.unit_number .. ")")
     end
 
     if not (source_entity and source_entity.valid and destination_entity and destination_entity.valid) then
@@ -237,7 +239,6 @@ function Util.clone_all_inventories(source_entity, destination_entity)
         local source_inv = source_entity.get_inventory(defines.inventory.cargo_wagon)
         local dest_inv = destination_entity.get_inventory(defines.inventory.cargo_wagon)
         Util.clone_inventory_contents(source_inv, dest_inv)
-        Util.transfer_inventory_filters(source_entity, destination_entity, defines.inventory.cargo_wagon)
         return
     end
 
@@ -246,7 +247,6 @@ function Util.clone_all_inventories(source_entity, destination_entity)
             log_util("DEBUG: 匹配到机车，执行燃烧室与燃料转移。")
         end
         Util.clone_burner_state(source_entity, destination_entity)
-        Util.transfer_inventory_filters(source_entity, destination_entity, defines.inventory.fuel)
         return
     end
 
@@ -257,65 +257,7 @@ function Util.clone_all_inventories(source_entity, destination_entity)
         local source_inv = source_entity.get_inventory(defines.inventory.artillery_wagon_ammo)
         local dest_inv = destination_entity.get_inventory(defines.inventory.artillery_wagon_ammo)
         Util.clone_inventory_contents(source_inv, dest_inv)
-        Util.transfer_inventory_filters(source_entity, destination_entity, defines.inventory.artillery_wagon_ammo)
         return
-    end
-    
-    --[[ elseif entity_type == "fluid-wagon" then
-        -- 显式调用流体转移函数
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_util("DEBUG: 匹配到流体车厢，执行流体转移。")
-        end
-        Util.clone_fluid_contents(source_entity, destination_entity) ]]
-    --[[ else
-        -- 尝试获取主物品栏作为通用后备方案
-        local source_inv = source_entity.get_main_inventory()
-        local dest_inv = destination_entity.get_main_inventory()
-        if source_inv and dest_inv then
-            if RiftRail.DEBUG_MODE_ENABLED then
-                log_util("DEBUG: 未匹配到特定类型，执行通用主物品栏转移。")
-            end
-            -- 调用我们新的函数
-            Util.clone_inventory_contents(source_inv, dest_inv)
-        end ]]
-end
-
--- 转移物品栏过滤器 (修复版)
-function Util.transfer_inventory_filters(source_entity, destination_entity, inventory_index)
-    if not (source_entity and source_entity.valid and destination_entity and destination_entity.valid) then
-        return
-    end
-
-    local source_inv = source_entity.get_inventory(inventory_index)
-    local dest_inv = destination_entity.get_inventory(inventory_index)
-
-    if not (source_inv and dest_inv) then
-        return
-    end
-
-    -- 1. 复制中间键设定的槽位过滤器
-    if source_inv.is_filtered() then
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_util("DEBUG: 检测到过滤器，正在复制过滤设置...")
-        end
-        -- 既然两节车厢是同一种类型，物品栏大小通常一致，直接遍历
-        for i = 1, #dest_inv do
-            local filter = source_inv.get_filter(i)
-            if filter then
-                dest_inv.set_filter(i, filter)
-            end
-        end
-        -- 删除 dest_inv.filter_mode = source_inv.filter_mode
-        -- 因为物品栏(Inventory)没有这个属性，它是实体(Entity)才有的，且货车不需要它。
-    end
-
-    -- 2. 复制红叉限制 (Bar)
-    -- supports_bar 是 Inventory 的方法，不是 Entity 的
-    if dest_inv.supports_bar() then
-        local bar = source_inv.get_bar() -- Inventory.get_bar() 不需要参数
-        if bar then
-            dest_inv.set_bar(bar)
-        end
     end
 end
 
