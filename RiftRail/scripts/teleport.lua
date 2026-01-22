@@ -326,12 +326,11 @@ local function spawn_cloned_car(old_entity, surface, position, orientation)
         return nil
     end
 
+    -- 使用 copy_settings 一键同步配置 (颜色、名字、过滤器、红叉、中断等)
+    new_entity.copy_settings(old_entity)
+
     -- 2. 基础属性同步
     new_entity.health = old_entity.health
-    new_entity.backer_name = old_entity.backer_name or ""
-    if old_entity.color then
-        new_entity.color = old_entity.color
-    end
 
     -- 3. 内容转移 (调用 Util)
     Util.clone_all_inventories(old_entity, new_entity)
@@ -378,7 +377,9 @@ local function calculate_arrival_orientation(entry_shell_dir, exit_geo_dir, curr
     local is_nose_in = diff < 0.125
 
     if RiftRail.DEBUG_MODE_ENABLED then
-        log_tp("方向计算: 车厢=" .. string.format("%.2f", current_ori) .. ", 入口=" .. entry_shell_ori .. ", 判定=" .. (is_nose_in and "顺向(NoseIn)" or "逆向(TailIn)"))
+        log_tp("方向计算: 车厢=" ..
+        string.format("%.2f", current_ori) ..
+        ", 入口=" .. entry_shell_ori .. ", 判定=" .. (is_nose_in and "顺向(NoseIn)" or "逆向(TailIn)"))
     end
 
     -- 3. 计算出口基准朝向
@@ -506,6 +507,7 @@ function Teleport.init_se_events()
         end
     end
 end
+
 -- =================================================================================
 -- 核心传送逻辑
 -- =================================================================================
@@ -545,7 +547,8 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
 
     if final_train and final_train.valid then
         if RiftRail.DEBUG_MODE_ENABLED then
-            log_tp("【销毁后】准备恢复: actual_index=" .. tostring(actual_index_before_cleanup) .. ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index))
+            log_tp("【销毁后】准备恢复: actual_index=" ..
+            tostring(actual_index_before_cleanup) .. ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index))
         end
         -- 使用统一函数恢复状态 (参数 true 代表同时恢复速度)
         restore_train_state(final_train, exit_portaldata, true, actual_index_before_cleanup)
@@ -559,7 +562,8 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         -- 4. SE 事件触发 (Finished)
         if SE_TELEPORT_FINISHED_EVENT_ID and exit_portaldata.old_train_id then
             if RiftRail.DEBUG_MODE_ENABLED then
-                log_tp("SE兼容触发 on_train_teleport_finished 事件: new_train_id = " .. tostring(final_train.id) .. ", old_train_id = " .. tostring(exit_portaldata.old_train_id))
+                log_tp("SE兼容触发 on_train_teleport_finished 事件: new_train_id = " ..
+                tostring(final_train.id) .. ", old_train_id = " .. tostring(exit_portaldata.old_train_id))
             end
             script.raise_event(SE_TELEPORT_FINISHED_EVENT_ID, {
                 train = final_train,
@@ -723,7 +727,8 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     -- 计算目标朝向
     -- 参数：入口方向, 出口几何预设方向, 车厢当前方向
     -- 接收 target_ori 和 is_nose_in 两个返回值
-    local target_ori, is_nose_in = calculate_arrival_orientation(entry_portaldata.shell.direction, geo.direction, car.orientation)
+    local target_ori, is_nose_in = calculate_arrival_orientation(entry_portaldata.shell.direction, geo.direction,
+        car.orientation)
 
     -- 判断是否需要引导车 (如果是正向车头则不需要)
     local need_leader = is_first_car and (car.type ~= "locomotive" or not is_nose_in)
@@ -810,7 +815,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
 
     -- 更新链表指针
     entry_portaldata.exit_car = new_car -- 记录刚传过去的这节 (虽然没什么用，但保持一致)
-    exit_portaldata.exit_car = new_car -- 记录出口的最前头 (用于拉动)
+    exit_portaldata.exit_car = new_car  -- 记录出口的最前头 (用于拉动)
 
     -- 准备下一节
     -- =========================================================================
@@ -841,7 +846,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
                 log_tp("错误：引导车创建失败！")
             end
         end
-    -- 如果是第一节车但不需要引导车时的日志
+        -- 如果是第一节车但不需要引导车时的日志
     elseif is_first_car then
         if RiftRail.DEBUG_MODE_ENABLED then
             log_tp("优化：首节为正向车头，跳过引导车生成。")
@@ -857,7 +862,10 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         if merged_train and merged_train.valid then
             local target_index = index_before_spawn or exit_portaldata.saved_schedule_index
             if RiftRail.DEBUG_MODE_ENABLED then
-                log_tp("【创建后】准备恢复: index_before_spawn=" .. tostring(index_before_spawn) .. ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index) .. ", 使用target=" .. tostring(target_index))
+                log_tp("【创建后】准备恢复: index_before_spawn=" ..
+                tostring(index_before_spawn) ..
+                ", saved_index=" ..
+                tostring(exit_portaldata.saved_schedule_index) .. ", 使用target=" .. tostring(target_index))
             end
             restore_train_state(merged_train, exit_portaldata, false, target_index)
         end

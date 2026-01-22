@@ -172,8 +172,8 @@ function Schedule.copy_schedule(old_train, new_train, entry_portal_station_name)
         end
     end
 
-    -- 清空旧火车时刻表
-    old_train.schedule = nil
+    --[[ -- 清空旧火车时刻表
+    old_train.schedule = nil ]]
 end
 
 return Schedule
