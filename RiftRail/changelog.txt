@@ -1,4 +1,32 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.7.35
+Date: 2026-01-24
+  LTN:
+    - 以下所有修改全部针对LTN,LTN在任何模式下都是这样操作的。
+    - 两个星球建立2对互相配对的建筑（4个建筑），这两对建筑都需要打开LTN连接，但是不再需要同名车站。可以不再修改车站名字了！
+    - English version:
+    - For LTN integration, all changes are applied to LTN only. In any mode of LTN, the following operations are performed.
+    - Establish two pairs of mutually paired buildings (4 buildings) on two planets, both pairs of buildings need to open LTN connections, but no longer require the same name station. You no longer need to modify the station name!
+  Performance:
+    - 引入路由表机制（Routing Table）：弃用在每次任务调度时遍历所有传送门的低效做法，维护预计算的 [来源面][目标面] 路由表，将路径查找复杂度由 O(N) 降低至 O(1)。
+    - 在大量传送门或安装 Space Exploration 的存档中，显著降低 LTN 派发任务时的 CPU 占用与调度开销。
+  Features:
+    - 路径选择智能化（Smart Pathing）：新增欧几里得距离计算，优先选择离火车当前位置或取货/送货站最近的传送门以减少地面行驶距离与空跑。
+    - 在模组设置中加入了清理车站。(仿照se-ltn-glue模组) 默认关闭。
+  Bugfixes & Robustness:
+    - 全链路跨面支持：修复“火车当前位置”与“取货站”不在同一地表时无法生成路径的问题（Loco -> Provider 阶段）。
+    - 实现完整的三段式路径检查：
+      - 前往取货（Current -> Provider）
+      - 前往送货（Provider -> Requester）
+      - 任务结束/回程（Requester -> Return）
+      确保列车即使停在车库或异星，也能正确穿越地表到达目标。
+  Schedule Stability:
+    - 时刻表插入修正（Clearance Station）：优化传送门与防堵塞清理站的插入顺序逻辑，修复开启清理站设置后可能导致的时刻表顺序错乱（重复插入或索引偏移）问题。
+    - 现在采用先插清理站、后插传送门的堆叠方式，确保最终执行顺序为 [传送门] -> [清理站]。
+  Refactoring:
+    - 模块化设计：将核心调度逻辑拆分为独立辅助函数（如 `insert_portal_sequence`、`find_best_route_station`），提高可读性与维护性，降低与 `se-ltn-glue` 等模组的冲突风险。
+    - 兼容性说明：现在不再强制要求同名车站，但仍需打开两条 LTN 连接以保证跨地表运单的正常流转。
+---------------------------------------------------------------------------------------------------
 Version: 0.7.34
 Date: 2026-01-22
   Changes:
