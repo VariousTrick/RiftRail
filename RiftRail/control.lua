@@ -228,7 +228,8 @@ script.on_event(defines.events.on_entity_renamed, function(event)
     local raw_name = entity.backer_name or ""
     local clean_str = raw_name:gsub("%[item=rift%-rail%-placer%]", "", 1)
 
-    local prefix, icon_type, icon_name, separator, plain_name = string.match(clean_str, "^(%s*)%[([%w%-]+)=([%w%-]+)%](%s*)(.*)")
+    local prefix, icon_type, icon_name, separator, plain_name = string.match(clean_str,
+        "^(%s*)%[([%w%-]+)=([%w%-]+)%](%s*)(.*)")
 
     if icon_type and icon_name then
         if icon_name == "rift-rail-placer" then
@@ -356,7 +357,7 @@ script.on_event(defines.events.on_entity_cloned, function(event)
                 -- 为 'lamp' 使用更大的搜索半径，以应对克隆时的坐标漂移
                 local search_radius = 0.5 -- 默认使用高精度半径
                 if child_name == "rift-rail-lamp" then
-                    search_radius = 1.5 -- 只为灯放宽到 1.5
+                    search_radius = 1.5   -- 只为灯放宽到 1.5
                 end
 
                 local found_clone = new_entity.surface.find_entities_filtered({
@@ -373,7 +374,8 @@ script.on_event(defines.events.on_entity_cloned, function(event)
                     })
                 else
                     if RiftRail.DEBUG_MODE_ENABLED then
-                        log_debug("RiftRail Clone Error: 在位置 " .. serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
+                        log_debug("RiftRail Clone Error: 在位置 " ..
+                            serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
                     end
                 end
             end
@@ -475,18 +477,18 @@ script.on_event(defines.events.on_player_setup_blueprint, function(event)
 
                         -- 纵向保持 6.5 (红绿灯下方)
                         -- 横向从 2.0 改为 3.5 (确保边缘不重叠)
-                        if dir == 0 then -- North
-                            offset_x = 2 -- 向右更远一点
+                        if dir == 0 then      -- North
+                            offset_x = 2      -- 向右更远一点
                             offset_y = 7
-                        elseif dir == 4 then -- East
+                        elseif dir == 4 then  -- East
                             offset_x = -7
-                            offset_y = 2 -- 向下更远一点
-                        elseif dir == 8 then -- South
-                            offset_x = -2 -- 向左更远一点
+                            offset_y = 2      -- 向下更远一点
+                        elseif dir == 8 then  -- South
+                            offset_x = -2     -- 向左更远一点
                             offset_y = -7
                         elseif dir == 12 then -- West
                             offset_x = 7
-                            offset_y = -2 -- 向上更远一点
+                            offset_y = -2     -- 向上更远一点
                         end
 
                         max_entity_number = max_entity_number + 1
@@ -511,7 +513,7 @@ script.on_event(defines.events.on_player_setup_blueprint, function(event)
                 end
             end
 
-        -- [重要] 允许车站通过过滤器
+            -- [重要] 允许车站通过过滤器
         elseif not (source_entity and source_entity.valid and source_entity.name:find("rift-rail-")) or (source_entity.name == "rift-rail-station") then
             table.insert(new_entities, bp_entity)
         end
@@ -608,9 +610,9 @@ script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
                         if dir == 0 then
                             offset = { x = 0, y = -2 } -- North
                         elseif dir == 4 then
-                            offset = { x = 2, y = 0 } -- East
+                            offset = { x = 2, y = 0 }  -- East
                         elseif dir == 8 then
-                            offset = { x = 0, y = 2 } -- South
+                            offset = { x = 0, y = 2 }  -- South
                         elseif dir == 12 then
                             offset = { x = -2, y = 0 } -- West
                         end
@@ -649,7 +651,7 @@ script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
 
         game.print({ "messages.rift-rail-colliders-reset" })
 
-    -- 监听卸载清理开关
+        -- 监听卸载清理开关
     elseif event.setting == "rift-rail-uninstall-cleanup" and settings.global["rift-rail-uninstall-cleanup"].value then
         -- 1. 遍历所有建筑数据
         local count_cs = 0
@@ -709,14 +711,21 @@ script.on_init(function()
     State.ensure_storage() -- 会创建空的 rift_rails 和 id_map
     storage.collider_map = {}
     storage.active_teleporter_list = {}
-    -- 注册 LTN 事件（若可用）
-    register_ltn_events()
+    if not storage.rift_rail_ltn_routing_table then
+        storage.rift_rail_ltn_routing_table = {} -- 初始化 LTN 路由表
+    end
+    register_ltn_events()                        -- 注册 LTN 事件（若可用）
 end)
 
 -- on_configuration_changed: 处理模组更新或配置变更
 script.on_configuration_changed(function(event)
     -- 1. 确保基础表结构存在
     State.ensure_storage()
+
+    -- 确保 LTN 路由表存在
+    if not storage.rift_rail_ltn_routing_table then
+        storage.rift_rail_ltn_routing_table = {}
+    end
 
     -- [迁移任务 1] 为旧存档构建 id_map 缓存 (v0.1 -> v0.2)
     if storage.rift_rails and next(storage.rift_rails) ~= nil and next(storage.rift_rail_id_map) == nil then
@@ -784,6 +793,17 @@ script.on_configuration_changed(function(event)
             end)
         end
     end
+
+    -- [迁移任务 5] 为新的 LTN 路由表系统填充数据
+    -- 检查一个标志位，确保这个迁移只运行一次
+    if not storage.rift_rail_ltn_table_migrated then
+        log_debug("[Migration] 正在为 LTN 路由表系统填充数据...")
+        if LTN.rebuild_routing_table_from_storage then
+            LTN.rebuild_routing_table_from_storage()
+        end
+        -- 设置标志位，防止下次更新时重复运行
+        storage.rift_rail_ltn_table_migrated = true
+    end
 end)
 
 -- on_load: 只在加载存档时运行
@@ -848,7 +868,7 @@ remote.add_interface("RiftRail", {
 
         4. 通过自定义ID查询 (例如 ID为 27):
         /c local id=27; game.print(serpent.line(remote.call("RiftRail", "debug_storage", "get_by_id", id)))
-        
+
         5. 通过实体Unit Number查询 (旧方法):
         /c local id=12345; game.print(serpent.block(remote.call("RiftRail", "debug_storage", "get_by_unit", id)))
 
@@ -878,7 +898,8 @@ remote.add_interface("RiftRail", {
                 if not search_param then
                     return "Error: 'get_by_id' requires a custom ID parameter."
                 end
-                return State.get_portaldata_by_id(search_param) or "Error: Struct with custom ID " .. tostring(search_param) .. " not found."
+                return State.get_portaldata_by_id(search_param) or
+                    "Error: Struct with custom ID " .. tostring(search_param) .. " not found."
             elseif portaldata_key == "get_by_unit" then
                 if not search_param then
                     return "Error: 'get_by_unit' requires a unit_number parameter."
@@ -922,7 +943,9 @@ remote.add_interface("RiftRail", {
                 for unit_number, portaldata in pairs(storage.rift_rails) do
                     total_portaldatas = total_portaldatas + 1
                     if not (portaldata.shell and portaldata.shell.valid) then
-                        table.insert(data_ghosts, "Struct for unit_number " .. unit_number .. " (ID: " .. (portaldata.id or "N/A") .. ") has an invalid shell.")
+                        table.insert(data_ghosts,
+                            "Struct for unit_number " ..
+                            unit_number .. " (ID: " .. (portaldata.id or "N/A") .. ") has an invalid shell.")
                     end
                 end
             end
@@ -945,7 +968,15 @@ remote.add_interface("RiftRail", {
                     total_components = total_components + 1
                     if not State.get_portaldata(entity) then
                         -- [修正] 对 entity.unit_number 进行安全转换，防止 simple-entity (如 collider) 因没有 unit_number 而报错
-                        table.insert(entity_ghosts, "Entity '" .. entity.name .. "' (Unit No: " .. tostring(entity.unit_number) .. ") at [gps=" .. entity.position.x .. "," .. entity.position.y .. "," .. entity.surface.name .. "] has no corresponding portaldata data.")
+                        table.insert(entity_ghosts,
+                            "Entity '" ..
+                            entity.name ..
+                            "' (Unit No: " ..
+                            tostring(entity.unit_number) ..
+                            ") at [gps=" ..
+                            entity.position.x ..
+                            "," ..
+                            entity.position.y .. "," .. entity.surface.name .. "] has no corresponding portaldata data.")
                     end
                 end
             end

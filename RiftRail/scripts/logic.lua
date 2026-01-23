@@ -211,11 +211,19 @@ function Logic.set_mode(player_index, portal_id, mode, skip_sync)
         return
     end
 
-    if my_data.mode == mode then
+    -- 记录旧模式，用于 LTN 同步
+    local old_mode = my_data.mode
+
+    if old_mode == mode then
         return
     end
 
     my_data.mode = mode
+
+    -- 在模式改变后，通知 LTN 模块更新路由表
+    if LTN and LTN.on_portal_mode_changed then
+        LTN.on_portal_mode_changed(my_data, old_mode)
+    end
 
     -- 立即更新物理碰撞器状态
     update_collider_state(my_data)
