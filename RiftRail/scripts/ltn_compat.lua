@@ -195,10 +195,27 @@ local function add_station_to_schedule(train, station_entity, insert_index)
             i = i + 1
         end
     end ]]
+    -- 1. 插入传送门站点
     schedule.add_record({
         station = station_entity.backer_name,
         index = { schedule_index = insert_index },
     })
+
+    -- 2. 插入防堵塞清理站 (Cleared Station)
+    -- 逻辑：如果开关开启，在传送门站点之后 (insert_index + 1) 插入一个临时站
+    if settings.global["rift-rail-ltn-use-teleported"].value then
+        local clearance_name = settings.global["rift-rail-ltn-teleported-name"].value
+        schedule.add_record({
+            station = clearance_name,
+            index = { schedule_index = insert_index + 1 },      -- 紧跟在传送门之后
+            temporary = true,                                   -- 临时站
+            wait_conditions = { { type = "time", ticks = 0 } }, -- 0秒等待，到站即走
+        })
+    end
+
+    -- 3. 更新列车目标
+    -- 如果当前索引已经在插入点之后，说明列车已经过了这个阶段，不用回退
+    -- 否则确保列车指向正确的下一站（即刚才插入的传送门站）
     if schedule.current > insert_index then
         schedule.go_to_station(insert_index)
     end
@@ -209,110 +226,110 @@ function LTN.on_stops_updated(e)
     storage.ltn_stops = e.logistic_train_stops or {}
 end
 
+-- 专门处理单条交付任务的函数 (提取自原来的循环体)
+-- 使用 return 代替 goto continue，逻辑更清晰
+local function process_single_delivery(train_id, deliveries, stops)
+    local d = deliveries and deliveries[train_id]
+    if not d then
+        return
+    end
+
+    local train = d.train
+    if not (train and train.valid) then
+        return
+    end
+
+    -- 仅处理跨地表的交付
+    local from_stop_data = d.from_id and stops[d.from_id]
+    local to_stop_data = d.to_id and stops[d.to_id]
+    local from_entity = from_stop_data and from_stop_data.entity
+    local to_entity = to_stop_data and to_stop_data.entity
+
+    if not (from_entity and from_entity.valid and to_entity and to_entity.valid) then
+        return
+    end
+
+    local loco = train.locomotives and train.locomotives.front_movers and train.locomotives.front_movers[1]
+    if loco and loco.valid then
+        -- 检查是否跨面
+        local cross_surface = (from_entity.surface ~= to_entity.surface) or (loco.surface ~= from_entity.surface)
+        if not cross_surface then
+            return -- 不跨面，直接退出
+        end
+    end
+
+    -- 找到当前交付关联的裂隙连接
+    local conns = d.surface_connections or {}
+    if not next(conns) then
+        return
+    end
+
+    -- 计算 provider/requester 索引
+    local p_index, _, p_type = remote.call("logistic-train-network", "get_next_logistic_stop", train)
+    local r_index, r_type
+    if p_type == "provider" then
+        r_index, _, r_type = remote.call("logistic-train-network", "get_next_logistic_stop", train, (p_index or 0) + 1)
+    else
+        -- 若第一站不是 provider，尝试直接获取 requester
+        r_index, _, r_type = remote.call("logistic-train-network", "get_next_logistic_stop", train)
+        if r_type ~= "requester" then
+            r_index, _, r_type = remote.call("logistic-train-network", "get_next_logistic_stop", train,
+                (r_index or 0) + 1)
+        end
+    end
+
+    -- 按逻辑插入中转站：
+
+    -- 1. 在 requester 后插入目标面中转站
+    if r_index and to_entity.surface ~= (loco and loco.valid and loco.surface or to_entity.surface) then
+        for _, conn in pairs(conns) do
+            local station = pick_station_for_surface(conn, to_entity.surface)
+            if station then
+                add_station_to_schedule(train, station, r_index + 1)
+            end
+            break
+        end
+    end
+
+    -- 2. 在 requester 前插入来源面中转站（当跨面时）
+    if r_index and from_entity.surface ~= to_entity.surface then
+        for _, conn in pairs(conns) do
+            local station = pick_station_for_surface(conn, from_entity.surface)
+            if station then
+                add_station_to_schedule(train, station, r_index)
+            end
+            break
+        end
+    end
+
+    -- 3. 在 provider 前插入来源面中转站（当机车不在来源面时）
+    if p_index and loco and loco.valid and loco.surface ~= from_entity.surface then
+        for _, conn in pairs(conns) do
+            local station = pick_station_for_surface(conn, loco.surface)
+            if station then
+                add_station_to_schedule(train, station, p_index)
+            end
+            break
+        end
+    end
+end
+
 function LTN.on_dispatcher_updated(e)
     if not is_ltn_active() then
         return
     end
+
     local deliveries = e.deliveries
     local stops = storage.ltn_stops or {}
 
+    -- 遍历所有新任务，逐个调用处理函数
     for _, train_id in pairs(e.new_deliveries or {}) do
-        local d = deliveries and deliveries[train_id]
-        if not d then
-            goto continue
-        end
-
-        local train = d.train
-        if not (train and train.valid) then
-            goto continue
-        end
-
-        -- 仅处理跨地表的交付
-        local from_stop_data = d.from_id and stops[d.from_id]
-        local to_stop_data = d.to_id and stops[d.to_id]
-        local from_entity = from_stop_data and from_stop_data.entity
-        local to_entity = to_stop_data and to_stop_data.entity
-        if not (from_entity and from_entity.valid and to_entity and to_entity.valid) then
-            goto continue
-        end
-
-        local loco = train.locomotives and train.locomotives.front_movers and train.locomotives.front_movers[1]
-        if loco and loco.valid then
-            -- 检查是否跨面
-            local cross_surface = (from_entity.surface ~= to_entity.surface) or (loco.surface ~= from_entity.surface)
-            if not cross_surface then
-                goto continue
-            end
-        end
-
-        -- 找到当前交付关联的裂隙连接（由我们在 update_connection 中注册）
-        local conns = d.surface_connections or {}
-        if not next(conns) then
-            goto continue
-        end
-
-        -- -- 防重键：基于 train_id + from_id + to_id，避免异常重复触发导致的再次插入
-        -- storage.ltn_handled_keys = storage.ltn_handled_keys or {}
-        -- local key = string.format("%s:%s:%s", tostring(train.id), tostring(d.from_id or 0), tostring(d.to_id or 0))
-        -- if storage.ltn_handled_keys[key] then
-        --     ltn_log("[LTNCompat] 跳过重复处理: key=" .. key)
-        --     goto continue
-        -- end
-
-        -- 计算 provider/requester 索引
-        local p_index, _, p_type = remote.call("logistic-train-network", "get_next_logistic_stop", train)
-        local r_index, r_type
-        if p_type == "provider" then
-            r_index, _, r_type = remote.call("logistic-train-network", "get_next_logistic_stop", train, (p_index or 0) + 1)
-        else
-            -- 若第一站不是 provider，尝试直接获取 requester
-            r_index, _, r_type = remote.call("logistic-train-network", "get_next_logistic_stop", train)
-            if r_type ~= "requester" then
-                r_index, _, r_type = remote.call("logistic-train-network", "get_next_logistic_stop", train, (r_index or 0) + 1)
-            end
-        end
-
-        -- 按 SE 逻辑插入（倒序避免索引偏移）：
-        -- 在 requester 后插入目标面中转站
-        if r_index and to_entity.surface ~= (loco and loco.valid and loco.surface or to_entity.surface) then
-            for _, conn in pairs(conns) do
-                local station = pick_station_for_surface(conn, to_entity.surface)
-                if station then
-                    add_station_to_schedule(train, station, r_index + 1)
-                end
-                break
-            end
-        end
-        -- 在 requester 前插入来源面中转站（当跨面时）
-        if r_index and from_entity.surface ~= to_entity.surface then
-            for _, conn in pairs(conns) do
-                local station = pick_station_for_surface(conn, from_entity.surface)
-                if station then
-                    add_station_to_schedule(train, station, r_index)
-                end
-                break
-            end
-        end
-        -- 在 provider 前插入来源面中转站（当机车不在来源面时）
-        if p_index and loco and loco.valid and loco.surface ~= from_entity.surface then
-            for _, conn in pairs(conns) do
-                local station = pick_station_for_surface(conn, loco.surface)
-                if station then
-                    add_station_to_schedule(train, station, p_index)
-                end
-                break
-            end
-        end
-
-        -- 标记此交付已处理，防止重复插入（暂时停用）
-        -- storage.ltn_handled_keys[key] = true
-
-        ::continue::
+        process_single_delivery(train_id, deliveries, stops)
     end
 end
 
 -- ============================================================================
--- [新增] 传送生命周期钩子
+-- 传送生命周期钩子
 -- ============================================================================
 
 -- 具体的重指派逻辑
