@@ -31,10 +31,10 @@ if not script.active_mods["space-exploration"] then
     }
 end
 
--- [适配] 对应 gui.lua 中的开关名称
+-- 对应 gui.lua 中的开关名称
 CybersynSE.BUTTON_NAME = "rift_rail_cybersyn_switch"
 
--- [辅助] 生成排序键
+-- 生成排序键
 local function sorted_pair_key(a, b)
     if a < b then
         return a .. "|" .. b
@@ -43,7 +43,7 @@ local function sorted_pair_key(a, b)
     end
 end
 
--- [辅助] 构造伪装成 SE 车站的实体表 (Duck Typing)
+-- 构造伪装成 SE 车站的实体表 (Duck Typing)
 local function make_fake_entity(real_entity)
     return {
         valid = true,
@@ -57,7 +57,7 @@ local function make_fake_entity(real_entity)
     }
 end
 
--- [辅助] 从 RiftRail 结构体中提取车站实体
+-- 从 RiftRail 结构体中提取车站实体
 local function get_station(portaldata)
     if portaldata.children then
         for _, child_data in pairs(portaldata.children) do
@@ -70,7 +70,6 @@ local function get_station(portaldata)
     return nil
 end
 
--- [初始化]
 -- 为了解决加载顺序问题，将表结构检查放在 init 内部，配合 control.lua 的逻辑
 function CybersynSE.init(dependencies)
     State = dependencies.State
@@ -96,7 +95,7 @@ function CybersynSE.purge_legacy_connections()
         if portal.paired_to_id then
             local partner = State.get_portaldata_by_id(portal.paired_to_id)
 
-            -- [修复] 必须获取内部车站实体来执行清理
+            -- 必须获取内部车站实体来执行清理
             local station1 = get_station(portal)
             local station2 = get_station(partner)
 
@@ -106,7 +105,7 @@ function CybersynSE.purge_legacy_connections()
 
                 local k_surf = sorted_pair_key(s1_idx, s2_idx)
 
-                -- [修复] 使用车站的 unit_number 来计算 Key
+                -- 使用车站的 unit_number 来计算 Key
                 local k_ent = sorted_pair_key(station1.unit_number, station2.unit_number)
 
                 -- 1. 清理地表连接
@@ -172,7 +171,7 @@ local function link_stations(s1, s2)
         secondary_station = s1
     end
 
-    -- [修复] 动态修补 se_elevators 数据
+    -- 动态修补 se_elevators 数据
     -- 必须确保 ID 较小的那个实体 (Cybersyn 认定的 "电梯本体") 包含对面地表的映射
     -- 否则当火车在对面地表时，Cybersyn 查不到入口会崩溃
     if remote.interfaces["cybersyn"] then
@@ -315,7 +314,7 @@ end
 
 -- 更新连接状态
 function CybersynSE.update_connection(portaldata, target_portal, connect, player, is_migration)
-    -- [修改] 如果是断开连接(connect=false)，允许 target_portal 为空
+    -- 如果是断开连接(connect=false)，允许 target_portal 为空
     if not portaldata then
         return
     end
@@ -331,11 +330,11 @@ function CybersynSE.update_connection(portaldata, target_portal, connect, player
         portaldata.cybersyn_enabled = true
         target_portal.cybersyn_enabled = true -- 仅做标记同步
 
-        -- [修改] 混合通知逻辑
+        -- 混合通知逻辑
         if not is_migration then
             local gps = "[gps=" ..
-            portaldata.shell.position.x ..
-            "," .. portaldata.shell.position.y .. "," .. portaldata.shell.surface.name .. "]"
+                portaldata.shell.position.x ..
+                "," .. portaldata.shell.position.y .. "," .. portaldata.shell.surface.name .. "]"
             local msg
             if count > 0 then
                 msg = { "messages.rift-rail-info-cybersyn-link-established", portaldata.name, gps, count }
@@ -364,11 +363,11 @@ function CybersynSE.update_connection(portaldata, target_portal, connect, player
         if not connect then
             portaldata.cybersyn_enabled = false
         end
-        -- [修改] 混合通知逻辑 (断开)
+        -- 混合通知逻辑 (断开)
         if not is_migration then
             local gps = "[gps=" ..
-            portaldata.shell.position.x ..
-            "," .. portaldata.shell.position.y .. "," .. portaldata.shell.surface.name .. "]"
+                portaldata.shell.position.x ..
+                "," .. portaldata.shell.position.y .. "," .. portaldata.shell.surface.name .. "]"
             local msg = { "messages.rift-rail-info-cybersyn-disconnected", portaldata.name, gps }
 
             if player then
