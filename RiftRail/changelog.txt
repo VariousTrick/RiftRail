@@ -1,4 +1,32 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.8.0
+Date: 2026-01-26
+  Major Changes:
+    - 这是一项重大变更，直接取消了无se环境下的cybersyn兼容支持，如果您需要此功能请不要更新。
+    - This is a major change that removes cybersyn compatibility in non-SE environments. Please do not update if you need this feature.
+  Features:
+    - The Cybersyn compatibility architecture has been completely refactored.
+      - [Removed] Due to significant performance overhead and instability, Cybersyn compatibility in **non-Space Exploration environments has been removed**.
+      - [Upgraded] In Space Exploration environments, the compatibility logic has been upgraded to a new **N-to-M Pooled Architecture**. Any number of Entry portals can now intelligently interconnect, allowing Cybersyn to automatically select the closest path. This greatly improves routing flexibility and redundancy.
+      - [Fixed] Resolved an issue where connections to Cybersyn might fail to be cleaned up upon deconstruction due to entity ID mismatches in the legacy compatibility mode.
+      - [Improved] The Cybersyn connection switch in the GUI can now be operated from an "Exit" portal; the action will be intelligently proxied to its paired "Entry" portal for a better user experience.
+  Improvements & Fixes:
+    - Fixed an issue where adding a temporary wait station to a train's schedule (e.g., when the exit is blocked) would incorrectly clear the train's Interrupts.
+    - Fixed a bug where deconstructing a portal connected to Cybersyn would not properly clean up the connection data in some cases.
+    - Improved the notification system to provide clear feedback for all connection state changes (connected, waiting for partner, disconnected).
+    - Fixed a rare bug where the Cybersyn compatibility module could fail to initialize due to mod loading order issues.
+  【重大变更】:
+    - Cybersyn 兼容性架构已彻底重构。
+      - [移除] 由于存在严重的性能开销和不稳定性，移除了在“非 Space Exploration 环境”下的 Cybersyn 兼容支持。
+      - [升级] 在 Space Exploration 环境下，兼容逻辑升级为全新的“全互联池化”架构。现在，任意数量的入口传送门都可以智能地相互连接，Cybersyn 将自动选择最近的路径，极大地提高了路由的灵活性和冗余度。
+      - [修复] 解决了在旧兼容模式下，传送门与 Cybersyn 连接可能因实体 ID 不匹配而清理失败的问题。
+      - [优化] 玩家现在可以在“出口”传送门的 GUI 上直接操作 Cybersyn 开关，操作会自动代理到配对的“入口”上，提升了用户体验。
+  【优化与修复】:
+    - 修复了在某些情况下（如出口堵塞时），向列车时刻表添加临时等待站点会导致列车“中断机制”被意外清除的问题。
+    - 修复了在拆除已连接到 Cybersyn 的传送门时，相关连接数据可能不会被正确清理的 Bug。
+    - 优化了通知系统，现在无论是连接、等待回程还是断开连接，玩家都会收到清晰的反馈信息。
+    - 修复了在极少数情况下，因模组加载顺序问题可能导致 Cybersyn 兼容模块初始化失败的 Bug。
+---------------------------------------------------------------------------------------------------
 Version: 0.7.35
 Date: 2026-01-24
   LTN:
