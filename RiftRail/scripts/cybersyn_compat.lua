@@ -1,56 +1,40 @@
 -- scripts/cybersyn_compat.lua
--- 【Rift Rail - Cybersyn 兼容模块】
--- 功能：将 Rift Rail 传送门伪装成 SE 太空电梯，接入 Cybersyn 物流网络
--- 核心逻辑复刻自 Railjump (zzzzz) 模组 v4 修正版
+-- 【Rift Rail - Cybersyn 兼容模块 v0.8.0】
+-- 策略：N x M 全互联池 + SE 数据伪装
+-- 策略：SE 环境下启用 N x M 全互联池 + SE 数据伪装
+--       非 SE 环境下，本模块为空壳，不提供任何功能。
 
 local CybersynSE = {}
 local State = nil
-
 local log_debug = function() end
 
-local function log_cs(message)
+local function log_cs(msg)
     if not RiftRail.DEBUG_MODE_ENABLED then
         return
     end
     if log_debug then
-        log_debug(message)
+        log_debug(msg)
     end
+end
+
+-- [关键] 环境检测与函数置空
+if not script.active_mods["space-exploration"] then
+    -- 如果没有 SE，返回一个包含所有接口的空表，防止其他文件调用时报错
+    return {
+        init = function() end,
+        purge_legacy_connections = function() end,
+        update_connection = function() end,
+        on_portal_destroyed = function() end,
+        on_portal_cloned = function() end,
+        on_teleport_start = function() end,
+        on_teleport_end = function() end,
+    }
 end
 
 -- [适配] 对应 gui.lua 中的开关名称
 CybersynSE.BUTTON_NAME = "rift_rail_cybersyn_switch"
 
--- [新增] 动态检查函数：每次调用功能时才去确认接口是否存在
-local function is_cybersyn_active()
-    return remote.interfaces["cybersyn"] and remote.interfaces["cybersyn"]["write_global"]
-end
-
--- [新增] 辅助函数：从 RiftRail 结构体中提取车站实体
-local function get_station(portaldata)
-    if portaldata.children then
-        -- 【修改】适配新的 children 结构 {entity=..., relative_pos=...}
-        for _, child_data in pairs(portaldata.children) do
-            local child = child_data.entity -- <<-- [核心修改] 先从表中取出实体
-            if child and child.valid and child.name == "rift-rail-station" then
-                return child
-            end
-        end
-    end
-    return nil
-end
-
-function CybersynSE.init(dependencies)
-    State = dependencies.State
-    if dependencies.log_debug then
-        log_debug = dependencies.log_debug
-    end
-
-    -- [修改] 这里不再进行检测！只做依赖注入。
-    -- 因为此时 Cybersyn 可能还没注册接口。
-    log_cs("[RiftRail:CybersynCompat] 模块已加载 (等待运行时检测接口)。")
-end
-
--- 用于生成 Cybersyn 数据库键值的排序函数
+-- [辅助] 生成排序键
 local function sorted_pair_key(a, b)
     if a < b then
         return a .. "|" .. b
@@ -59,386 +43,394 @@ local function sorted_pair_key(a, b)
     end
 end
 
---- 更新连接状态 (核心逻辑)
--- @param select_portal table: 当前传送门数据
--- @param target_portal table: 配对传送门数据
--- @param connect boolean: true=连接, false=断开
--- @param player LuaPlayer: (可选) 操作玩家，用于发送提示
-function CybersynSE.update_connection(select_portal, target_portal, connect, player)
-    -- [修改] 使用动态检查
-    if not is_cybersyn_active() then
-        if player then
-            player.print({ "messages.rift-rail-error-cybersyn-not-found" })
+-- [辅助] 构造伪装成 SE 车站的实体表 (Duck Typing)
+local function make_fake_entity(real_entity)
+    return {
+        valid = true,
+        name = "se-space-elevator-train-stop", -- 核心欺骗点
+        unit_number = real_entity.unit_number,
+        surface = { index = real_entity.surface.index, name = real_entity.surface.name, valid = true },
+        position = real_entity.position,
+        operable = true,
+        backer_name = real_entity.backer_name,
+        __self = "lua_table_wrapper", -- 标记，方便调试
+    }
+end
+
+-- [辅助] 从 RiftRail 结构体中提取车站实体
+local function get_station(portaldata)
+    if portaldata.children then
+        for _, child_data in pairs(portaldata.children) do
+            local child = child_data.entity
+            if child and child.valid and child.name == "rift-rail-station" then
+                return child
+            end
         end
-        return
+    end
+    return nil
+end
+
+-- [初始化]
+-- 为了解决加载顺序问题，将表结构检查放在 init 内部，配合 control.lua 的逻辑
+function CybersynSE.init(dependencies)
+    State = dependencies.State
+    if dependencies.log_debug then
+        log_debug = dependencies.log_debug
     end
 
-    -- 1. 获取真实的车站实体
-    local station1 = get_station(select_portal)
-    local station2 = get_station(target_portal)
-
-    if not (station1 and station1.valid and station2 and station2.valid) then
-        if player then
-            player.print({ "messages.rift-rail-error-cybersyn-no-station" })
-        end
-        return
+    -- 确保池子存在
+    if not storage.rr_cybersyn_pools then
+        storage.rr_cybersyn_pools = {}
     end
 
-    -- 2. 准备键值
-    local surface_pair_key = sorted_pair_key(station1.surface.index, station2.surface.index)
-    local entity_pair_key = sorted_pair_key(station1.unit_number, station2.unit_number)
+    log_cs("[CybersynCompat] 伪装池化架构已加载。")
+end
 
-    local success = false
+-- 【迁移函数】清理旧版(Entry-Exit)连接
+function CybersynSE.purge_legacy_connections()
+    if not (remote.interfaces["cybersyn"] and storage.rift_rails) then
+        return
+    end
+    log_cs("[Migration] 开始清理旧版 Entry-Exit 连接...")
+    for _, portal in pairs(storage.rift_rails) do
+        if portal.paired_to_id then
+            local partner = State.get_portaldata_by_id(portal.paired_to_id)
 
-    -- 3. 使用 pcall 保护远程调用
-    pcall(function()
-        if connect then
-            -- =================================================================
-            -- 【完美伪装策略】
-            -- Cybersyn 要求 entity1.unit_number < entity2.unit_number
-            -- 并且 entity1 的名字必须是 "se-space-elevator-train-stop"
-            -- =================================================================
+            -- [修复] 必须获取内部车站实体来执行清理
+            local station1 = get_station(portal)
+            local station2 = get_station(partner)
 
-            local min_station, max_station
-            if station1.unit_number < station2.unit_number then
-                min_station = station1
-                max_station = station2
-            else
-                min_station = station2
-                max_station = station1
+            if station1 and station1.valid and station2 and station2.valid then
+                local s1_idx = station1.surface.index
+                local s2_idx = station2.surface.index
+
+                local k_surf = sorted_pair_key(s1_idx, s2_idx)
+
+                -- [修复] 使用车站的 unit_number 来计算 Key
+                local k_ent = sorted_pair_key(station1.unit_number, station2.unit_number)
+
+                -- 1. 清理地表连接
+                remote.call("cybersyn", "write_global", nil, "connected_surfaces", k_surf, k_ent)
+
+                -- 2. 清理伪装的 SE 电梯数据
+                remote.call("cybersyn", "write_global", nil, "se_elevators", station1.unit_number)
+                remote.call("cybersyn", "write_global", nil, "se_elevators", station2.unit_number)
             end
-
-            -- 构建伪造的车站对象 (Duck Typing)
-            -- 我们用 min_station 的真实数据，但披上 SE 的名字
-            local fake_station_for_check = {
-                valid = true,
-                name = "se-space-elevator-train-stop", -- [关键] 骗过 Cybersyn 的名字检查
-                unit_number = min_station.unit_number, -- [关键] ID 必须对应真实 ID
-                surface = { index = min_station.surface.index, name = min_station.surface.name, valid = true },
-                position = min_station.position,
-                operable = true,
-                backer_name = min_station.backer_name,
-            }
-
-            -- 准备写入 se_elevators 表的数据
-            local ground_portal, orbit_portal
-            -- 简单按地表 ID 排序，小的当“地面”，大的当“轨道”
-            if select_portal.surface.index < target_portal.surface.index then
-                ground_portal = select_portal
-                orbit_portal = target_portal
-            else
-                ground_portal = target_portal
-                orbit_portal = select_portal
-            end
-
-            local s_ground = get_station(ground_portal)
-            local s_orbit = get_station(orbit_portal)
-
-            local ground_end_data = {
-                elevator = ground_portal.shell, -- 使用 RiftRail 的 shell 作为主体
-                stop = s_ground,
-                surface_id = ground_portal.surface.index,
-                stop_id = s_ground.unit_number,
-                elevator_id = ground_portal.shell.unit_number,
-            }
-            local orbit_end_data = {
-                elevator = orbit_portal.shell,
-                stop = s_orbit,
-                surface_id = orbit_portal.surface.index,
-                stop_id = s_orbit.unit_number,
-                elevator_id = orbit_portal.shell.unit_number,
-            }
-
-            local fake_elevator_data = {
-                ground = ground_end_data,
-                orbit = orbit_end_data,
-                cs_enabled = true,
-                network_masks = nil,
-                [ground_portal.surface.index] = ground_end_data,
-                [orbit_portal.surface.index] = orbit_end_data,
-            }
-
-            -- A. 写入 SE 电梯数据库
-            remote.call("cybersyn", "write_global", fake_elevator_data, "se_elevators", s_ground.unit_number)
-            remote.call("cybersyn", "write_global", fake_elevator_data, "se_elevators", s_orbit.unit_number)
-
-            -- B. 写入地表连接数据库
-            -- entity1 必须是伪造的那个，entity2 是真实的
-            local connection_data = {
-                entity1 = fake_station_for_check,
-                entity2 = max_station,
-            }
-            -- [修改] 尝试使用 4 个参数进行定点插入
-            -- 尝试在 connected_surfaces -> surface_pair_key 下直接写入 entity_pair_key
-            -- 这样不会覆盖掉同地表下的 SE 电梯或其他连接
-            local result = remote.call("cybersyn", "write_global", connection_data, "connected_surfaces", surface_pair_key, entity_pair_key)
-            -- [修改] 如果 result 为 false (说明 surface_pair_key 这张大表还不存在)，则初始化这张表
-            if not result then
-                remote.call("cybersyn", "write_global", { [entity_pair_key] = connection_data }, "connected_surfaces", surface_pair_key)
-            end
-
-            log_cs("[RiftRail:CybersynCompat] [连接] " .. select_portal.name .. " <--> " .. target_portal.name)
-            success = true
-        else
-            -- 断开连接：清理数据
-            -- [修改] 使用 4 个参数进行定点删除
-            -- 只把我们这一对 (entity_pair_key) 设为 nil，绝对不触碰同地表的其他数据
-            remote.call("cybersyn", "write_global", nil, "connected_surfaces", surface_pair_key, entity_pair_key)
-            -- 清理 SE 表 (保持不变)
-            remote.call("cybersyn", "write_global", nil, "se_elevators", station1.unit_number)
-            remote.call("cybersyn", "write_global", nil, "se_elevators", station2.unit_number)
-            log_cs("[RiftRail:CybersynCompat] [断开] 连接清理完毕。")
-            success = true
         end
-    end)
+    end
+    log_cs("[Migration] 旧版连接清理完成。")
+end
 
-    if success then
-        select_portal.cybersyn_enabled = connect -- [注意] control.lua/state.lua 中使用的是 cybersyn_enabled
-        target_portal.cybersyn_enabled = connect
+-- ============================================================================
+-- 核心逻辑：伪装数据读写
+-- ============================================================================
 
-        -- [修改] 改为全局提示，所有玩家都能看到
-        -- 玩家通知（带双向 GPS 标签，受统一设置控制）
-        local name1 = select_portal.name or "RiftRail"
-        local pos1 = select_portal.shell.position
-        local surface1 = select_portal.shell.surface.name
-        local gps1 = "[gps=" .. pos1.x .. "," .. pos1.y .. "," .. surface1 .. "]"
+-- 向 Cybersyn 注册一个“电梯”
+local function register_fake_elevator(portaldata, station)
+    -- 构造 SE 风格的数据结构
+    -- Cybersyn 需要查 se_elevators[unit_number]
+    local fake_data = {
+        elevator = portaldata.shell,
+        stop = station,
+        surface_id = portaldata.surface.index,
+        stop_id = station.unit_number,
+        elevator_id = portaldata.shell.unit_number,
+        -- 下面这些是为了防止 Cybersyn 读取时报错
+        ground = { stop = station },
+        orbit = { stop = station },
+        cs_enabled = true,
+        network_masks = nil,
+        [portaldata.surface.index] = { stop = station },
+    }
+    remote.call("cybersyn", "write_global", fake_data, "se_elevators", station.unit_number)
+end
 
-        local name2 = target_portal.name or "RiftRail"
-        local pos2 = target_portal.shell.position
-        local surface2 = target_portal.shell.surface.name
-        local gps2 = "[gps=" .. pos2.x .. "," .. pos2.y .. "," .. surface2 .. "]"
+-- 从 Cybersyn 注销一个“电梯”
+local function unregister_fake_elevator(unit_number)
+    remote.call("cybersyn", "write_global", nil, "se_elevators", unit_number)
+end
 
-        for _, player in pairs(game.connected_players) do
-            local setting = settings.get_player_settings(player)["rift-rail-show-logistics-notifications"]
-            if setting and setting.value then
-                if connect then
-                    player.print({ "messages.rift-rail-info-cybersyn-connected", name1, gps1, name2, gps2 })
-                else
-                    player.print({ "messages.rift-rail-info-cybersyn-disconnected", name1, gps1, name2, gps2 })
+-- 建立两个车站之间的连接 (写入 connected_surfaces)
+local function link_stations(s1, s2)
+    local k_surf = sorted_pair_key(s1.surface.index, s2.surface.index)
+    local k_ent = sorted_pair_key(s1.unit_number, s2.unit_number)
+
+    -- 无论 ID 大小，我们都必须传入“伪装实体”，否则 Cybersyn 检查名字时会失败
+    -- Cybersyn 逻辑：if entity1.name == "se-space-elevator-train-stop" ...
+    local f1 = make_fake_entity(s1)
+    local f2 = make_fake_entity(s2)
+
+    -- 确保 ID 小的在前面作为 entity1 (虽然 Cybersyn 写入时也会排序，但我们预处理更稳妥)
+    local ent1, ent2 = f1, f2
+    local primary_unit_number = s1.unit_number -- 默认 s1 是主
+    local secondary_station = s2
+
+    if s1.unit_number > s2.unit_number then
+        ent1 = f2
+        ent2 = f1
+        primary_unit_number = s2.unit_number
+        secondary_station = s1
+    end
+
+    -- [修复] 动态修补 se_elevators 数据
+    -- 必须确保 ID 较小的那个实体 (Cybersyn 认定的 "电梯本体") 包含对面地表的映射
+    -- 否则当火车在对面地表时，Cybersyn 查不到入口会崩溃
+    if remote.interfaces["cybersyn"] then
+        -- 1. 读取现有的伪装数据
+        local fake_data = remote.call("cybersyn", "read_global", "se_elevators", primary_unit_number)
+        if fake_data then
+            -- 2. 补全缺失的地表映射
+            fake_data[secondary_station.surface.index] = { stop = secondary_station }
+            -- 3. 写回
+            remote.call("cybersyn", "write_global", fake_data, "se_elevators", primary_unit_number)
+        end
+    end
+
+    local conn_data = { entity1 = ent1, entity2 = ent2 }
+
+    -- 尝试定点写入 (兼容性写入)
+    local success = remote.call("cybersyn", "write_global", conn_data, "connected_surfaces", k_surf, k_ent)
+    if not success then
+        -- 如果表不存在，初始化该表
+        remote.call("cybersyn", "write_global", { [k_ent] = conn_data }, "connected_surfaces", k_surf)
+    end
+end
+
+-- 断开连接
+local function unlink_stations(s1, s2)
+    local k_surf = sorted_pair_key(s1.surface.index, s2.surface.index)
+    local k_ent = sorted_pair_key(s1.unit_number, s2.unit_number)
+    remote.call("cybersyn", "write_global", nil, "connected_surfaces", k_surf, k_ent)
+end
+
+-- ============================================================================
+-- 核心逻辑：池化管理 (N x M)
+-- ============================================================================
+
+local function get_pool(s1, s2)
+    if not storage.rr_cybersyn_pools then
+        storage.rr_cybersyn_pools = {}
+    end
+    if not storage.rr_cybersyn_pools[s1] then
+        storage.rr_cybersyn_pools[s1] = {}
+    end
+    if not storage.rr_cybersyn_pools[s1][s2] then
+        storage.rr_cybersyn_pools[s1][s2] = {}
+    end
+    return storage.rr_cybersyn_pools[s1][s2]
+end
+
+-- 加入池子：自己变成有效入口
+local function join_pool(portaldata, target_portal)
+    local s1 = portaldata.surface.index
+    local s2 = target_portal.surface.index
+    local uid = portaldata.unit_number
+    local station = get_station(portaldata)
+
+    if not (station and station.valid) then
+        return 0
+    end
+
+    local my_pool = get_pool(s1, s2)
+    if my_pool[uid] then
+        -- 已经在池子里，返回当前连接数
+        local partner_pool = get_pool(s2, s1)
+        local count = 0
+        for _ in pairs(partner_pool) do
+            count = count + 1
+        end
+        return count
+    end
+
+    -- 1. 注册自己为 SE 电梯 (伪装身份)
+    register_fake_elevator(portaldata, station)
+    my_pool[uid] = station
+
+    log_cs("[Pool] 入池: " .. portaldata.name)
+
+    -- 2. 扫描回程池，建立连接
+    local partner_pool = get_pool(s2, s1)
+    local count = 0
+
+    for _, partner_station in pairs(partner_pool) do
+        if partner_station and partner_station.valid then
+            link_stations(station, partner_station)
+            count = count + 1
+        end
+    end
+
+    log_cs("[Link] 建立连接数: " .. count)
+    return count
+end
+
+-- 离开池子：自己不再是有效入口
+local function leave_pool(portaldata, target_portal)
+    local s1 = portaldata.surface.index
+    local uid = portaldata.unit_number
+    local station = get_station(portaldata) -- 尝试获取，可能已失效
+
+    -- 定义一个内部清理函数，用来清理特定方向的连接
+    local function clean_specific_pool(surface_index_2)
+        local my_pool = get_pool(s1, surface_index_2)
+        if my_pool[uid] then
+            -- 1. 扫描回程池，断开连接
+            local partner_pool = get_pool(surface_index_2, s1)
+            for _, partner_station in pairs(partner_pool) do
+                -- station 即使无效了，只要不为 nil，传给 remove 接口也是安全的(会尝试用ID删)
+                if partner_station and partner_station.valid and station then
+                    -- 无论 station 是否 valid，只要它曾经注册过，我们就尝试注销
+                    -- 注意：如果 station 彻底没了，这里可能注销失败，但我们在迁移脚本里有兜底
+                    if station.valid then
+                        unlink_stations(station, partner_station)
+                    end
                 end
             end
+            -- 2. 移出池子
+            my_pool[uid] = nil
         end
     end
-end
 
---- 处理传送门销毁
-function CybersynSE.on_portal_destroyed(select_portal)
-    -- [修改] 使用动态检查
-    if not is_cybersyn_active() then
-        return
-    end
-
-    -- 如果已连接，则尝试断开
-    if select_portal and select_portal.cybersyn_enabled then
-        local target_portal = State.get_portaldata_by_id(select_portal.paired_to_id)
-        local station = get_station(select_portal)
-
-        -- 即使对侧不存在，也需要清理自己的数据
-        if station and station.valid then
-            -- 尝试完整断开
-            if target_portal then
-                CybersynSE.update_connection(select_portal, target_portal, false, nil)
-            else
-                -- 紧急清理模式 (只清理自己)
-                pcall(remote.call, "cybersyn", "write_global", nil, "se_elevators", station.unit_number)
-            end
-        end
-    end
-end
-
---- 处理克隆/移动 (支持 SE 飞船起飞降落)
-function CybersynSE.on_portal_cloned(old_portaldata, new_portaldata, is_landing)
-    -- [修改] 使用动态检查
-    if not is_cybersyn_active() then
-        return
-    end
-
-    -- 只有旧实体开启了连接才处理
-    if not (old_portaldata and new_portaldata and old_portaldata.cybersyn_enabled) then
-        return
-    end
-
-    -- 获取配对目标
-    local partner = State.get_portaldata_by_id(new_portaldata.paired_to_id)
-    if not partner then
-        return
-    end
-
-    -- 1. 无条件注销旧连接
-    CybersynSE.update_connection(old_portaldata, partner, false, nil)
-
-    -- 2. 判断逻辑
-    local is_takeoff = false
-
-    if is_landing then
-        -- 降落：静默处理，保持 enabled=true，但不发送通知，隐身模式
-        log_cs("[RiftRail:CybersynCompat] 飞船降落，维持连接状态 (静默)。")
-        new_portaldata.cybersyn_enabled = true
-        -- 这里什么都不做，不向 Cybersyn 注册，仅仅保留开关状态
+    -- [逻辑分叉]
+    if target_portal then
+        -- 情况 A: 知道对方是谁，精准清理
+        clean_specific_pool(target_portal.surface.index)
     else
-        -- 起飞或搬家：注册新 ID
-        CybersynSE.update_connection(new_portaldata, partner, true, nil)
-        log_cs("[RiftRail:CybersynCompat] 实体迁移，重新注册连接。")
-
-        if string.find(new_portaldata.surface.name, "spaceship") then
-            is_takeoff = true
-        end
-    end
-
-    if is_landing or is_takeoff then
-        for _, player in pairs(game.players) do
-            if settings.get_player_settings(player)["rift-rail-show-logistics-notifications"].value then
-                if is_landing then
-                    player.print({ "messages.rift-rail-cybersyn-landing", new_portaldata.name })
-                elseif is_takeoff then
-                    player.print({ "messages.rift-rail-cybersyn-takeoff", new_portaldata.name })
-                end
+        -- 情况 B: 不知道对方是谁 (比如传入了 nil)，暴力扫描
+        -- 遍历 s1 下面所有的 s2 池子
+        if storage.rr_cybersyn_pools and storage.rr_cybersyn_pools[s1] then
+            for s2, _ in pairs(storage.rr_cybersyn_pools[s1]) do
+                clean_specific_pool(s2)
             end
         end
     end
+
+    -- 3. 最后统一销毁伪装身份 (这步不需要知道对方是谁)
+    unregister_fake_elevator(uid)
+    log_cs("[Pool] 退池: " .. portaldata.name)
 end
 
 -- ============================================================================
--- [新增] 传送生命周期钩子 (策略模式)
+-- 外部接口
 -- ============================================================================
 
--- 1. 定义具体的逻辑实现
-
--- 逻辑 A: 完整模式 (无 SE) - 贴标签 + 存快照
-local function logic_on_start_full(train)
-    if not (train and train.valid) then
-        return nil
-    end
-    -- 贴标签: 防止被 Cybersyn 误判丢失
-    if remote.interfaces["cybersyn"] then
-        remote.call("cybersyn", "write_global", true, "trains", train.id, "se_is_being_teleported")
-    end
-    -- 存快照: 手动读取数据
-    if remote.interfaces["cybersyn"] then
-        local success, snapshot = pcall(remote.call, "cybersyn", "read_global", "trains", train.id)
-        if success then
-            if RiftRail.DEBUG_MODE_ENABLED then
-                log_cs("Cybersyn兼容: 已保存列车快照 ID=" .. train.id)
-            end
-            return snapshot
-        end
-    end
-    return nil
-end
-
--- 逻辑 B: 轻量模式 (有 SE) - 只贴标签
-local function logic_on_start_tag_only(train)
-    if not (train and train.valid) then
-        return nil
-    end
-    -- 即使有 SE，也要贴标签作为双重保险
-    if remote.interfaces["cybersyn"] then
-        remote.call("cybersyn", "write_global", true, "trains", train.id, "se_is_being_teleported")
-    end
-    -- 不返回快照，后续交给 SE 事件处理
-    return nil
-end
-
--- 逻辑 C: 恢复模式 (无 SE) - 注入快照 + 撕标签
-local function logic_on_end_restore(new_train, old_id, snapshot)
-    if not (new_train and new_train.valid and snapshot) then
+-- 更新连接状态
+function CybersynSE.update_connection(portaldata, target_portal, connect, player, is_migration)
+    -- [修改] 如果是断开连接(connect=false)，允许 target_portal 为空
+    if not portaldata then
         return
     end
+    if connect and not target_portal then
+        return
+    end -- 连接时必须有对象
 
-    if remote.interfaces["cybersyn"] then
-        -- 1. 注入数据到新 ID
-        -- 注意：快照中的 entity 还是旧的，Cybersyn 内部通常只用 ID 索引，或者我们需要更新 entity 引用
-        -- 但根据旧代码，直接写入 snapshot 即可，Cybersyn 会处理
-        snapshot.entity = new_train -- 修正实体引用
-        remote.call("cybersyn", "write_global", snapshot, "trains", new_train.id)
+    -- 只有“入口”且“已配对”且“开关开启”才有资格入池
+    local should_be_in_pool = connect and (portaldata.mode == "entry") and portaldata.paired_to_id
 
-        -- 2. 清除旧 ID 数据 (手动 GC)
-        if old_id then
-            remote.call("cybersyn", "write_global", nil, "trains", old_id)
-        end
+    if should_be_in_pool then
+        local count = join_pool(portaldata, target_portal)
+        portaldata.cybersyn_enabled = true
+        target_portal.cybersyn_enabled = true -- 仅做标记同步
 
-        -- 3. 撕掉新车身上的标签 (恢复监管)
-        remote.call("cybersyn", "write_global", nil, "trains", new_train.id, "se_is_being_teleported")
+        -- [修改] 混合通知逻辑
+        if not is_migration then
+            local gps = "[gps=" ..
+            portaldata.shell.position.x ..
+            "," .. portaldata.shell.position.y .. "," .. portaldata.shell.surface.name .. "]"
+            local msg
+            if count > 0 then
+                msg = { "messages.rift-rail-info-cybersyn-link-established", portaldata.name, gps, count }
+            else
+                msg = { "messages.rift-rail-info-cybersyn-waiting-partner", portaldata.name, gps }
+            end
 
-        -- [新增] 4. 时刻表 Rail 补全 (修复异地表 Rail 指向问题)
-        -- 逻辑来源：原 handle_cybersyn_migration
-        local schedule = new_train.schedule
-        if schedule and schedule.records then
-            local records = schedule.records
-            local current_index = schedule.current
-            local current_record = records[current_index]
-
-            -- 只有当下一站是真实操作站 (P/R/Depot) 且没有 Rail 时才尝试补全
-            -- (如果有 Rail 说明已经是精准导航了，不需要我们干预)
-            if current_record and current_record.station and not current_record.rail then
-                local target_id = nil
-
-                -- Cybersyn 状态映射: 1=去供货站(P), 3=去请求站(R), 5/6=去车库(Depot)
-                if snapshot.status == 1 then
-                    target_id = snapshot.p_station_id
-                elseif snapshot.status == 3 then
-                    target_id = snapshot.r_station_id
-                elseif snapshot.status == 5 or snapshot.status == 6 then
-                    target_id = snapshot.depot_id
+            if player then
+                -- 场景 A: 玩家点击开关 -> 私聊反馈
+                local setting = settings.get_player_settings(player)["rift-rail-show-logistics-notifications"]
+                if setting and setting.value then
+                    player.print(msg)
                 end
-
-                if target_id then
-                    -- 确定查询表名 (depots 或 stations)
-                    local table_name = (snapshot.status == 5 or snapshot.status == 6) and "depots" or "stations"
-
-                    -- 从 Cybersyn 数据库读取目标站点的真实物理信息
-                    local ok, st_data = pcall(remote.call, "cybersyn", "read_global", table_name, target_id)
-
-                    -- 如果目标站在当前地表，插入 Rail 导航点
-                    if ok and st_data and st_data.entity_stop and st_data.entity_stop.valid and st_data.entity_stop.surface == new_train.front_stock.surface then
-                        -- 在当前目标前插入一个临时导航点，强制列车走这个 Rail
-                        table.insert(records, current_index, {
-                            rail = st_data.entity_stop.connected_rail,
-                            rail_direction = st_data.entity_stop.connected_rail_direction,
-                            temporary = true,
-                            wait_conditions = { { type = "time", ticks = 1 } }, -- 1 tick 即刻通过
-                        })
-                        schedule.records = records
-                        new_train.schedule = schedule
-
-                        if RiftRail.DEBUG_MODE_ENABLED then
-                            log_cs("Cybersyn兼容: 已修正时刻表导航 -> " .. st_data.entity_stop.backer_name)
-                        end
+            else
+                -- 场景 B: 脚本/逻辑触发 -> 全服广播
+                for _, p in pairs(game.connected_players) do
+                    local setting = settings.get_player_settings(p)["rift-rail-show-logistics-notifications"]
+                    if setting and setting.value then
+                        p.print(msg)
                     end
                 end
             end
         end
+    else
+        leave_pool(portaldata, target_portal)
+        if not connect then
+            portaldata.cybersyn_enabled = false
+        end
+        -- [修改] 混合通知逻辑 (断开)
+        if not is_migration then
+            local gps = "[gps=" ..
+            portaldata.shell.position.x ..
+            "," .. portaldata.shell.position.y .. "," .. portaldata.shell.surface.name .. "]"
+            local msg = { "messages.rift-rail-info-cybersyn-disconnected", portaldata.name, gps }
 
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_cs("Cybersyn兼容: 数据迁移完成 -> 新ID=" .. new_train.id)
+            if player then
+                -- 场景 A: 玩家点击开关 -> 私聊反馈
+                local setting = settings.get_player_settings(player)["rift-rail-show-logistics-notifications"]
+                if setting and setting.value then
+                    player.print(msg)
+                end
+            else
+                -- 场景 B: 拆除/虫咬/脚本 -> 全服广播
+                for _, p in pairs(game.connected_players) do
+                    local setting = settings.get_player_settings(p)["rift-rail-show-logistics-notifications"]
+                    if setting and setting.value then
+                        p.print(msg)
+                    end
+                end
+            end
         end
     end
 end
 
--- 空函数 (占位符)
-local function noop() end
+-- 传送门被销毁
+function CybersynSE.on_portal_destroyed(portaldata)
+    if portaldata and portaldata.cybersyn_enabled then
+        CybersynSE.update_connection(portaldata, nil, false, nil, false)
+    end
+end
 
--- 2. 策略分发 (在加载时决定使用哪个函数)
+-- 传送门克隆 (起飞/降落)
+function CybersynSE.on_portal_cloned(old_data, new_data, is_landing)
+    -- 1. 旧的退池
+    if old_data.cybersyn_enabled then
+        local partner = State.get_portaldata_by_id(old_data.paired_to_id)
+        leave_pool(old_data, partner)
+    end
 
--- 默认初始化为空
-CybersynSE.on_teleport_start = noop
-CybersynSE.on_teleport_end = noop
+    -- 2. 新的入池 (非降落状态)
+    if new_data.cybersyn_enabled and not is_landing then
+        local partner = State.get_portaldata_by_id(new_data.paired_to_id)
+        if partner then
+            join_pool(new_data, partner)
+        end
+    end
+end
 
-if script.active_mods["cybersyn"] then
-    if script.active_mods["space-exploration"] then
-        -- 情况: Cybersyn + SE
-        -- 开始: 只贴标签
-        -- 结束: 啥都不做 (SE事件接管)
-        CybersynSE.on_teleport_start = logic_on_start_tag_only
-        CybersynSE.on_teleport_end = noop
-        log_cs("Cybersyn兼容模式: SE 托管")
-    else
-        -- 情况: Cybersyn (无 SE)
-        -- 开始: 完整快照
-        -- 结束: 手动恢复
-        CybersynSE.on_teleport_start = logic_on_start_full
-        CybersynSE.on_teleport_end = logic_on_end_restore
-        log_cs("Cybersyn兼容模式: 手动迁移")
+-- 传送开始 (旧版 Hack: 打标签)
+function CybersynSE.on_teleport_start(train)
+    if not (train and train.valid) then
+        return
+    end
+    if remote.interfaces["cybersyn"] then
+        remote.call("cybersyn", "write_global", true, "trains", train.id, "se_is_being_teleported")
+    end
+end
+
+-- 传送结束 (旧版 Hack: 删标签)
+function CybersynSE.on_teleport_end(new_train, old_id)
+    if not (new_train and new_train.valid) then
+        return
+    end
+    if remote.interfaces["cybersyn"] then
+        remote.call("cybersyn", "write_global", nil, "trains", new_train.id, "se_is_being_teleported")
     end
 end
 

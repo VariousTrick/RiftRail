@@ -25,14 +25,13 @@ end
 -- 3. 加载模块
 local flib_util = require("util") -- 引入官方库，命名为 flib_util 避免和自己的 Util 冲突
 local Builder = require("scripts.builder")
+local CybersynSE = require("scripts.cybersyn_compat")
 local GUI = require("scripts.gui")
 local State = require("scripts.state")
 local Logic = require("scripts.logic")
 local Schedule = require("scripts.schedule")
 local Util = require("scripts.util")
 local Teleport = require("scripts.teleport")
-local CybersynSE = require("scripts.cybersyn_compat")
-local CybersynScheduler = require("scripts.cybersyn_scheduler")
 local LTN = require("scripts.ltn_compat")
 
 -- 给 Builder 注入 CybersynSE (用于拆除清理)
@@ -177,11 +176,6 @@ end, rr_filters)
 script.on_event(defines.events.on_tick, function(event)
     -- 1. 执行传送逻辑
     Teleport.on_tick(event)
-
-    -- 2. 执行 Cybersyn 调度器逻辑
-    if CybersynScheduler.on_tick then
-        CybersynScheduler.on_tick()
-    end
 end)
 
 -- E. 注册 LTN 事件（在运行时可用时）
@@ -375,7 +369,7 @@ script.on_event(defines.events.on_entity_cloned, function(event)
                 else
                     if RiftRail.DEBUG_MODE_ENABLED then
                         log_debug("RiftRail Clone Error: 在位置 " ..
-                            serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
+                        serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
                     end
                 end
             end
@@ -804,6 +798,39 @@ script.on_configuration_changed(function(event)
         -- 设置标志位，防止下次更新时重复运行
         storage.rift_rail_ltn_table_migrated = true
     end
+    -- [迁移任务 X] v0.8.0 Cybersyn 架构重构
+    if storage.rift_rails and remote.interfaces["cybersyn"] then
+        log_debug("[Migration] v0.8.0 Cybersyn 架构重构...")
+
+        -- 1. 无条件清理所有旧版连接数据
+        if CybersynSE.purge_legacy_connections then
+            CybersynSE.purge_legacy_connections()
+        end
+
+        -- 2. 仅在 SE 环境下，执行重建 (Rebuild)
+        if script.active_mods["space-exploration"] then
+            local migration_performed = false
+            for _, portal in pairs(storage.rift_rails) do
+                if portal.shell and portal.shell.valid and portal.cybersyn_enabled and portal.mode == "entry" and portal.paired_to_id then
+                    local partner = State.get_portaldata_by_id(portal.paired_to_id)
+                    if partner and partner.shell and partner.shell.valid then
+                        -- 静默重建
+                        CybersynSE.update_connection(portal, partner, true, nil, true)
+                        migration_performed = true
+                    end
+                end
+            end
+            if migration_performed then
+                game.print({ "messages.rift-rail-migration-v080-success" })
+            end
+        else
+            -- 3. 如果没有 SE，强制关闭所有 Cybersyn 开关（防止状态残留）
+            for _, portal in pairs(storage.rift_rails) do
+                portal.cybersyn_enabled = false
+            end
+            game.print({ "messages.rift-rail-migration-v080-warning" })
+        end
+    end
 end)
 
 -- on_load: 只在加载存档时运行
@@ -899,7 +926,7 @@ remote.add_interface("RiftRail", {
                     return "Error: 'get_by_id' requires a custom ID parameter."
                 end
                 return State.get_portaldata_by_id(search_param) or
-                    "Error: Struct with custom ID " .. tostring(search_param) .. " not found."
+                "Error: Struct with custom ID " .. tostring(search_param) .. " not found."
             elseif portaldata_key == "get_by_unit" then
                 if not search_param then
                     return "Error: 'get_by_unit' requires a unit_number parameter."

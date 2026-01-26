@@ -57,8 +57,8 @@ end
 function GUI.build_edit_name_flow(parent_flow, my_data)
     parent_flow.clear()
 
--- 1. 确定初始文本 (默认图标 + 名字)
-    local current_icon_str = "[item=rift-rail-placer]" 
+    -- 1. 确定初始文本 (默认图标 + 名字)
+    local current_icon_str = "[item=rift-rail-placer]"
     if my_data.icon and my_data.icon.type and my_data.icon.name then
         current_icon_str = "[" .. my_data.icon.type .. "=" .. my_data.icon.name .. "]"
     end
@@ -131,11 +131,11 @@ function GUI.build_or_update(player, entity)
     -- 使用 Factorio 的本地化拼接语法 {"", A, B, C}
     -- 这里的 {"entity-name.rift-rail-core"} 会自动读取 locale 文件显示为 "裂隙铁路控制核心"
     local title_caption = {
-        "", -- 空字符串开头，表示这是一个拼接列表
-        title_icon, -- 图标字符串 "[item=...]"
-        " ", -- 空格
+        "",                               -- 空字符串开头，表示这是一个拼接列表
+        title_icon,                       -- 图标字符串 "[item=...]"
+        " ",                              -- 空格
         { "entity-name.rift-rail-core" }, -- 读取 locale 中的中文名
-        " (ID: " .. my_data.id .. ")", -- 后面拼接 ID
+        " (ID: " .. my_data.id .. ")",    -- 后面拼接 ID
     }
 
     log_gui("[RiftRail:GUI] 标题已更新为本地化名称 (ID: " .. my_data.id .. ")")
@@ -185,7 +185,8 @@ function GUI.build_or_update(player, entity)
         allow_none_state = true,
         left_label_caption = { "gui.rift-rail-mode-entry" },
         right_label_caption = { "gui.rift-rail-mode-exit" },
-        tooltip = (switch_state == "left" and { "gui.rift-rail-mode-tooltip-left" }) or (switch_state == "right" and { "gui.rift-rail-mode-tooltip-right" }) or { "gui.rift-rail-mode-tooltip-none" },
+        tooltip = (switch_state == "left" and { "gui.rift-rail-mode-tooltip-left" }) or
+        (switch_state == "right" and { "gui.rift-rail-mode-tooltip-right" }) or { "gui.rift-rail-mode-tooltip-none" },
     })
     mode_switch.style.bottom_margin = 12
 
@@ -317,8 +318,8 @@ function GUI.build_or_update(player, entity)
         enabled = station_exists,
     })
 
-    -- 8. Cybersyn 开关（仅在安装 Cybersyn 时显示）
-    if script.active_mods["cybersyn"] then
+    -- 8. Cybersyn 开关（仅在安装 Cybersyn 和se时显示）
+    if script.active_mods["cybersyn"] and script.active_mods["space-exploration"] then
         inner_flow.add({ type = "line", direction = "horizontal" })
         local cs_flow = inner_flow.add({ type = "flow", direction = "horizontal" })
         cs_flow.style.vertical_align = "center"
@@ -506,7 +507,6 @@ function GUI.handle_click(event)
         -- 解绑
     elseif el_name == "rift_rail_unpair_button" then
         remote.call("RiftRail", "unpair_portals", player.index, my_data.id)
-
     elseif el_name == "rift_rail_open_station_button" then
         local station = nil
         if my_data.children then
