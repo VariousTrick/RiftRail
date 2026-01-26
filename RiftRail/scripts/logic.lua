@@ -370,6 +370,13 @@ function Logic.set_cybersyn_enabled(player_index, portal_id, enabled)
         return
     end
 
+    -- [新增] 检查模式，如果是出口模式，则提示玩家并阻止操作
+    if my_data.mode == "exit" and enabled then
+        player.print({ "messages.rift-rail-error-cybersyn-on-exit" })
+        -- 因为没有执行任何操作，GUI 会自动弹回
+        return
+    end
+
     -- 获取配对对象
     local partner = nil
     if my_data.paired_to_id then

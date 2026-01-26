@@ -62,10 +62,6 @@ local function read_train_schedule_index(train, phase_name)
     return index
 end
 
--- SE 事件 ID (初始化时获取)
-local SE_TELEPORT_STARTED_EVENT_ID = nil
-local SE_TELEPORT_FINISHED_EVENT_ID = nil
-
 -- =================================================================================
 -- 【Rift Rail 专用几何参数】
 -- =================================================================================
@@ -378,8 +374,8 @@ local function calculate_arrival_orientation(entry_shell_dir, exit_geo_dir, curr
 
     if RiftRail.DEBUG_MODE_ENABLED then
         log_tp("方向计算: 车厢=" ..
-        string.format("%.2f", current_ori) ..
-        ", 入口=" .. entry_shell_ori .. ", 判定=" .. (is_nose_in and "顺向(NoseIn)" or "逆向(TailIn)"))
+            string.format("%.2f", current_ori) ..
+            ", 入口=" .. entry_shell_ori .. ", 判定=" .. (is_nose_in and "顺向(NoseIn)" or "逆向(TailIn)"))
     end
 
     -- 3. 计算出口基准朝向
@@ -482,31 +478,7 @@ local function restore_train_state(train, portaldata, apply_speed, target_index)
         end
     end
 end
--- =================================================================================
--- 专门用于在 on_load 中初始化的 SE 事件获取函数
--- =================================================================================
-function Teleport.init_se_events()
-    -- 确保 on_load 时也能拿到最新的日志函数
-    if script.active_mods["space-exploration"] and remote.interfaces["space-exploration"] then
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_tp("Teleport: 正在尝试从 SE 获取传送事件 ID (on_load)...")
-        end
-        local success, event_started = pcall(remote.call, "space-exploration", "get_on_train_teleport_started_event")
-        local _, event_finished = pcall(remote.call, "space-exploration", "get_on_train_teleport_finished_event")
 
-        if success and event_started then
-            SE_TELEPORT_STARTED_EVENT_ID = event_started
-            SE_TELEPORT_FINISHED_EVENT_ID = event_finished
-            if RiftRail.DEBUG_MODE_ENABLED then
-                log_tp("Teleport: SE 传送事件 ID 获取成功！")
-            end
-        else
-            if RiftRail.DEBUG_MODE_ENABLED then
-                log_tp("Teleport: 警告 - 无法从 SE 获取传送事件 ID。")
-            end
-        end
-    end
-end
 
 -- =================================================================================
 -- 核心传送逻辑
@@ -548,7 +520,8 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
     if final_train and final_train.valid then
         if RiftRail.DEBUG_MODE_ENABLED then
             log_tp("【销毁后】准备恢复: actual_index=" ..
-            tostring(actual_index_before_cleanup) .. ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index))
+                tostring(actual_index_before_cleanup) ..
+                ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index))
         end
         -- 使用统一函数恢复状态 (参数 true 代表同时恢复速度)
         restore_train_state(final_train, exit_portaldata, true, actual_index_before_cleanup)
@@ -557,21 +530,6 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         if CybersynCompat and exit_portaldata.old_train_id then
             CybersynCompat.on_teleport_end(final_train, exit_portaldata.old_train_id, exit_portaldata.cybersyn_snapshot)
             exit_portaldata.cybersyn_snapshot = nil
-        end
-
-        -- 4. SE 事件触发 (Finished)
-        if SE_TELEPORT_FINISHED_EVENT_ID and exit_portaldata.old_train_id then
-            if RiftRail.DEBUG_MODE_ENABLED then
-                log_tp("SE兼容触发 on_train_teleport_finished 事件: new_train_id = " ..
-                tostring(final_train.id) .. ", old_train_id = " .. tostring(exit_portaldata.old_train_id))
-            end
-            script.raise_event(SE_TELEPORT_FINISHED_EVENT_ID, {
-                train = final_train,
-                old_train_id = exit_portaldata.old_train_id,
-                old_train_id_1 = exit_portaldata.old_train_id,
-                old_surface_index = entry_portaldata.surface.index,
-                teleporter = exit_portaldata.shell,
-            })
         end
 
         -- 清理残留的 GUI 映射表（如果有）
@@ -708,19 +666,6 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         -- 触发模组开始钩子 (自动处理标签和快照)
         if CybersynCompat then
             exit_portaldata.cybersyn_snapshot = CybersynCompat.on_teleport_start(car.train)
-        end
-
-        -- [SE] Started 事件
-        if SE_TELEPORT_STARTED_EVENT_ID then
-            if RiftRail.DEBUG_MODE_ENABLED then
-                log_tp("【DEBUG】准备触发 STARTED 事件: old_train_id = " .. tostring(car.train.id))
-            end
-            script.raise_event(SE_TELEPORT_STARTED_EVENT_ID, {
-                train = car.train,
-                old_train_id_1 = car.train.id,
-                old_surface_index = entry_portaldata.surface.index,
-                teleporter = entry_portaldata.shell,
-            })
         end
     end
 
@@ -863,9 +808,9 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
             local target_index = index_before_spawn or exit_portaldata.saved_schedule_index
             if RiftRail.DEBUG_MODE_ENABLED then
                 log_tp("【创建后】准备恢复: index_before_spawn=" ..
-                tostring(index_before_spawn) ..
-                ", saved_index=" ..
-                tostring(exit_portaldata.saved_schedule_index) .. ", 使用target=" .. tostring(target_index))
+                    tostring(index_before_spawn) ..
+                    ", saved_index=" ..
+                    tostring(exit_portaldata.saved_schedule_index) .. ", 使用target=" .. tostring(target_index))
             end
             restore_train_state(merged_train, exit_portaldata, false, target_index)
         end
