@@ -417,7 +417,7 @@ local function ensure_geometry_cache(portaldata)
     end
     return geo
 end
--- =================================================================================
+--[[ -- =================================================================================
 -- 【业务逻辑】尝试启动传送流程
 -- =================================================================================
 -- 参数：entry_portaldata (入口数据), car (触发的车厢实体)
@@ -445,7 +445,7 @@ local function try_start_teleport(entry_portaldata, car)
     -- 启动时不再预计算出口缓存，交由 process_transfer_step 处理
     -- 也不再设置 collider_needs_rebuild
     return true
-end
+end ]]
 -- =================================================================================
 -- 新增辅助函数 (代码提纯)
 -- =================================================================================
@@ -578,6 +578,12 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         if entry_portaldata.gui_map then
             entry_portaldata.gui_map = nil
         end
+    end
+
+    -- [新增] 释放互斥锁
+    -- 告诉出口：我传完了，下一个可以进来了
+    if exit_portaldata then
+        exit_portaldata.locking_entry_id = nil
     end
 
     -- 5. 重置状态变量
@@ -942,18 +948,29 @@ function Teleport.on_collider_died(event)
 
     -- 3. 根据是否有车，决定下一步任务
     if car then
-        -- 情况 A: 有车 -> 尝试启动传送流程
-        local success = try_start_teleport(portaldata, car)
-
-        -- 如果启动失败 (例如未配对)，则降级为只重建碰撞器
-        if not success then
+        -- 情况 A: 有车 -> 尝试排队挂号
+        -- [验证 1] 必须是入口模式
+        if portaldata.mode == "entry" then
+            -- [验证 2] 必须已配对
+            if portaldata.paired_to_id then
+                -- [核心修改] 不再立即传送，而是挂入等待队列
+                portaldata.waiting_car = car
+                if RiftRail.DEBUG_MODE_ENABLED then
+                    log_tp("排队挂号: 入口 " .. portaldata.id .. " 等待传送车厢 " .. car.unit_number)
+                end
+            else
+                game.print({ "messages.rift-rail-error-unpaired-or-collider" })
+                portaldata.collider_needs_rebuild = true
+            end
+        else
+            -- 模式不对，直接重建
             portaldata.collider_needs_rebuild = true
         end
     else
         -- 情况 B: 无车 (被虫子咬了等) -> 只需标记重建
         portaldata.collider_needs_rebuild = true
     end
-    -- 4. 入队 (无论是重建还是传送，都需要 tick 驱动)
+    -- 4. 入队 (无论是重建、传送还是排队，都需要 tick 驱动)
     add_to_active(portaldata)
 end
 
@@ -1118,21 +1135,56 @@ function Teleport.on_tick(event)
                 process_rebuild_collider(portaldata)
             end
 
-            -- 任务 B: 传送逻辑
+            -- 任务 B: 传送主逻辑 (状态机)
             if portaldata.is_teleporting then
+                -- [状态 1] 正在传送中
                 -- 1. 执行序列步进 (含频率控制)
                 process_teleport_sequence(portaldata, event.tick)
 
-                -- 2. 持续动力控制 (每 tick 都要执行，保持吸附力)
-                -- 只有当状态依然是 teleporting 时才执行 (防止刚刚 sequence 结束了)
+                -- 2. 持续动力控制 (每 tick 都要执行)
                 if portaldata.is_teleporting then
                     Teleport.sync_momentum(portaldata)
                 end
+            elseif portaldata.waiting_car then
+                -- [状态 2] 排队等待中 (新逻辑)
+
+                -- 1. 检查车厢是否还健在
+                if portaldata.waiting_car.valid then
+                    -- 2. 获取出口数据
+                    local exit_portal = State.get_portaldata_by_id(portaldata.paired_to_id)
+
+                    if exit_portal then
+                        -- 3. 【互斥锁检查】(第一级过筛 - 极速)
+                        -- 规则：锁必须是空的，或者是我自己持有的
+                        if exit_portal.locking_entry_id == nil or exit_portal.locking_entry_id == portaldata.unit_number then
+                            -- 4. 【抢锁上位】
+                            exit_portal.locking_entry_id = portaldata.unit_number
+
+                            -- 5. 切换状态
+                            portaldata.is_teleporting = true
+                            portaldata.entry_car = portaldata.waiting_car
+                            portaldata.waiting_car = nil
+
+                            if RiftRail.DEBUG_MODE_ENABLED then
+                                log_tp("抢锁成功: 入口 " .. portaldata.id .. " 锁定出口 " .. exit_portal.id)
+                            end
+
+                            -- 此时不执行 process_teleport_sequence，等待下一 tick 执行
+                            -- 这样可以将物理检测分散到下一帧
+                        end
+                    else
+                        -- 出口数据丢失 (可能被拆了)，取消排队
+                        portaldata.waiting_car = nil
+                    end
+                else
+                    -- 车厢没了 (被挖了/炸了)，取消排队
+                    portaldata.waiting_car = nil
+                end
             end
 
-            -- 出队检查
-            if not portaldata.is_teleporting and not portaldata.collider_needs_rebuild then
-                -- 从活跃列表移除
+            -- 出队检查 (GC)
+            -- 只有当：不传送、不重建、不排队 时，才移出活跃列表
+            if not portaldata.is_teleporting and not portaldata.collider_needs_rebuild and not portaldata.waiting_car then
                 storage.active_teleporters[portaldata.unit_number] = nil
                 table.remove(list, i)
             end
