@@ -837,6 +837,32 @@ script.on_configuration_changed(function(event)
             game.print({ "messages.rift-rail-migration-v080-warning" })
         end
     end
+    -- [新增迁移任务] v0.9.0 网格化架构重构 (Grid Structure Migration)
+    -- 目标：将出口的 paired_to_id 转换为 source_ids 表，实现多对一支持
+    if storage.rift_rails then
+        log_debug("[Migration] 开始执行网格化架构迁移 (多对一支持)...")
+        for _, portal in pairs(storage.rift_rails) do
+            -- 1. 结构初始化：确保所有实例都有 source_ids 表
+            if not portal.source_ids then
+                portal.source_ids = {}
+            end
+
+            -- 2. 数据转换：仅针对出口 (Exit)
+            -- 旧逻辑：出口通过 paired_to_id 指向唯一的入口
+            -- 新逻辑：出口通过 source_ids 记录所有来源，paired_to_id 应为 nil (因为它不指向单一目标)
+            if portal.mode == "exit" and portal.paired_to_id then
+                -- 将旧的配对对象加入来源列表
+                portal.source_ids[portal.paired_to_id] = true
+
+                log_debug("[Migration] 转换出口 ID " .. portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> source_ids")
+
+                -- [关键] 清空出口的配对指针，标志着它正式转为多对一被动模式
+                portal.paired_to_id = nil
+            end
+
+            -- 注意：入口 (Entry) 保持 paired_to_id 不变，它依然指向唯一的出口
+        end
+    end
 end)
 
 -- on_load: 只在加载存档时运行
@@ -882,6 +908,11 @@ remote.add_interface("RiftRail", {
 
     open_remote_view = function(player_index, portal_id)
         Logic.open_remote_view(player_index, portal_id)
+    end,
+
+    -- 用于出口端批量断开所有连接的入口
+    unpair_all_from_exit = function(player_index, portal_id)
+        Logic.unpair_all_from_exit(player_index, portal_id)
     end,
 
     -- ============================================================================

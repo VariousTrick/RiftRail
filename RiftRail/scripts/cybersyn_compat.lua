@@ -327,8 +327,8 @@ function CybersynSE.update_connection(portaldata, target_portal, connect, player
 
     if should_be_in_pool then
         local count = join_pool(portaldata, target_portal)
-        portaldata.cybersyn_enabled = true
-        target_portal.cybersyn_enabled = true -- 仅做标记同步
+        --[[ portaldata.cybersyn_enabled = true
+        target_portal.cybersyn_enabled = true -- 仅做标记同步 ]]
 
         -- 混合通知逻辑
         if not is_migration then
@@ -361,7 +361,7 @@ function CybersynSE.update_connection(portaldata, target_portal, connect, player
     else
         leave_pool(portaldata, target_portal)
         if not connect then
-            portaldata.cybersyn_enabled = false
+            --[[ portaldata.cybersyn_enabled = false ]]
         end
         -- 混合通知逻辑 (断开)
         if not is_migration then

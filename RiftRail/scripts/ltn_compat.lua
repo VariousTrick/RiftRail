@@ -84,7 +84,7 @@ local function unregister_route(portal_data, partner_data)
         table[source_surface][dest_surface][unit_number] = nil
         if RiftRail.DEBUG_MODE_ENABLED then
             ltn_log("[LTNCompat] 已注销路由: " ..
-            source_surface .. " -> " .. dest_surface .. " via Portal ID " .. portal_data.id)
+                source_surface .. " -> " .. dest_surface .. " via Portal ID " .. portal_data.id)
         end
     end
 end
@@ -186,8 +186,8 @@ function LTN.update_connection(select_portal, target_portal, connect, player)
         return
     end
 
-    select_portal.ltn_enabled = connect
-    target_portal.ltn_enabled = connect
+    --[[     select_portal.ltn_enabled = connect
+    target_portal.ltn_enabled = connect ]]
 
     -- 玩家通知（带双向 GPS 标签，受设置控制）
     local name1 = select_portal.name or "RiftRail"

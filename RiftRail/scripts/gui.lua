@@ -186,7 +186,7 @@ function GUI.build_or_update(player, entity)
         left_label_caption = { "gui.rift-rail-mode-entry" },
         right_label_caption = { "gui.rift-rail-mode-exit" },
         tooltip = (switch_state == "left" and { "gui.rift-rail-mode-tooltip-left" }) or
-        (switch_state == "right" and { "gui.rift-rail-mode-tooltip-right" }) or { "gui.rift-rail-mode-tooltip-none" },
+            (switch_state == "right" and { "gui.rift-rail-mode-tooltip-right" }) or { "gui.rift-rail-mode-tooltip-none" },
     })
     mode_switch.style.bottom_margin = 12
 
@@ -195,84 +195,122 @@ function GUI.build_or_update(player, entity)
     local status_flow = inner_flow.add({ type = "flow", direction = "vertical" })
     status_flow.add({ type = "label", caption = { "gui.rift-rail-status-label" } })
 
-    if my_data.paired_to_id then
-        local partner = State.get_portaldata_by_id(my_data.paired_to_id)
-        if partner then
-            status_flow.add({
-                type = "label",
-                caption = { "gui.rift-rail-status-paired", partner.name, partner.id, partner.surface.name },
-                style = "bold_label",
-            })
+    if my_data.mode == "entry" then
+        if my_data.paired_to_id then
+            local partner = State.get_portaldata_by_id(my_data.paired_to_id)
+            if partner then
+                status_flow.add({
+                    type = "label",
+                    caption = { "gui.rift-rail-status-paired", partner.name, partner.id, partner.surface.name },
+                    style = "bold_label",
+                })
+            else
+                status_flow.add({
+                    type = "label",
+                    caption = { "gui.rift-rail-status-error-partner-missing" },
+                    style = "bold_red_label",
+                })
+            end
         else
-            status_flow.add({
-                type = "label",
-                caption = { "gui.rift-rail-status-error-partner-missing" },
-                style = "bold_red_label",
-            })
+            status_flow.add({ type = "label", caption = { "gui.rift-rail-status-unpaired" }, style = "bold_label" })
         end
+    elseif my_data.mode == "exit" then
+        local count = 0
+        if my_data.source_ids then
+            for _ in pairs(my_data.source_ids) do
+                count = count + 1
+            end
+        end
+        status_flow.add({
+            type = "label",
+            caption = { "gui.rift-rail-status-connected-sources", count },
+            style = "bold_label",
+        })
     else
         status_flow.add({ type = "label", caption = { "gui.rift-rail-status-unpaired" }, style = "bold_label" })
     end
     status_flow.style.bottom_margin = 12
 
-    -- 7. 配对控制
-    inner_flow.add({ type = "label", caption = { "gui.rift-rail-target-selector" } })
+    -- 7. 连接控制 (下拉框与按钮)
+    local selector_caption = { "gui.rift-rail-target-selector" }
+    if my_data.mode == "exit" then
+        selector_caption = { "gui.rift-rail-source-selector" }
+    end
+    inner_flow.add({ type = "label", caption = selector_caption })
+
     local dropdown = inner_flow.add({ type = "drop-down", name = "rift_rail_target_dropdown" })
 
     -- 填充列表 & 自动选中
     local dropdown_items = {}
     local selected_idx = 0
-    -- 创建一个表来存 ID
-    local dropdown_ids = {}
+    local dropdown_ids = {} -- 存 ID 到 tags
 
-    local all_portals = State.get_all_portaldatas()
-
-    for _, p_data in pairs(all_portals) do
-        -- 排除自己，排除已配对的(除非是当前配对对象)
-        if p_data.id ~= my_data.id and (not p_data.paired_to_id or p_data.paired_to_id == my_data.id) then
-            local icon_str = ""
-            if p_data.icon and p_data.icon.name then
-                icon_str = "[" .. p_data.icon.type .. "=" .. p_data.icon.name .. "] "
+    if my_data.mode == "exit" then
+        -- [Exit 模式] 显示来源列表
+        if my_data.source_ids then
+            for src_id, _ in pairs(my_data.source_ids) do
+                local src_data = State.get_portaldata_by_id(src_id)
+                if src_data then
+                    local icon_str = ""
+                    if src_data.icon and src_data.icon.name then
+                        icon_str = "[" .. src_data.icon.type .. "=" .. src_data.icon.name .. "] "
+                    end
+                    local item_text = {
+                        "",
+                        icon_str,
+                        src_data.name,
+                        " (ID:" .. src_data.id .. ") [",
+                        src_data.surface.name,
+                        "]",
+                    }
+                    table.insert(dropdown_items, item_text)
+                    table.insert(dropdown_ids, src_id)
+                end
             end
+        end
+        -- Exit 默认选中第一个
+        if #dropdown_items > 0 then
+            selected_idx = 1
+        end
+    else
+        -- [Entry/Neutral 模式] 显示目标列表 (原有逻辑)
+        local all_portals = State.get_all_portaldatas()
 
-            local mode_key = "gui.rift-rail-mode-short-unknown"
-            if p_data.mode == "entry" then
-                mode_key = "gui.rift-rail-mode-short-entry"
-            end
-            if p_data.mode == "exit" then
-                mode_key = "gui.rift-rail-mode-short-exit"
-            end
-            if p_data.mode == "neutral" then
-                mode_key = "gui.rift-rail-mode-short-neutral"
-            end
+        for _, p_data in pairs(all_portals) do
+            -- 排除自己，排除已配对的(除非是当前配对对象)，排除 Entry (入口不能连入口)
+            if p_data.id ~= my_data.id and (not p_data.paired_to_id or p_data.paired_to_id == my_data.id) and p_data.mode ~= "entry" then
+                local icon_str = ""
+                if p_data.icon and p_data.icon.name then
+                    icon_str = "[" .. p_data.icon.type .. "=" .. p_data.icon.name .. "] "
+                end
 
-            -- 构建本地化字符串结构 {"", A, B, C...} 用于拼接
-            -- 格式: 图标 + 名字 + (ID:xx) + [模式] + [地表]
-            local item_text = {
-                "",
-                icon_str,
-                p_data.name,
-                " (ID:" .. p_data.id .. ") ",
-                { mode_key }, -- 插入本地化键
-                " [" .. p_data.surface.name .. "]",
-            }
+                local mode_key = "gui.rift-rail-mode-short-neutral"
+                if p_data.mode == "exit" then
+                    mode_key = "gui.rift-rail-mode-short-exit"
+                end
 
-            table.insert(dropdown_items, item_text)
-            -- 同步记录 ID
-            table.insert(dropdown_ids, p_data.id)
+                local item_text = {
+                    "",
+                    icon_str,
+                    p_data.name,
+                    " (ID:" .. p_data.id .. ") ",
+                    { mode_key },
+                    " [" .. p_data.surface.name .. "]",
+                }
 
-            -- 如果这个就是当前配对的对象，记录索引
-            if my_data.paired_to_id == p_data.id then
-                selected_idx = #dropdown_items
+                table.insert(dropdown_items, item_text)
+                table.insert(dropdown_ids, p_data.id)
+
+                if my_data.paired_to_id == p_data.id then
+                    selected_idx = #dropdown_items
+                end
             end
         end
     end
-    dropdown.items = dropdown_items
 
-    -- 将 ID 列表存入控件的 tags 属性
+    dropdown.items = dropdown_items
     dropdown.tags = { ids = dropdown_ids }
 
-    -- 设置选中项
     if selected_idx > 0 then
         dropdown.selected_index = selected_idx
     end
@@ -282,21 +320,34 @@ function GUI.build_or_update(player, entity)
     local btn_flow = inner_flow.add({ type = "flow", direction = "horizontal" })
     btn_flow.style.top_margin = 4
 
-    if my_data.paired_to_id then
+    if my_data.mode == "exit" then
+        -- [Exit 模式] 只显示断开按钮 (复用 unpair 按钮，作为 Kick 功能)
         btn_flow.add({
             type = "button",
             name = "rift_rail_unpair_button",
             caption = { "gui.rift-rail-btn-unpair" },
             style = "red_button",
+            enabled = (#dropdown_items > 0), -- 有来源才能踢
+            tooltip = { "gui.rift-rail-tooltip-unpair-all" },
         })
     else
-        local pair_btn = btn_flow.add({
-            type = "button",
-            name = "rift_rail_pair_button",
-            caption = { "gui.rift-rail-btn-pair" },
-        })
-        if #dropdown_items == 0 then
-            pair_btn.enabled = false
+        -- [Entry/Neutral 模式] 配对/解绑 (原有逻辑)
+        if my_data.paired_to_id then
+            btn_flow.add({
+                type = "button",
+                name = "rift_rail_unpair_button",
+                caption = { "gui.rift-rail-btn-unpair" },
+                style = "red_button",
+            })
+        else
+            local pair_btn = btn_flow.add({
+                type = "button",
+                name = "rift_rail_pair_button",
+                caption = { "gui.rift-rail-btn-pair" },
+            })
+            if #dropdown_items == 0 then
+                pair_btn.enabled = false
+            end
         end
     end
 
@@ -318,12 +369,17 @@ function GUI.build_or_update(player, entity)
         enabled = station_exists,
     })
 
-    -- 8. Cybersyn 开关（仅在安装 Cybersyn 和se时显示）
+    -- 8. Cybersyn 开关 (适配多对一启用条件)
     if script.active_mods["cybersyn"] and script.active_mods["space-exploration"] then
         inner_flow.add({ type = "line", direction = "horizontal" })
         local cs_flow = inner_flow.add({ type = "flow", direction = "horizontal" })
         cs_flow.style.vertical_align = "center"
         cs_flow.add({ type = "label", caption = { "gui.rift-rail-cybersyn-label" } })
+
+        -- 判断是否允许开启：Entry有目标 OR Exit有来源
+        local cs_enabled = (my_data.mode == "entry" and my_data.paired_to_id ~= nil) or
+            (my_data.mode == "exit" and my_data.source_ids and next(my_data.source_ids))
+
         cs_flow.add({
             type = "switch",
             name = "rift_rail_cybersyn_switch",
@@ -331,16 +387,20 @@ function GUI.build_or_update(player, entity)
             right_label_caption = { "gui.rift-rail-cybersyn-connected" },
             left_label_caption = { "gui.rift-rail-cybersyn-disconnected" },
             tooltip = { "gui.rift-rail-cybersyn-tooltip" },
-            enabled = (my_data.paired_to_id ~= nil),
+            enabled = cs_enabled,
         })
     end
 
-    -- 8b. LTN 开关（仅在安装 LTN 时显示）
+    -- 8b. LTN 开关 (适配多对一启用条件)
     if script.active_mods["LogisticTrainNetwork"] then
         inner_flow.add({ type = "line", direction = "horizontal" })
         local ltn_flow = inner_flow.add({ type = "flow", direction = "horizontal" })
         ltn_flow.style.vertical_align = "center"
         ltn_flow.add({ type = "label", caption = { "gui.rift-rail-ltn-label" } })
+
+        local ltn_btn_enabled = (my_data.mode == "entry" and my_data.paired_to_id ~= nil) or
+            (my_data.mode == "exit" and my_data.source_ids and next(my_data.source_ids))
+
         ltn_flow.add({
             type = "switch",
             name = "rift_rail_ltn_switch",
@@ -348,11 +408,11 @@ function GUI.build_or_update(player, entity)
             right_label_caption = { "gui.rift-rail-ltn-connected" },
             left_label_caption = { "gui.rift-rail-ltn-disconnected" },
             tooltip = { "gui.rift-rail-ltn-tooltip" },
-            enabled = (my_data.paired_to_id ~= nil),
+            enabled = ltn_btn_enabled,
         })
     end
 
-    -- network_id 输入（仅在安装 LTN 时显示）
+    -- network_id 输入 (仅 LTN)
     if script.active_mods["LogisticTrainNetwork"] then
         local ltn_net_flow = inner_flow.add({ type = "flow", direction = "horizontal" })
         ltn_net_flow.style.vertical_align = "center"
@@ -367,20 +427,35 @@ function GUI.build_or_update(player, entity)
             tooltip = { "gui.rift-rail-ltn-network-tooltip" },
         })
         nid_field.style.width = 80
+
+        local ltn_apply_enabled = (my_data.mode == "entry" and my_data.paired_to_id ~= nil) or
+            (my_data.mode == "exit" and my_data.source_ids and next(my_data.source_ids))
+
         ltn_net_flow.add({
             type = "button",
             name = "rift_rail_ltn_apply_network",
             caption = { "gui.rift-rail-ltn-apply-network" },
             tooltip = { "gui.rift-rail-ltn-network-tooltip" },
-            enabled = (my_data.paired_to_id ~= nil),
+            enabled = ltn_apply_enabled,
         })
     end
 
-    -- 9. 远程预览
+    -- 9. 远程预览 (适配 Exit 模式下的来源预览)
     inner_flow.add({ type = "line", direction = "horizontal" })
 
-    -- [修改] 先创建勾选框 (直接加在垂直的 inner_flow 里)
-    if my_data.paired_to_id then
+    -- 确定预览目标
+    local preview_target_id = nil
+    if my_data.mode == "entry" then
+        preview_target_id = my_data.paired_to_id
+    elseif my_data.mode == "exit" then
+        -- Exit 模式：预览下拉框选中的那个入口
+        -- 注意：dropdown_ids 和 selected_idx 是在前半部分定义的局部变量
+        if dropdown_ids and selected_idx and selected_idx > 0 then
+            preview_target_id = dropdown_ids[selected_idx]
+        end
+    end
+
+    if preview_target_id then
         inner_flow.add({
             type = "checkbox",
             name = "rift_rail_preview_check",
@@ -389,7 +464,6 @@ function GUI.build_or_update(player, entity)
         })
     end
 
-    -- [修改] 再创建按钮容器 (水平 flow)
     local tool_flow = inner_flow.add({ type = "flow", direction = "horizontal" })
 
     -- 传送玩家按钮
@@ -397,12 +471,10 @@ function GUI.build_or_update(player, entity)
         type = "button",
         name = "rift_rail_tp_player_button",
         caption = { "gui.rift-rail-btn-player-teleport" },
-        -- [修改] 删除下面这一行，让按钮永远可用
-        -- enabled = (my_data.paired_to_id ~= nil)
     })
 
     -- 远程观察按钮
-    if my_data.paired_to_id then
+    if preview_target_id then
         tool_flow.add({
             type = "button",
             name = "rift_rail_remote_view_button",
@@ -410,37 +482,28 @@ function GUI.build_or_update(player, entity)
         })
     end
 
-    -- 10. 摄像头预览窗口 (修复版：照搬传送门布局)
-    if my_data.paired_to_id and player_settings.show_preview then
-        local partner = State.get_portaldata_by_id(my_data.paired_to_id)
+    -- 10. 摄像头预览窗口
+    if preview_target_id and player_settings.show_preview then
+        local partner = State.get_portaldata_by_id(preview_target_id)
         if partner and partner.shell and partner.shell.valid then
-            -- 标题 Label
             inner_flow.add({
                 type = "label",
                 style = "frame_title",
-                -- 本地化预览标题 >>>>>
-                -- 对应 locale: rift-rail-preview-title=远程预览: __1__ [__2__]
                 caption = { "gui.rift-rail-preview-title", partner.name, partner.shell.surface.name },
-            }).style.left_padding =
-                8
+            }).style.left_padding = 8
 
-            -- 预览框 (inside_shallow_frame) + 拉伸属性
             local preview_frame = inner_flow.add({ type = "frame", style = "inside_shallow_frame" })
-            -- 设置最小尺寸，防止太小
             preview_frame.style.minimal_width = 280
             preview_frame.style.minimal_height = 400
-            -- 开启拉伸，填满剩余空间
             preview_frame.style.horizontally_stretchable = true
             preview_frame.style.vertically_stretchable = true
 
-            -- 摄像头
             local cam = preview_frame.add({
                 type = "camera",
                 position = partner.shell.position,
                 surface_index = partner.shell.surface.index,
                 zoom = 0.2,
             })
-            -- 摄像头也要开启拉伸
             cam.style.horizontally_stretchable = true
             cam.style.vertically_stretchable = true
         end
@@ -504,9 +567,39 @@ function GUI.handle_click(event)
             end
         end
 
-        -- 解绑
+        -- 解绑 / 断开 (Exit 模式下为踢出指定来源，或 Shift 点击清空)
     elseif el_name == "rift_rail_unpair_button" then
-        remote.call("RiftRail", "unpair_portals", player.index, my_data.id)
+        if my_data.mode == "exit" then
+            -- [新增] Shift 点击检测
+            if event.shift then
+                -- 批量断开
+                remote.call("RiftRail", "unpair_all_from_exit", player.index, my_data.id)
+            else
+                -- 单个断开 (踢人)
+                local function find_dropdown(element) -- ... (内部查找函数保持不变)
+                    if element.type == "drop-down" and element.name == "rift_rail_target_dropdown" then
+                        return element
+                    end
+                    for _, child in pairs(element.children) do
+                        local found = find_dropdown(child)
+                        if found then
+                            return found
+                        end
+                    end
+                end
+                local dropdown = find_dropdown(frame)
+
+                if dropdown and dropdown.selected_index > 0 and dropdown.tags and dropdown.tags.ids then
+                    local target_id = dropdown.tags.ids[dropdown.selected_index]
+                    if target_id then
+                        remote.call("RiftRail", "unpair_portals", player.index, target_id)
+                    end
+                end
+            end
+        else
+            -- Entry 模式：断开自己
+            remote.call("RiftRail", "unpair_portals", player.index, my_data.id)
+        end
     elseif el_name == "rift_rail_open_station_button" then
         local station = nil
         if my_data.children then
