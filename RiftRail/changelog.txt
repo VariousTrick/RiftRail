@@ -1,4 +1,85 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.10.0
+Date: 2026-02-01
+  Major Changes:
+    - **Architecture Overhaul: One-to-Many Support**:
+      - Completely refactored the connection logic. An Entry portal can now connect to **multiple** Exit portals simultaneously.
+      - Existing 1-to-1 connections will be automatically migrated to the new architecture.
+    - **Smart Routing System**:
+      - **For LTN**: Implemented high-precision routing. Trains will automatically choose the Exit closest to their destination.
+      - **For Players**: Added "Index Routing". You can specify which Exit to take by adding a Circuit Condition (e.g., "Time passed = 2") to the train schedule. "2" means the 2nd Exit in the list.
+      - **Default**: If no instruction is given, trains will default to the first available Exit.
+  Features:
+    - **New GUI Interaction**:
+      - Introduced a dual-mode interface: **Management Mode** (view connected) and **Addition Mode** (add new).
+      - Added a compact `[+]` button to easily add new connections without cluttering the UI.
+      - The "Remote View" now intelligently follows your selection in the list.
+    - **Compatibility Upgrade**:
+      - **Cybersyn**: Updated to N-to-M pooling architecture. Fixed a crash caused by data inconsistency via a new "Brute Force Purge" migration.
+      - **LTN**: Updated routing table to cache Exit coordinates for zero-performance-cost path calculation.
+  Improvements & Fixes:
+    - **Performance**: Optimized the teleportation logic. For simple 1-to-1 connections, the system now skips all complex routing calculations (Fast Path), ensuring zero UPS impact.
+    - **Critical Fix**: Fixed a bug where deconstructing a portal would incorrectly disconnect other portals sharing the same target.
+    - **Crash Fixes**: Resolved multiple crashes related to robot mining, entity destruction, and nil value errors in the routing logic.
+    - **UI Polish**: Fixed the "Pair" button style and ensured the Logistics switches (Cybersyn/LTN) correctly recognize multi-target connections.
+  【重大变更】:
+    - **架构重构：一对多支持**：
+      - 彻底重写了连接逻辑。现在一个入口传送门可以同时连接**多个**出口传送门。
+      - 现有的“一对一”连接将在加载时自动迁移到新架构。
+    - **智能路由系统**：
+      - **LTN 专属**：实现了高精度路由。列车会自动选择距离目的地最近的那个出口进行传送。
+      - **玩家手动**：新增“索引路由”。您可以通过在时刻表中添加电路条件（例如“时间流逝 = 2”）来指定出口。“2”代表列表中的第 2 个出口。
+      - **默认行为**：如果没有指定指令，列车将默认传送到第一个可用的出口。
+  【新特性】:
+    - **全新 GUI 交互**：
+      - 引入了双模式界面：**管理模式**（查看已连接）和**添加模式**（添加新连接）。
+      - 新增了一个紧凑的 `[+]` 按钮，在不占用界面空间的情况下轻松添加连接。
+      - “远程观察”功能现在会智能跟随您在下拉列表中的选择。
+    - **兼容性升级**：
+      - **Cybersyn**：升级为 N-to-M 池化架构。通过全新的“暴力清洗”迁移机制，修复了因数据不同步导致的崩溃问题。
+      - **LTN**：升级了路由表结构，缓存了出口坐标，实现了零性能损耗的路径计算。
+  【优化与修复】:
+    - **性能优化**：优化了传送核心逻辑。对于普通的“一对一”连接，系统会自动走“极速通道”，跳过所有复杂的路由计算，确保对 UPS 零影响。
+    - **严重修复**：修复了拆除一个传送门会导致与其连接同一目标的其他传送门也被断开的逻辑错误。
+    - **崩溃修复**：解决了与机器人拆除、实体销毁以及路由逻辑空值相关的多个崩溃问题。
+    - **界面打磨**：修正了配对按钮的样式，并确保物流开关（Cybersyn/LTN）能正确识别多目标连接状态。
+---------------------------------------------------------------------------------------------------
+Version: 0.9.0
+Date: 2026-01-29
+  Major Changes:
+    - **Architecture Upgrade: Many-to-One Support**:
+      - The core connection logic has been upgraded. You can now connect **multiple Entry portals** to a **single Exit portal**.
+      - **Smart Traffic Control**: Implemented an intelligent queuing system. If multiple trains try to teleport to the same Exit simultaneously, they will strictly queue up and transport one by one. No collisions, no overlaps.
+      - Existing 1-to-1 connections in your save files will be automatically migrated to the new format upon loading.
+    - **架构升级：支持“多对一”连接**：
+      - 核心连接逻辑已升级。现在允许将**多个入口传送门**连接到**同一个出口传送门**。
+      - **智能交通管制**：内置了智能排队系统。当多列火车同时试图传送到同一个出口时，它们会严格排队并逐一传送。杜绝撞车，杜绝重叠。
+      - 您存档中现有的“一对一”连接将在加载时自动迁移到新格式。
+  Features:
+    - **Revamped Exit Portal GUI**:
+      - The dropdown menu on Exit portals now lists all connected sources instead of potential targets.
+      - Selecting a source from the list immediately updates the **Camera Preview** and sets the target for the **Remote View** button.
+      - The interface now displays the total count of connected sources.
+    - **Smart GUI Interaction**:
+      - Added intelligent state detection to the GUI. The interface now knows when you are "Pairing" versus "Viewing", preventing annoying auto-refreshes that would reset your selection during setup.
+  【新特性】:
+    - **重构出口传送门 GUI**：
+      - 出口传送门上的下拉菜单现在显示“已连接的所有来源”，而不是潜在目标。
+      - 在列表中选择一个来源，会立即刷新**摄像头预览**，并更新**远程观察**按钮的跳转目标。
+      - 界面现在会显示当前已连接来源的总数。
+    - **智能 GUI 交互**：
+      - GUI 新增了智能状态检测。界面现在能区分您是在“配对中”还是“查看中”，彻底修复了在选择配对目标时因自动刷新导致选项重置的问题。
+  Improvements & Fixes:
+    - [Critical] Fixed a logic error where deconstructing a single Entry portal would incorrectly **disconnect all other Entry portals** connected to the same Exit.
+    - [Crash Fix] Fixed a game crash that occurred when a portal was deconstructed by robots or destroyed by enemies (due to missing player context).
+    - Fixed the "Remote View" button on Exit portals, which previously failed to function. It now correctly jumps to the selected source portal.
+    - Improved the stability of the unpairing logic to ensure clean data removal regardless of how a building is destroyed.
+  【优化与修复】:
+    - [严重修复] 修复了一个逻辑错误：拆除一个入口传送门时，会错误地**断开连接到同一出口的所有其他入口传送门**。
+    - [崩溃修复] 修复了当传送门被机器人拆除或被敌人摧毁时（因缺少玩家信息）导致的游戏崩溃问题。
+    - 修复了出口传送门上“远程观察”按钮无效的问题，现在它可以正确跳转到选中的来源传送门。
+    - 提高了解绑逻辑的稳定性，确保无论建筑以何种方式被销毁，都能干净地清理连接数据。
+---------------------------------------------------------------------------------------------------
 Version: 0.8.1
 Date: 2026-02-02
   Features:
