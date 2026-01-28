@@ -541,7 +541,7 @@ function GUI.handle_click(event)
     end
 
     local unit_number = frame.tags.unit_number
-    -- [修正] 使用 unit_number 直接查找，而不是查自定义 ID
+    -- 使用 unit_number 直接查找，而不是查自定义 ID
     local my_data = State.get_portaldata_by_unit_number(unit_number)
     if not my_data then
         return
@@ -584,7 +584,7 @@ function GUI.handle_click(event)
         -- 解绑 / 断开 (Exit 模式下为踢出指定来源，或 Shift 点击清空)
     elseif el_name == "rift_rail_unpair_button" then
         if my_data.mode == "exit" then
-            -- [新增] Shift 点击检测
+            -- Shift 点击检测
             if event.shift then
                 -- 批量断开
                 remote.call("RiftRail", "unpair_all_from_exit", player.index, my_data.id)
@@ -737,6 +737,7 @@ function GUI.handle_switch_state_changed(event)
     if not (event.element and event.element.valid) then
         return
     end
+
     local player = game.get_player(event.player_index)
     local el_name = event.element.name
 
@@ -744,7 +745,7 @@ function GUI.handle_switch_state_changed(event)
     if not (frame and frame.valid) then
         return
     end
-    -- [修正]
+
     local my_data = State.get_portaldata_by_unit_number(frame.tags.unit_number)
     if not my_data then
         return
@@ -776,7 +777,6 @@ function GUI.handle_checked_state_changed(event)
             storage.rift_rail_player_settings[player.index].show_preview = event.element.state
             local frame = player.gui.screen.rift_rail_main_frame
             if frame then
-                -- [修正]
                 local my_data = State.get_portaldata_by_unit_number(frame.tags.unit_number)
                 GUI.build_or_update(player, my_data.shell) -- 传入实体刷新
             end
@@ -831,12 +831,38 @@ function GUI.handle_selection_state_changed(event)
         return
     end
 
+    -- 新增“智能判断”逻辑
+    -- 1. 定义一个辅助函数，用于在 GUI 元素中递归查找指定名称的子元素
+    local function find_element_recursively(element, name)
+        if element.name == name then
+            return element
+        end
+        if element.children then
+            for _, child in pairs(element.children) do
+                local found = find_element_recursively(child, name)
+                if found then
+                    return found
+                end
+            end
+        end
+        return nil
+    end
+
+    -- 2. 在当前窗口中查找是否存在“配对”按钮
+    local pair_button = find_element_recursively(frame, "rift_rail_pair_button")
+
+    -- 3. 如果找到了“配对”按钮，说明当前是“配对意图”，应立即停止执行，不做任何事
+    if pair_button then
+        return
+    end
+
+    -- 只有在找不到“配对”按钮时（即“浏览意图”），才执行以下代码
+
     local my_data = State.get_portaldata_by_unit_number(frame.tags.unit_number)
     if not my_data then
         return
     end
 
-    -- 1. 获取新选择的 ID
     local dropdown = event.element
     local selected_index = dropdown.selected_index
     local new_selected_id = nil
@@ -845,11 +871,8 @@ function GUI.handle_selection_state_changed(event)
         new_selected_id = dropdown.tags.ids[selected_index]
     end
 
-    -- 2. 将新 ID 写入 "记忆"
-    -- (注意：这里直接修改 my_data，它会被自动保存在 State 中)
     my_data.last_selected_source_id = new_selected_id
 
-    -- 3. [关键] 强制刷新 GUI，让小摄像头根据新选择更新
     GUI.build_or_update(player, my_data.shell)
 end
 
