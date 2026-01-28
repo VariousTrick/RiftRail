@@ -347,7 +347,10 @@ end
 -- 4. 解绑逻辑 (重构：适配多对一结构)
 -- ============================================================================
 function Logic.unpair_portals(player_index, portal_id)
-    local player = game.get_player(player_index)
+    local player = nil
+    if player_index then
+        player = game.get_player(player_index)
+    end
     local portal = State.get_portaldata_by_id(portal_id)
 
     if not portal then
@@ -374,7 +377,9 @@ function Logic.unpair_portals(player_index, portal_id)
         Logic.set_mode(nil, portal_id, "neutral", true)
 
         -- 4. 反馈消息
-        player.print({ "messages.rift-rail-unpair-success", target_display })
+        if player then -- 只有当 player 存在时才打印消息
+            player.print({ "messages.rift-rail-unpair-success", target_display })
+        end
 
         if RiftRail.DEBUG_MODE_ENABLED then
             log_debug("[Logic] 断开连接: Entry " .. portal.id .. " -x- Exit " .. (target_id or "nil"))

@@ -144,7 +144,7 @@ local function on_mined_handler(event)
         end
     end
     -- 2. 再执行原来的销毁逻辑
-    Builder.on_destroy(event)
+    Builder.on_destroy(event, event.player_index)
 end
 
 -- 1. 原生拆除 (玩家): 单独注册 + 过滤器
@@ -376,7 +376,7 @@ script.on_event(defines.events.on_entity_cloned, function(event)
                 else
                     if RiftRail.DEBUG_MODE_ENABLED then
                         log_debug("RiftRail Clone Error: 在位置 " ..
-                        serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
+                            serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
                     end
                 end
             end
@@ -964,7 +964,7 @@ remote.add_interface("RiftRail", {
                     return "Error: 'get_by_id' requires a custom ID parameter."
                 end
                 return State.get_portaldata_by_id(search_param) or
-                "Error: Struct with custom ID " .. tostring(search_param) .. " not found."
+                    "Error: Struct with custom ID " .. tostring(search_param) .. " not found."
             elseif portaldata_key == "get_by_unit" then
                 if not search_param then
                     return "Error: 'get_by_unit' requires a unit_number parameter."
