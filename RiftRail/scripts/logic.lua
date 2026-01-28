@@ -408,14 +408,14 @@ end
 -- ============================================================================
 -- 5. 远程观察
 -- ============================================================================
-function Logic.open_remote_view(player_index, portal_id)
+function Logic.open_remote_view_by_target(player_index, target_id)
     local player = game.get_player(player_index)
-    local my_data = State.get_portaldata_by_id(portal_id)
-    if not (player and my_data and my_data.paired_to_id) then
+    if not (player and target_id) then
         return
     end
 
-    local target = State.get_portaldata_by_id(my_data.paired_to_id)
+    -- 直接使用传入的目标ID查找目标建筑
+    local target = State.get_portaldata_by_id(target_id)
     if target and target.shell and target.shell.valid then
         player.opened = nil
         player.set_controller({

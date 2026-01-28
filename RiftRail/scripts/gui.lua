@@ -186,7 +186,7 @@ function GUI.build_or_update(player, entity)
         left_label_caption = { "gui.rift-rail-mode-entry" },
         right_label_caption = { "gui.rift-rail-mode-exit" },
         tooltip = (switch_state == "left" and { "gui.rift-rail-mode-tooltip-left" }) or
-            (switch_state == "right" and { "gui.rift-rail-mode-tooltip-right" }) or { "gui.rift-rail-mode-tooltip-none" },
+        (switch_state == "right" and { "gui.rift-rail-mode-tooltip-right" }) or { "gui.rift-rail-mode-tooltip-none" },
     })
     mode_switch.style.bottom_margin = 12
 
@@ -378,7 +378,7 @@ function GUI.build_or_update(player, entity)
 
         -- 判断是否允许开启：Entry有目标 OR Exit有来源
         local cs_enabled = (my_data.mode == "entry" and my_data.paired_to_id ~= nil) or
-            (my_data.mode == "exit" and my_data.source_ids and next(my_data.source_ids))
+        (my_data.mode == "exit" and my_data.source_ids and next(my_data.source_ids))
 
         cs_flow.add({
             type = "switch",
@@ -399,7 +399,7 @@ function GUI.build_or_update(player, entity)
         ltn_flow.add({ type = "label", caption = { "gui.rift-rail-ltn-label" } })
 
         local ltn_btn_enabled = (my_data.mode == "entry" and my_data.paired_to_id ~= nil) or
-            (my_data.mode == "exit" and my_data.source_ids and next(my_data.source_ids))
+        (my_data.mode == "exit" and my_data.source_ids and next(my_data.source_ids))
 
         ltn_flow.add({
             type = "switch",
@@ -429,7 +429,7 @@ function GUI.build_or_update(player, entity)
         nid_field.style.width = 80
 
         local ltn_apply_enabled = (my_data.mode == "entry" and my_data.paired_to_id ~= nil) or
-            (my_data.mode == "exit" and my_data.source_ids and next(my_data.source_ids))
+        (my_data.mode == "exit" and my_data.source_ids and next(my_data.source_ids))
 
         ltn_net_flow.add({
             type = "button",
@@ -660,7 +660,38 @@ function GUI.handle_click(event)
 
         -- 远程观察
     elseif el_name == "rift_rail_remote_view_button" then
-        remote.call("RiftRail", "open_remote_view", player.index, my_data.id)
+        -- 默认目标是配对ID (入口模式)
+        local target_id = my_data.paired_to_id
+
+        -- 如果是出口模式，则从下拉框获取目标
+        if my_data.mode == "exit" then
+            local function find_dropdown(element)
+                if element.type == "drop-down" and element.name == "rift_rail_target_dropdown" then
+                    return element
+                end
+                for _, child in pairs(element.children) do
+                    local found = find_dropdown(child)
+                    if found then
+                        return found
+                    end
+                end
+            end
+            local dropdown = find_dropdown(frame)
+
+            if dropdown and dropdown.selected_index > 0 and dropdown.tags and dropdown.tags.ids then
+                target_id = dropdown.tags.ids[dropdown.selected_index]
+            else
+                -- 如果下拉框没选中任何东西，则 target_id 保持为 nil
+                target_id = nil
+            end
+        end
+
+        if target_id then
+            -- [关键修改] 把 my_data.id 换成 target_id
+            remote.call("RiftRail", "open_remote_view_by_target", player.index, target_id)
+        end
+
+        -- 应用 LTN Network ID
     elseif el_name == "rift_rail_ltn_apply_network" then
         -- 查找 network_id 文本框
         local function find_field(element)

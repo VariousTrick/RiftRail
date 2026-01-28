@@ -906,8 +906,8 @@ remote.add_interface("RiftRail", {
         Logic.teleport_player(player_index, portal_id)
     end,
 
-    open_remote_view = function(player_index, portal_id)
-        Logic.open_remote_view(player_index, portal_id)
+    open_remote_view_by_target = function(player_index, target_id)
+        Logic.open_remote_view_by_target(player_index, target_id)
     end,
 
     -- 用于出口端批量断开所有连接的入口
