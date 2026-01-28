@@ -291,6 +291,7 @@ script.on_event(defines.events.on_gui_click, GUI.handle_click)
 script.on_event(defines.events.on_gui_switch_state_changed, GUI.handle_switch_state_changed)
 script.on_event(defines.events.on_gui_checked_state_changed, GUI.handle_checked_state_changed)
 script.on_event(defines.events.on_gui_confirmed, GUI.handle_confirmed)
+script.on_event(defines.events.on_gui_selection_state_changed, GUI.handle_selection_state_changed)
 
 -- 当玩家按 E 或 ESC 关闭窗口时触发
 script.on_event(defines.events.on_gui_closed, GUI.handle_close)
@@ -375,7 +376,7 @@ script.on_event(defines.events.on_entity_cloned, function(event)
                 else
                     if RiftRail.DEBUG_MODE_ENABLED then
                         log_debug("RiftRail Clone Error: 在位置 " ..
-                            serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
+                        serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
                     end
                 end
             end
@@ -963,7 +964,7 @@ remote.add_interface("RiftRail", {
                     return "Error: 'get_by_id' requires a custom ID parameter."
                 end
                 return State.get_portaldata_by_id(search_param) or
-                    "Error: Struct with custom ID " .. tostring(search_param) .. " not found."
+                "Error: Struct with custom ID " .. tostring(search_param) .. " not found."
             elseif portaldata_key == "get_by_unit" then
                 if not search_param then
                     return "Error: 'get_by_unit' requires a unit_number parameter."

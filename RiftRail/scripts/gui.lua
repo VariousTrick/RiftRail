@@ -268,9 +268,23 @@ function GUI.build_or_update(player, entity)
                 end
             end
         end
-        -- Exit 默认选中第一个
+        -- Exit: 尝试恢复上次选择，否则默认选第一个
         if #dropdown_items > 0 then
-            selected_idx = 1
+            -- 检查是否有已保存的 "记忆"
+            if my_data.last_selected_source_id then
+                -- 遍历刚刚生成的 ID 列表，查找匹配项
+                for i, id in ipairs(dropdown_ids) do
+                    if id == my_data.last_selected_source_id then
+                        selected_idx = i -- 找到了！设置索引
+                        break
+                    end
+                end
+            end
+
+            -- 如果遍历后 selected_idx 仍然是 0 (说明没找到或没有记忆)，则默认选第一个
+            if selected_idx == 0 then
+                selected_idx = 1
+            end
         end
     else
         -- [Entry/Neutral 模式] 显示目标列表 (原有逻辑)
@@ -799,6 +813,44 @@ function GUI.handle_close(event)
         log_gui("[RiftRail:GUI] 检测到关闭事件，销毁窗口。")
         element.destroy()
     end
+end
+
+function GUI.handle_selection_state_changed(event)
+    if not (event.element and event.element.valid) then
+        return
+    end
+
+    -- 只关心我们的下拉框
+    if event.element.name ~= "rift_rail_target_dropdown" then
+        return
+    end
+
+    local player = game.get_player(event.player_index)
+    local frame = player.gui.screen.rift_rail_main_frame
+    if not (frame and frame.valid) then
+        return
+    end
+
+    local my_data = State.get_portaldata_by_unit_number(frame.tags.unit_number)
+    if not my_data then
+        return
+    end
+
+    -- 1. 获取新选择的 ID
+    local dropdown = event.element
+    local selected_index = dropdown.selected_index
+    local new_selected_id = nil
+
+    if selected_index > 0 and dropdown.tags and dropdown.tags.ids then
+        new_selected_id = dropdown.tags.ids[selected_index]
+    end
+
+    -- 2. 将新 ID 写入 "记忆"
+    -- (注意：这里直接修改 my_data，它会被自动保存在 State 中)
+    my_data.last_selected_source_id = new_selected_id
+
+    -- 3. [关键] 强制刷新 GUI，让小摄像头根据新选择更新
+    GUI.build_or_update(player, my_data.shell)
 end
 
 return GUI
