@@ -369,7 +369,7 @@ script.on_event(defines.events.on_entity_cloned, function(event)
                 else
                     if RiftRail.DEBUG_MODE_ENABLED then
                         log_debug("RiftRail Clone Error: 在位置 " ..
-                        serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
+                            serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
                     end
                 end
             end
@@ -900,8 +900,8 @@ remote.add_interface("RiftRail", {
         Logic.teleport_player(player_index, portal_id)
     end,
 
-    open_remote_view = function(player_index, portal_id)
-        Logic.open_remote_view(player_index, portal_id)
+    open_remote_view_by_target = function(player_index, target_id)
+        Logic.open_remote_view_by_target(player_index, target_id)
     end,
 
     -- 用于出口端批量断开所有连接的入口
@@ -957,7 +957,7 @@ remote.add_interface("RiftRail", {
                     return "Error: 'get_by_id' requires a custom ID parameter."
                 end
                 return State.get_portaldata_by_id(search_param) or
-                "Error: Struct with custom ID " .. tostring(search_param) .. " not found."
+                    "Error: Struct with custom ID " .. tostring(search_param) .. " not found."
             elseif portaldata_key == "get_by_unit" then
                 if not search_param then
                     return "Error: 'get_by_unit' requires a unit_number parameter."
