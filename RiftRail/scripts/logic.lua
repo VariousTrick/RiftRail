@@ -428,7 +428,7 @@ function Logic.open_remote_view(player_index, portal_id)
 end
 
 -- ============================================================================
--- 6. Cybersyn 开关控制 (重构：适配多对一的主/分闸逻辑)
+-- 6. Cybersyn 开关控制 (最终版：智能同步与多对一保护)
 -- ============================================================================
 function Logic.set_cybersyn_enabled(player_index, portal_id, enabled)
     local player = game.get_player(player_index)
@@ -438,41 +438,83 @@ function Logic.set_cybersyn_enabled(player_index, portal_id, enabled)
         return
     end
 
-    -- 更新自身开关状态
+    -- 更新自身状态
     my_data.cybersyn_enabled = enabled
 
     if my_data.mode == "entry" then
-        -- [分闸逻辑] 自己是入口
+        -- [分闸逻辑]
         local partner = my_data.paired_to_id and State.get_portaldata_by_id(my_data.paired_to_id)
         if partner then
-            -- 连接生效条件：自己开关 ON && 目标(总闸)开关 ON
-            local should_connect = my_data.cybersyn_enabled and partner.cybersyn_enabled
+            -- 1. 智能状态同步
+            if enabled then
+                -- A. 开启时：确保总闸(出口)也是开的
+                if not partner.cybersyn_enabled then
+                    partner.cybersyn_enabled = true
+                end
+            else
+                -- B. 关闭时：检查是否需要关闭总闸 (最后一个关灯的人负责关总闸)
+                local any_other_active = false
+                if partner.source_ids then
+                    for src_id, _ in pairs(partner.source_ids) do
+                        if src_id ~= my_data.id then
+                            local src = State.get_portaldata_by_id(src_id)
+                            if src and src.cybersyn_enabled then
+                                any_other_active = true
+                                break
+                            end
+                        end
+                    end
+                end
+                -- 如果没有其他开启的来源，顺便把总闸也关了
+                if not any_other_active then
+                    partner.cybersyn_enabled = false
+                end
+            end
+
+            -- 2. 执行连接 (仅当前这一对)
             if CybersynSE then
+                -- 连接条件：两者都开 (经过上面的同步，如果 enabled=true，这里一定成立)
+                local should_connect = my_data.cybersyn_enabled and partner.cybersyn_enabled
                 CybersynSE.update_connection(my_data, partner, should_connect, player)
+            end
+
+            -- 3. 多对一提示
+            -- 计算来源数量
+            local source_count = 0
+            if partner.source_ids then
+                for _ in pairs(partner.source_ids) do
+                    source_count = source_count + 1
+                end
+            end
+
+            if source_count > 1 then
+                player.print({ "messages.rift-rail-info-logistics-entry-only-notice" })
             end
         end
     elseif my_data.mode == "exit" then
-        -- [总闸逻辑] 自己是出口
+        -- [总闸逻辑]
+        -- 强制同步所有来源的状态，保持一致性
         if my_data.source_ids then
             for src_id, _ in pairs(my_data.source_ids) do
                 local source = State.get_portaldata_by_id(src_id)
                 if source then
-                    -- 连接生效条件：自己(总闸)开关 ON && 来源(分闸)开关 ON
-                    local should_connect = my_data.cybersyn_enabled and source.cybersyn_enabled
+                    -- 强制同步来源状态
+                    source.cybersyn_enabled = enabled
+
                     if CybersynSE then
-                        CybersynSE.update_connection(source, my_data, should_connect, player)
+                        -- 这里的 connect 也就等于 enabled，因为两者现在状态一致了
+                        CybersynSE.update_connection(source, my_data, enabled, player)
                     end
                 end
             end
         end
     end
 
-    -- 刷新界面
     refresh_all_guis()
 end
 
 -- ============================================================================
--- 7. LTN 开关控制 (重构：适配多对一的主/分闸逻辑)
+-- 7. LTN 开关控制 (最终版：智能同步与多对一保护)
 -- ==========================================================================
 function Logic.set_ltn_enabled(player_index, portal_id, enabled)
     local player = game.get_player(player_index)
@@ -481,29 +523,65 @@ function Logic.set_ltn_enabled(player_index, portal_id, enabled)
         return
     end
 
-    -- 更新自身开关状态
+    -- 更新自身状态
     my_data.ltn_enabled = enabled
 
     if my_data.mode == "entry" then
-        -- [分闸逻辑] 自己是入口
+        -- [分闸逻辑]
         local partner = my_data.paired_to_id and State.get_portaldata_by_id(my_data.paired_to_id)
         if partner then
-            -- 连接生效条件：自己开关 ON && 目标(总闸)开关 ON
-            local should_connect = my_data.ltn_enabled and partner.ltn_enabled
+            -- 1. 智能状态同步
+            if enabled then
+                -- A. 开启时：确保总闸(出口)也是开的
+                if not partner.ltn_enabled then
+                    partner.ltn_enabled = true
+                end
+            else
+                -- B. 关闭时：检查是否需要关闭总闸
+                local any_other_active = false
+                if partner.source_ids then
+                    for src_id, _ in pairs(partner.source_ids) do
+                        if src_id ~= my_data.id then
+                            local src = State.get_portaldata_by_id(src_id)
+                            if src and src.ltn_enabled then
+                                any_other_active = true
+                                break
+                            end
+                        end
+                    end
+                end
+                if not any_other_active then
+                    partner.ltn_enabled = false
+                end
+            end
+
+            -- 2. 执行连接
             if LTN then
+                local should_connect = my_data.ltn_enabled and partner.ltn_enabled
                 LTN.update_connection(my_data, partner, should_connect, player)
+            end
+
+            -- 3. 多对一提示
+            local source_count = 0
+            if partner.source_ids then
+                for _ in pairs(partner.source_ids) do
+                    source_count = source_count + 1
+                end
+            end
+
+            if source_count > 1 then
+                player.print({ "messages.rift-rail-info-logistics-entry-only-notice" })
             end
         end
     elseif my_data.mode == "exit" then
-        -- [总闸逻辑] 自己是出口
+        -- [总闸逻辑] 强制同步
         if my_data.source_ids then
             for src_id, _ in pairs(my_data.source_ids) do
                 local source = State.get_portaldata_by_id(src_id)
                 if source then
-                    -- 连接生效条件：自己(总闸)开关 ON && 来源(分闸)开关 ON
-                    local should_connect = my_data.ltn_enabled and source.ltn_enabled
+                    source.ltn_enabled = enabled
                     if LTN then
-                        LTN.update_connection(source, my_data, should_connect, player)
+                        LTN.update_connection(source, my_data, enabled, player)
                     end
                 end
             end
