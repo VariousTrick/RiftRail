@@ -1,4 +1,40 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.9.0
+Date: 2026-01-29
+  Major Changes:
+    - **Architecture Upgrade: Many-to-One Support**:
+      - The core connection logic has been upgraded. You can now connect **multiple Entry portals** to a **single Exit portal**.
+      - **Smart Traffic Control**: Implemented an intelligent queuing system. If multiple trains try to teleport to the same Exit simultaneously, they will strictly queue up and transport one by one. No collisions, no overlaps.
+      - Existing 1-to-1 connections in your save files will be automatically migrated to the new format upon loading.
+    - **架构升级：支持“多对一”连接**：
+      - 核心连接逻辑已升级。现在允许将**多个入口传送门**连接到**同一个出口传送门**。
+      - **智能交通管制**：内置了智能排队系统。当多列火车同时试图传送到同一个出口时，它们会严格排队并逐一传送。杜绝撞车，杜绝重叠。
+      - 您存档中现有的“一对一”连接将在加载时自动迁移到新格式。
+  Features:
+    - **Revamped Exit Portal GUI**:
+      - The dropdown menu on Exit portals now lists all connected sources instead of potential targets.
+      - Selecting a source from the list immediately updates the **Camera Preview** and sets the target for the **Remote View** button.
+      - The interface now displays the total count of connected sources.
+    - **Smart GUI Interaction**:
+      - Added intelligent state detection to the GUI. The interface now knows when you are "Pairing" versus "Viewing", preventing annoying auto-refreshes that would reset your selection during setup.
+  【新特性】:
+    - **重构出口传送门 GUI**：
+      - 出口传送门上的下拉菜单现在显示“已连接的所有来源”，而不是潜在目标。
+      - 在列表中选择一个来源，会立即刷新**摄像头预览**，并更新**远程观察**按钮的跳转目标。
+      - 界面现在会显示当前已连接来源的总数。
+    - **智能 GUI 交互**：
+      - GUI 新增了智能状态检测。界面现在能区分您是在“配对中”还是“查看中”，彻底修复了在选择配对目标时因自动刷新导致选项重置的问题。
+  Improvements & Fixes:
+    - [Critical] Fixed a logic error where deconstructing a single Entry portal would incorrectly **disconnect all other Entry portals** connected to the same Exit.
+    - [Crash Fix] Fixed a game crash that occurred when a portal was deconstructed by robots or destroyed by enemies (due to missing player context).
+    - Fixed the "Remote View" button on Exit portals, which previously failed to function. It now correctly jumps to the selected source portal.
+    - Improved the stability of the unpairing logic to ensure clean data removal regardless of how a building is destroyed.
+  【优化与修复】:
+    - [严重修复] 修复了一个逻辑错误：拆除一个入口传送门时，会错误地**断开连接到同一出口的所有其他入口传送门**。
+    - [崩溃修复] 修复了当传送门被机器人拆除或被敌人摧毁时（因缺少玩家信息）导致的游戏崩溃问题。
+    - 修复了出口传送门上“远程观察”按钮无效的问题，现在它可以正确跳转到选中的来源传送门。
+    - 提高了解绑逻辑的稳定性，确保无论建筑以何种方式被销毁，都能干净地清理连接数据。
+---------------------------------------------------------------------------------------------------
 Version: 0.8.0
 Date: 2026-01-26
   Major Changes:
