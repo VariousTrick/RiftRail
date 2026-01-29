@@ -86,38 +86,44 @@ function CybersynSE.init(dependencies)
 end
 
 -- 【迁移函数】清理旧版(Entry-Exit)连接
+-- 【迁移函数】暴力清理旧版连接
+-- 策略：不依赖 Rift Rail 内部的配对数据（因为可能已迁移），而是遍历所有传送门，
+-- 尝试清理所有可能的两两组合。这能确保 100% 清除所有残留的脏数据。
 function CybersynSE.purge_legacy_connections()
-    if not (remote.interfaces["cybersyn"] and storage.rift_rails) then
-        return
-    end
-    log_cs("[Migration] 开始清理旧版 Entry-Exit 连接...")
+    if not (remote.interfaces["cybersyn"] and storage.rift_rails) then return end
+    log_cs("[Migration] 开始执行暴力清理 (Brute Force Purge)...")
+
+    -- 1. 收集所有现存的有效车站实体
+    local all_stations = {}
     for _, portal in pairs(storage.rift_rails) do
-        if portal.paired_to_id then
-            local partner = State.get_portaldata_by_id(portal.paired_to_id)
+        local station = get_station(portal)
+        if station and station.valid then
+            table.insert(all_stations, station)
 
-            -- 必须获取内部车站实体来执行清理
-            local station1 = get_station(portal)
-            local station2 = get_station(partner)
-
-            if station1 and station1.valid and station2 and station2.valid then
-                local s1_idx = station1.surface.index
-                local s2_idx = station2.surface.index
-
-                local k_surf = sorted_pair_key(s1_idx, s2_idx)
-
-                -- 使用车站的 unit_number 来计算 Key
-                local k_ent = sorted_pair_key(station1.unit_number, station2.unit_number)
-
-                -- 1. 清理地表连接
-                remote.call("cybersyn", "write_global", nil, "connected_surfaces", k_surf, k_ent)
-
-                -- 2. 清理伪装的 SE 电梯数据
-                remote.call("cybersyn", "write_global", nil, "se_elevators", station1.unit_number)
-                remote.call("cybersyn", "write_global", nil, "se_elevators", station2.unit_number)
-            end
+            -- 第一步：无条件清除 se_elevators (单体数据)
+            remote.call("cybersyn", "write_global", nil, "se_elevators", station.unit_number)
         end
     end
-    log_cs("[Migration] 旧版连接清理完成。")
+
+    -- 2. 暴力遍历所有两两组合，清除 connected_surfaces (连接数据)
+    -- 这是一个 O(N^2) 操作，但 N 通常很小（几十到几百），在迁移阶段完全可以接受
+    for i = 1, #all_stations do
+        for j = i + 1, #all_stations do
+            local s1 = all_stations[i]
+            local s2 = all_stations[j]
+
+            -- 模拟旧版 Key 生成逻辑
+            local s1_idx = s1.surface.index
+            local s2_idx = s2.surface.index
+            local k_surf = sorted_pair_key(s1_idx, s2_idx)
+            local k_ent = sorted_pair_key(s1.unit_number, s2.unit_number)
+
+            -- 发送删除指令 (如果不存在则忽略，如果存在则删除)
+            remote.call("cybersyn", "write_global", nil, "connected_surfaces", k_surf, k_ent)
+        end
+    end
+
+    log_cs("[Migration] 暴力清理完成，所有潜在旧连接已移除。")
 end
 
 -- ============================================================================
@@ -303,9 +309,33 @@ local function leave_pool(portaldata, target_portal)
         end
     end
 
-    -- 3. 最后统一销毁伪装身份 (这步不需要知道对方是谁)
-    unregister_fake_elevator(uid)
-    log_cs("[Pool] 退池: " .. portaldata.name)
+    -- 3. [修复] 检查是否还在其他池子中
+    local still_in_use = false
+    if storage.rr_cybersyn_pools and storage.rr_cybersyn_pools[s1] then
+        for _, pool in pairs(storage.rr_cybersyn_pools[s1]) do
+            -- 注意：池子的 Key 是 Shell ID (uid)，这是内部逻辑，没问题
+            if pool[uid] then
+                still_in_use = true
+                break
+            end
+        end
+    end
+
+    -- 只有当没有任何连接时，才彻底注销身份证
+    if not still_in_use then
+        -- [关键修正] 注销时必须使用 Station ID，而不是 Shell ID (uid)
+        -- 我们尝试使用前面获取的 station 对象
+        if station and station.valid then
+            unregister_fake_elevator(station.unit_number)
+            log_cs("[Pool] 退池(彻底销毁): " .. portaldata.name .. " ID:" .. station.unit_number)
+        else
+            -- 如果 station 实体已经无效了（比如被拆了），我们无法获取 ID，
+            -- 但这种情况下 Cybersyn 可能已经通过 valid 检查自动清理了，或者我们在 purge 中处理了。
+            log_cs("[Pool] 退池警告: 无法获取有效车站实体，跳过注销。")
+        end
+    else
+        log_cs("[Pool] 退池(保留身份): " .. portaldata.name .. " 仍有其他连接")
+    end
 end
 
 -- ============================================================================
@@ -322,8 +352,10 @@ function CybersynSE.update_connection(portaldata, target_portal, connect, player
         return
     end -- 连接时必须有对象
 
-    -- 只有“入口”且“已配对”且“开关开启”才有资格入池
-    local should_be_in_pool = connect and (portaldata.mode == "entry") and portaldata.paired_to_id
+    -- 只有“入口”且“有配对目标”且“开关开启”才有资格入池
+    -- [多对多改造] 检查 target_ids 是否存在且不为空
+    local should_be_in_pool = connect and (portaldata.mode == "entry") and
+        (portaldata.target_ids and next(portaldata.target_ids))
 
     if should_be_in_pool then
         local count = join_pool(portaldata, target_portal)
@@ -399,16 +431,22 @@ end
 -- 传送门克隆 (起飞/降落)
 function CybersynSE.on_portal_cloned(old_data, new_data, is_landing)
     -- 1. 旧的退池
-    if old_data.cybersyn_enabled then
-        local partner = State.get_portaldata_by_id(old_data.paired_to_id)
-        leave_pool(old_data, partner)
+    -- [多对多改造] 遍历旧数据的 target_ids
+    if old_data.cybersyn_enabled and old_data.target_ids then
+        for target_id, _ in pairs(old_data.target_ids) do
+            local partner = State.get_portaldata_by_id(target_id)
+            leave_pool(old_data, partner)
+        end
     end
 
     -- 2. 新的入池 (非降落状态)
-    if new_data.cybersyn_enabled and not is_landing then
-        local partner = State.get_portaldata_by_id(new_data.paired_to_id)
-        if partner then
-            join_pool(new_data, partner)
+    -- [多对多改造] 遍历新数据的 target_ids
+    if new_data.cybersyn_enabled and not is_landing and new_data.target_ids then
+        for target_id, _ in pairs(new_data.target_ids) do
+            local partner = State.get_portaldata_by_id(target_id)
+            if partner then
+                join_pool(new_data, partner)
+            end
         end
     end
 end

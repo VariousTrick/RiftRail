@@ -376,7 +376,7 @@ script.on_event(defines.events.on_entity_cloned, function(event)
                 else
                     if RiftRail.DEBUG_MODE_ENABLED then
                         log_debug("RiftRail Clone Error: 在位置 " ..
-                            serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
+                        serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
                     end
                 end
             end
@@ -864,6 +864,71 @@ script.on_configuration_changed(function(event)
             -- 注意：入口 (Entry) 保持 paired_to_id 不变，它依然指向唯一的出口
         end
     end
+    -- [新增迁移任务] v0.10.0 一对多架构重构 (One-to-Many Migration)
+    -- 目标：将入口的 paired_to_id 转换为 target_ids 表，正式支持多目标存储
+    if storage.rift_rails then
+        log_debug("[Migration] 开始执行一对多架构迁移 (入口目标列表化)...")
+        for _, portal in pairs(storage.rift_rails) do
+            -- 仅处理入口模式
+            if portal.mode == "entry" then
+                -- 1. 结构初始化：确保所有入口都有 target_ids 表
+                if not portal.target_ids then
+                    portal.target_ids = {}
+                end
+
+                -- 2. 数据转换：如果有旧的单目标配对
+                if portal.paired_to_id then
+                    -- 将旧的配对 ID 放入新表，键为 ID，值为 true
+                    portal.target_ids[portal.paired_to_id] = true
+
+                    log_debug("[Migration] 转换入口 ID " .. portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> target_ids")
+
+                    -- [关键] 清空旧字段，完成数据结构升级
+                    portal.paired_to_id = nil
+                end
+            end
+        end
+    end
+    -- [新增迁移任务] v0.10.0 物流连接重置 (Logistics Reset - 暴力清洗版)
+    if storage.rift_rails then
+        log_debug("[Migration] 开始执行物流连接重置 (Purge & Re-evaluate)...")
+
+        -- 1. [Cybersyn] 全局暴力清洗 (核弹洗地)
+        -- 直接清除 Cybersyn 数据库中所有关于 RiftRail 的记录，无视内部状态
+        if CybersynSE and CybersynSE.purge_legacy_connections then
+            CybersynSE.purge_legacy_connections()
+        end
+
+        -- 2. [重建] 遍历现有数据，重新注册合法的连接
+        for _, portal in pairs(storage.rift_rails) do
+            if portal.mode == "entry" and portal.target_ids then
+                for target_id, _ in pairs(portal.target_ids) do
+                    local partner = State.get_portaldata_by_id(target_id)
+                    if partner then
+                        -- [LTN] LTN 没有暴力清洗功能，所以保持“先断开后连接”的传统逻辑
+                        if LTN then
+                            LTN.update_connection(portal, partner, false, nil)
+                        end
+
+                        -- [重建连接]
+                        -- 只有当开关开启，且符合新版“双向握手”规则时，才会真正注册成功
+                        if portal.cybersyn_enabled then
+                            if CybersynSE then
+                                -- 注意：这里不再调用 false，因为上面已经全局清洗过了
+                                CybersynSE.update_connection(portal, partner, true, nil, true)
+                            end
+                        end
+                        if portal.ltn_enabled then
+                            if LTN then
+                                LTN.update_connection(portal, partner, true, nil)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        log_debug("[Migration] 物流连接重置完成。")
+    end
 end)
 
 -- on_load: 只在加载存档时运行
@@ -916,6 +981,10 @@ remote.add_interface("RiftRail", {
         Logic.unpair_all_from_exit(player_index, portal_id)
     end,
 
+    -- [多对多新增] 精准解绑接口
+    unpair_portals_specific = function(player_index, source_id, target_id)
+        Logic.unpair_portals_specific(player_index, source_id, target_id)
+    end,
     -- ============================================================================
     -- [调试专用接口]
     -- ============================================================================
@@ -964,7 +1033,7 @@ remote.add_interface("RiftRail", {
                     return "Error: 'get_by_id' requires a custom ID parameter."
                 end
                 return State.get_portaldata_by_id(search_param) or
-                    "Error: Struct with custom ID " .. tostring(search_param) .. " not found."
+                "Error: Struct with custom ID " .. tostring(search_param) .. " not found."
             elseif portaldata_key == "get_by_unit" then
                 if not search_param then
                     return "Error: 'get_by_unit' requires a unit_number parameter."
