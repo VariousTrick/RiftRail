@@ -84,30 +84,33 @@ local function unregister_route(portal_data, partner_data)
         table[source_surface][dest_surface][unit_number] = nil
         if RiftRail.DEBUG_MODE_ENABLED then
             ltn_log("[LTNCompat] 已注销路由: " ..
-                source_surface .. " -> " .. dest_surface .. " via Portal ID " .. portal_data.id)
+            source_surface .. " -> " .. dest_surface .. " via Portal ID " .. portal_data.id)
         end
     end
 end
 
 -- 供外部调用的模式切换处理函数
+-- 供外部调用的模式切换处理函数
 function LTN.on_portal_mode_changed(portal_data, old_mode)
-    if not portal_data or not portal_data.ltn_enabled or not portal_data.paired_to_id then
+    -- [多对多改造] 检查 target_ids 而非 paired_to_id
+    if not portal_data or not portal_data.ltn_enabled or not portal_data.target_ids then
         return
     end
 
-    local partner_data = State.get_portaldata_by_id(portal_data.paired_to_id)
-    if not partner_data then
-        return
-    end
+    -- 遍历所有连接的目标
+    for target_id, _ in pairs(portal_data.target_ids) do
+        local partner_data = State.get_portaldata_by_id(target_id)
+        if partner_data then
+            -- 之前是入口，现在不是了 -> 删除路由
+            if old_mode == "entry" and portal_data.mode ~= "entry" then
+                unregister_route(portal_data, partner_data)
+            end
 
-    -- 之前是入口，现在不是了 -> 删除
-    if old_mode == "entry" and portal_data.mode ~= "entry" then
-        unregister_route(portal_data, partner_data)
-    end
-
-    -- 之前不是入口，现在是了 -> 注册
-    if old_mode ~= "entry" and portal_data.mode == "entry" then
-        register_route(portal_data, partner_data)
+            -- 之前不是入口，现在是了 -> 注册路由
+            if old_mode ~= "entry" and portal_data.mode == "entry" then
+                register_route(portal_data, partner_data)
+            end
+        end
     end
 end
 
@@ -214,24 +217,31 @@ end
 
 function LTN.on_portal_destroyed(select_portal)
     -- 优先清理路由表
-    if select_portal and select_portal.ltn_enabled and select_portal.mode == "entry" and select_portal.paired_to_id then
-        local partner = State.get_portaldata_by_id(select_portal.paired_to_id)
-        if partner then
-            unregister_route(select_portal, partner)
+    -- [多对多改造] 遍历 target_ids
+    if select_portal and select_portal.ltn_enabled and select_portal.mode == "entry" and select_portal.target_ids then
+        for target_id, _ in pairs(select_portal.target_ids) do
+            local partner = State.get_portaldata_by_id(target_id)
+            if partner then
+                unregister_route(select_portal, partner)
+            end
         end
     end
+
     if not is_ltn_active() then
         return
     end
-    if select_portal and select_portal.ltn_enabled then
-        local opp = State.get_portaldata_by_id(select_portal.paired_to_id)
-        if opp then
-            LTN.update_connection(select_portal, opp, false, nil)
-        else
-            -- 无对端时无需显式断开，LTN在实体删除时不要求调用
-            if RiftRail.DEBUG_MODE_ENABLED then
-                ltn_log("[LTNCompat] 仅标记断开，无需显式清理")
+
+    -- [多对多改造] 通知 LTN 断开连接 (如果是入口，则断开所有目标)
+    if select_portal and select_portal.ltn_enabled and select_portal.target_ids then
+        for target_id, _ in pairs(select_portal.target_ids) do
+            local opp = State.get_portaldata_by_id(target_id)
+            if opp then
+                LTN.update_connection(select_portal, opp, false, nil)
             end
+        end
+    else
+        if RiftRail.DEBUG_MODE_ENABLED then
+            ltn_log("[LTNCompat] 传送门已销毁，未执行断开连接 (无目标)")
         end
     end
 end
@@ -477,12 +487,15 @@ function LTN.rebuild_routing_table_from_storage()
     -- 2. 遍历所有传送门
     if storage.rift_rails then
         for _, portaldata in pairs(storage.rift_rails) do
-            -- 3. 检查是否满足注册条件：已开启LTN、是入口模式、已配对
-            if portaldata.ltn_enabled and portaldata.mode == "entry" and portaldata.paired_to_id then
-                local partner = State.get_portaldata_by_id(portaldata.paired_to_id)
-                if partner then
-                    -- 4. 调用我们已有的注册函数
-                    register_route(portaldata, partner)
+            -- 3. 检查是否满足注册条件：已开启LTN、是入口模式、有连接目标
+            -- [多对多改造] 检查 target_ids
+            if portaldata.ltn_enabled and portaldata.mode == "entry" and portaldata.target_ids then
+                for target_id, _ in pairs(portaldata.target_ids) do
+                    local partner = State.get_portaldata_by_id(target_id)
+                    if partner then
+                        -- 4. 注册每一条路径
+                        register_route(portaldata, partner)
+                    end
                 end
             end
         end

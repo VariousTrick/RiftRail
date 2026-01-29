@@ -418,8 +418,32 @@ local function ensure_geometry_cache(portaldata)
     return geo
 end
 -- =================================================================================
+-- 【多对多改造】目标选择器 (v1.0 - 简化版)
+-- =================================================================================
+-- 从入口的多个目标中选择一个有效的出口
+-- @param entry_portaldata (table) 入口传送门的数据
+-- @return (table | nil) 返回一个有效的目标传送门数据，如果都无效则返回 nil
+local function select_target_exit(entry_portaldata)
+    if not (entry_portaldata and entry_portaldata.target_ids and next(entry_portaldata.target_ids)) then
+        return nil
+    end
+
+    -- 遍历所有目标ID
+    for target_id, _ in pairs(entry_portaldata.target_ids) do
+        local target_portal = State.get_portaldata_by_id(target_id)
+        -- 找到第一个有效的就立即返回
+        if target_portal and target_portal.shell and target_portal.shell.valid then
+            return target_portal
+        end
+    end
+
+    -- 如果循环结束都没找到有效的，返回 nil
+    return nil
+end
+-- =================================================================================
 -- 【业务逻辑】尝试启动传送流程
 -- =================================================================================
+
 -- 传送会话初始化
 local function initialize_teleport_session(entry_portal, exit_portal)
     -- 1. 抢占互斥锁
@@ -449,7 +473,8 @@ local function process_waiting_logic(portaldata)
     end
 
     -- 出口数据丢失 -> 清理并退出
-    local exit_portal = State.get_portaldata_by_id(portaldata.paired_to_id)
+    -- [多对多改造] 使用目标选择器来寻找一个可用的出口
+    local exit_portal = select_target_exit(portaldata)
     if not exit_portal then
         portaldata.waiting_car = nil
         return
@@ -953,7 +978,8 @@ function Teleport.on_collider_died(event)
         -- [验证 1] 必须是入口模式
         if portaldata.mode == "entry" then
             -- [验证 2] 必须已配对
-            if portaldata.paired_to_id then
+            -- [多对多改造] 检查 target_ids 表是否存在且不为空
+            if portaldata.target_ids and next(portaldata.target_ids) then
                 -- [核心修改] 不再立即传送，而是挂入等待队列
                 portaldata.waiting_car = car
                 if RiftRail.DEBUG_MODE_ENABLED then
@@ -980,10 +1006,8 @@ end
 -- =================================================================================
 
 function Teleport.sync_momentum(portaldata)
-    if not portaldata.paired_to_id then
-        return
-    end
-    local exit_portaldata = State.get_portaldata_by_id(portaldata.paired_to_id)
+    -- [多对多改造] 使用目标选择器
+    local exit_portaldata = select_target_exit(portaldata)
     if not (exit_portaldata and exit_portaldata.shell and exit_portaldata.shell.valid) then
         return
     end
@@ -1108,7 +1132,8 @@ local function process_teleport_sequence(portaldata, tick)
 
     if portaldata.entry_car then
         -- 还有车厢，继续传送
-        local exit_portaldata = State.get_portaldata_by_id(portaldata.paired_to_id)
+        -- [多对多改造] 使用目标选择器
+        local exit_portaldata = select_target_exit(portaldata)
         Teleport.process_transfer_step(portaldata, exit_portaldata)
     else
         -- 没有后续车厢，传送结束
