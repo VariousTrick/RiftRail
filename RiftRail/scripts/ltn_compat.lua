@@ -36,7 +36,7 @@ local function get_station(portaldata)
     return nil
 end
 
--- 写入路由表的核心函数
+-- 写入路由表的核心函数 (v2.0 - 支持多对多 & 缓存出口信息)
 local function register_route(portal_data, partner_data)
     if not (portal_data and partner_data and portal_data.mode == "entry") then
         return
@@ -59,17 +59,33 @@ local function register_route(portal_data, partner_data)
         table[source_surface][dest_surface] = {}
     end
 
-    table[source_surface][dest_surface][unit_number] = {
+    -- [关键修改] 数据结构升级：入口ID -> 出口ID -> 详细数据
+    -- 这样同一个入口连接多个出口时，数据不会互相覆盖
+    if not table[source_surface][dest_surface][unit_number] then
+        table[source_surface][dest_surface][unit_number] = {}
+    end
+
+    -- 如果旧数据是残留的非表结构 (旧版本兼容)，先清空
+    if type(table[source_surface][dest_surface][unit_number].station_name) == "string" then
+        table[source_surface][dest_surface][unit_number] = {}
+    end
+
+    -- 写入新数据：包含出口的 ID 和 位置 (用于快速计算距离)
+    table[source_surface][dest_surface][unit_number][partner_data.unit_number] = {
         station_name = station.backer_name,
-        position = portal_data.shell.position,
-        unit_number = unit_number,
+        position = portal_data.shell.position,       -- 入口位置
+        unit_number = unit_number,                   -- 入口 ID
+        exit_position = partner_data.shell.position, -- [新增] 缓存出口位置
+        exit_unit_number = partner_data.unit_number, -- [新增] 缓存出口 ID (Tick密码)
     }
+
     if RiftRail.DEBUG_MODE_ENABLED then
-        ltn_log("[LTNCompat] 已注册路由: " .. source_surface .. " -> " .. dest_surface .. " via Portal ID " .. portal_data.id)
+        ltn_log("[LTNCompat] 已注册路由: " ..
+        source_surface .. " -> " .. dest_surface .. " | Entry:" .. portal_data.id .. " -> Exit:" .. partner_data.id)
     end
 end
 
--- 从路由表删除的核心函数
+-- 从路由表删除的核心函数 (v2.0 - 精准删除)
 local function unregister_route(portal_data, partner_data)
     if not (portal_data and partner_data) then
         return
@@ -78,13 +94,33 @@ local function unregister_route(portal_data, partner_data)
     local source_surface = portal_data.surface.index
     local dest_surface = partner_data.surface.index
     local unit_number = portal_data.unit_number
+    local exit_unit_number = partner_data.unit_number
 
     local table = storage.rift_rail_ltn_routing_table
+    -- 安全检查层级
     if table and table[source_surface] and table[source_surface][dest_surface] and table[source_surface][dest_surface][unit_number] then
-        table[source_surface][dest_surface][unit_number] = nil
-        if RiftRail.DEBUG_MODE_ENABLED then
-            ltn_log("[LTNCompat] 已注销路由: " ..
-            source_surface .. " -> " .. dest_surface .. " via Portal ID " .. portal_data.id)
+        local entry_record = table[source_surface][dest_surface][unit_number]
+
+        -- [自适应兼容] 检查是旧结构还是新结构
+        if entry_record.station_name then
+            -- 旧结构：直接把整个入口记录删了 (虽然有点暴力，但在迁移期是安全的)
+            table[source_surface][dest_surface][unit_number] = nil
+            if RiftRail.DEBUG_MODE_ENABLED then
+                ltn_log("[LTNCompat] 已清理旧版单向路由: ID " .. portal_data.id)
+            end
+        else
+            -- 新结构：精准移除指定的出口
+            if entry_record[exit_unit_number] then
+                entry_record[exit_unit_number] = nil
+                if RiftRail.DEBUG_MODE_ENABLED then
+                    ltn_log("[LTNCompat] 已注销路由: Entry:" .. portal_data.id .. " -x- Exit:" .. partner_data.id)
+                end
+            end
+
+            -- 如果该入口下没有任何出口了，清理入口 Key
+            if next(entry_record) == nil then
+                table[source_surface][dest_surface][unit_number] = nil
+            end
         end
     end
 end
@@ -259,65 +295,84 @@ end
 -- 使用 return 代替 goto continue，逻辑更清晰
 -- 使用路由表进行精准、高效的站点插入
 -- 辅助函数：查表并在表中寻找离 reference_pos 最近的传送门名称
+-- 辅助函数：查表并在表中寻找离 reference_pos 最近的传送门
+-- 返回：最佳车站名, 最佳出口ID (Tick密码)
 local function find_best_route_station(from_surface_idx, to_surface_idx, reference_pos)
     local routing_table = storage.rift_rail_ltn_routing_table
-    -- 1. 查表
-    local available_portals = routing_table[from_surface_idx] and routing_table[from_surface_idx][to_surface_idx]
+    local available_entries = routing_table[from_surface_idx] and routing_table[from_surface_idx][to_surface_idx]
 
-    if not (available_portals and next(available_portals)) then
-        return nil
+    if not (available_entries and next(available_entries)) then
+        return nil, nil
     end
 
-    -- 2. 表内寻找最近 (Find Closest in Table)
+    -- 2. 双层遍历寻找最佳路径
+    -- 层级: 入口 -> 出口列表
     local best_station_name = nil
+    local best_exit_id = nil
     local min_dist_sq = math.huge
 
-    for _, portal_info in pairs(available_portals) do
-        -- 简单的欧几里得距离比较
-        local dist_sq = (reference_pos.x - portal_info.position.x) ^ 2 + (reference_pos.y - portal_info.position.y) ^ 2
-        if dist_sq < min_dist_sq then
-            min_dist_sq = dist_sq
-            best_station_name = portal_info.station_name
+    for _, exit_list in pairs(available_entries) do
+        -- 兼容性检查：确保是新结构 (List)
+        if not exit_list.station_name then
+            for _, route_data in pairs(exit_list) do
+                -- 使用缓存的 [出口位置] 进行距离计算
+                -- 逻辑：我们希望 train 到了出口后，离 destination (reference_pos) 最近
+                local dist_sq = (reference_pos.x - route_data.exit_position.x) ^ 2 +
+                (reference_pos.y - route_data.exit_position.y) ^ 2
+
+                if dist_sq < min_dist_sq then
+                    min_dist_sq = dist_sq
+                    best_station_name = route_data.station_name
+                    best_exit_id = route_data.exit_unit_number
+                end
+            end
         end
     end
 
-    return best_station_name
+    return best_station_name, best_exit_id
 end
 
--- 辅助函数：插入传送门站点序列 (含清理站逻辑)
-local function insert_portal_sequence(train, station_name, insert_index)
+-- 辅助函数：插入传送门站点序列 (含清理站逻辑 + Tick密码)
+local function insert_portal_sequence(train, station_name, exit_id, insert_index)
     local schedule = train.get_schedule()
     if not schedule then
         return
     end
 
+    -- [关键] 构造等待条件：Tick = 出口ID
+    -- 这是一个巧妙的 Hack，利用 wait_conditions 传递数据给 teleport.lua
+    local wait_conds = {
+        { type = "inactivity", compare_type = "and", ticks = 120 }, -- 基础防呆：静止2秒
+    }
+    if exit_id then
+        -- 写入密码。注意：ticks 是等待时间，如果 ID 很大，列车会等很久。
+        -- 但不用担心，teleport.lua 会在列车进站停稳的瞬间（撞击 collider）接管并传送它。
+        table.insert(wait_conds, { type = "time", compare_type = "or", ticks = exit_id })
+    end
+
     if settings.global["rift-rail-ltn-use-teleported"].value then
         -- === 情况 A: 开启了清理站 ===
         local teleported_name = settings.global["rift-rail-ltn-teleported-name"].value
-
-        -- 1. 先插清理站 (它目前在 insert_index)
         schedule.add_record({
             station = teleported_name,
             index = { schedule_index = insert_index },
             temporary = true,
             wait_conditions = { { type = "time", ticks = 0 } },
         })
-
-        -- 2. 再插传送门 (把清理站挤下去到 insert_index + 1)
         schedule.add_record({
             station = station_name,
             index = { schedule_index = insert_index },
+            wait_conditions = wait_conds, -- 写入带密码的条件
         })
     else
         -- === 情况 B: 没开清理站 ===
-        -- 仅插入传送门
         schedule.add_record({
             station = station_name,
             index = { schedule_index = insert_index },
+            wait_conditions = wait_conds, -- 写入带密码的条件
         })
     end
 
-    -- 3. 如果列车当前目标在这个索引之后，更新目标
     if schedule.current >= insert_index then
         train.go_to_station(insert_index)
     end
@@ -367,9 +422,11 @@ local function process_single_delivery(train_id, deliveries, stops)
 
     -- [阶段 C] Requester -> Loco Surface (回程/去往下一站)
     if r_index and to_entity.surface.index ~= loco.surface.index then
-        local station = find_best_route_station(to_entity.surface.index, loco.surface.index, to_entity.position)
+        -- 接收两个返回值
+        local station, exit_id = find_best_route_station(to_entity.surface.index, loco.surface.index, to_entity.position)
         if station then
-            insert_portal_sequence(train, station, r_index + 1)
+            -- 传入 exit_id
+            insert_portal_sequence(train, station, exit_id, r_index + 1)
             if RiftRail.DEBUG_MODE_ENABLED then
                 ltn_log("插入回程路由: " .. to_entity.surface.name .. " -> " .. loco.surface.name)
             end
@@ -378,9 +435,10 @@ local function process_single_delivery(train_id, deliveries, stops)
 
     -- [阶段 B] Provider -> Requester (送货)
     if r_index and from_entity.surface.index ~= to_entity.surface.index then
-        local station = find_best_route_station(from_entity.surface.index, to_entity.surface.index, from_entity.position)
+        local station, exit_id = find_best_route_station(from_entity.surface.index, to_entity.surface.index,
+            from_entity.position)
         if station then
-            insert_portal_sequence(train, station, r_index)
+            insert_portal_sequence(train, station, exit_id, r_index)
             if RiftRail.DEBUG_MODE_ENABLED then
                 ltn_log("插入送货路由: " .. from_entity.surface.name .. " -> " .. to_entity.surface.name)
             end
@@ -389,9 +447,9 @@ local function process_single_delivery(train_id, deliveries, stops)
 
     -- [阶段 A] Loco -> Provider (取货)
     if p_index and loco.surface.index ~= from_entity.surface.index then
-        local station = find_best_route_station(loco.surface.index, from_entity.surface.index, loco.position)
+        local station, exit_id = find_best_route_station(loco.surface.index, from_entity.surface.index, loco.position)
         if station then
-            insert_portal_sequence(train, station, p_index)
+            insert_portal_sequence(train, station, exit_id, p_index)
             if RiftRail.DEBUG_MODE_ENABLED then
                 ltn_log("插入取货路由: " .. loco.surface.name .. " -> " .. from_entity.surface.name)
             end
