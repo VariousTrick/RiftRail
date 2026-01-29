@@ -418,26 +418,78 @@ local function ensure_geometry_cache(portaldata)
     return geo
 end
 -- =================================================================================
--- 【多对多改造】目标选择器 (v1.0 - 简化版)
+-- [多对多] 辅助函数：从列车时刻表中解码目标出口 ID (Tick 密码)
 -- =================================================================================
--- 从入口的多个目标中选择一个有效的出口
--- @param entry_portaldata (table) 入口传送门的数据
--- @return (table | nil) 返回一个有效的目标传送门数据，如果都无效则返回 nil
+local function get_schedule_target_id(train)
+    if not (train and train.valid and train.schedule) then
+        return nil
+    end
+    local current_sched = train.schedule
+    local records = current_sched.records
+    if not records then
+        return nil
+    end
+
+    -- 读取当前站点的等待条件
+    local current_record = records[current_sched.current]
+    if current_record and current_record.wait_conditions then
+        for _, cond in pairs(current_record.wait_conditions) do
+            -- LTN 兼容模块将目标 ID 写入了 'time' 条件的 'ticks' 字段中
+            -- 我们寻找 ticks > 0 的时间条件作为密码
+            if cond.type == "time" and cond.ticks > 0 then
+                return cond.ticks -- 这就是目标出口的 Unit Number
+            end
+        end
+    end
+    return nil
+end
+-- =================================================================================
+-- 【多对多改造】目标选择器 (v2.0 - 支持 LTN 定向路由)
+-- =================================================================================
+-- 优先级 1: 检查时刻表是否有 Tick 密码 (LTN)
+-- 优先级 2: 默认返回第一个可用出口 (Fallback)
 local function select_target_exit(entry_portaldata)
     if not (entry_portaldata and entry_portaldata.target_ids and next(entry_portaldata.target_ids)) then
         return nil
     end
 
-    -- 遍历所有目标ID
+    -- A. 尝试获取列车对象 (可能是正在排队的，也可能是正在传送的)
+    local train = nil
+    if entry_portaldata.waiting_car and entry_portaldata.waiting_car.valid then
+        train = entry_portaldata.waiting_car.train
+    elseif entry_portaldata.entry_car and entry_portaldata.entry_car.valid then
+        train = entry_portaldata.entry_car.train
+    end
+
+    -- B. [优先级 1] 尝试解码 LTN 指令
+    if train then
+        local specific_id = get_schedule_target_id(train)
+        -- 如果找到了密码，并且这个密码对应的出口确实连接着当前入口
+        if specific_id and entry_portaldata.target_ids[specific_id] then
+            local target_portal = State.get_portaldata_by_id(specific_id)
+            -- 验证出口有效性
+            if target_portal and target_portal.shell and target_portal.shell.valid then
+                if RiftRail.DEBUG_MODE_ENABLED then
+                    -- 仅在排队阶段打印日志，避免 sync_momentum 刷屏
+                    if entry_portaldata.waiting_car then
+                        if RiftRail.DEBUG_MODE_ENABLED then
+                            log_tp("智能路由: 识别到 Tick 密码 " .. specific_id .. "，精准导向出口。")
+                        end
+                    end
+                end
+                return target_portal
+            end
+        end
+    end
+
+    -- C. [优先级 2] 兜底逻辑：遍历列表，返回第一个有效出口
     for target_id, _ in pairs(entry_portaldata.target_ids) do
         local target_portal = State.get_portaldata_by_id(target_id)
-        -- 找到第一个有效的就立即返回
         if target_portal and target_portal.shell and target_portal.shell.valid then
             return target_portal
         end
     end
 
-    -- 如果循环结束都没找到有效的，返回 nil
     return nil
 end
 -- =================================================================================
