@@ -417,6 +417,36 @@ local function ensure_geometry_cache(portaldata)
     end
     return geo
 end
+
+-- =================================================================================
+-- [多对多] 辅助函数：从列车时刻表中读取电路条件的常量值作为索引
+-- =================================================================================
+local function get_circuit_target_index(train)
+    if not (train and train.valid and train.schedule) then
+        return nil
+    end
+    local current_sched = train.schedule
+    local records = current_sched.records
+    if not records then
+        return nil
+    end
+
+    local current_record = records[current_sched.current]
+    if current_record and current_record.wait_conditions then
+        for _, cond in pairs(current_record.wait_conditions) do
+            -- 玩家设置逻辑：添加电路条件 -> 信号任意 -> 比较符任意 -> 常量值 = 目标索引
+            -- API 结构: cond.condition = { first_signal=..., comparator=..., constant=... }
+            if cond.type == "circuit" and cond.condition and cond.condition.constant then
+                local val = cond.condition.constant
+                if val > 0 then
+                    return val -- 返回玩家设定的数字 (例如 2)
+                end
+            end
+        end
+    end
+    return nil
+end
+
 -- =================================================================================
 -- [多对多] 辅助函数：从列车时刻表中解码目标出口 ID (Tick 密码)
 -- =================================================================================
@@ -444,16 +474,41 @@ local function get_schedule_target_id(train)
     return nil
 end
 -- =================================================================================
--- 【多对多改造】目标选择器 (v2.0 - 支持 LTN 定向路由)
+-- 【多对多改造】目标选择器 (v3.0 - 支持 LTN ID 和 玩家索引)
 -- =================================================================================
--- 优先级 1: 检查时刻表是否有 Tick 密码 (LTN)
--- 优先级 2: 默认返回第一个可用出口 (Fallback)
+-- 优先级 1: LTN Tick 密码 (绝对 ID)
+-- 优先级 2: 玩家电路常量 (相对索引)
+-- 优先级 3: 默认返回第一个可用出口 (兜底)
 local function select_target_exit(entry_portaldata)
-    if not (entry_portaldata and entry_portaldata.target_ids and next(entry_portaldata.target_ids)) then
+    -- [防御性检查 1] 确保入口数据存在
+    if not entry_portaldata then
         return nil
     end
 
-    -- A. 尝试获取列车对象 (可能是正在排队的，也可能是正在传送的)
+    -- [防御性检查 2] 确保 target_ids 是一个有效的表
+    local targets = entry_portaldata.target_ids
+    if type(targets) ~= "table" then
+        return nil
+    end
+
+    -- [防御性检查 3] 确保表不为空 (使用 next 前再次确认)
+    local first_id, _ = next(targets)
+    if not first_id then
+        return nil -- 列表是空的
+    end
+
+    -- [极速通道] 检查是否只有一个目标
+    -- 此时 first_id 必定存在，我们检查是否有第二个
+    if not next(targets, first_id) then
+        local target_portal = State.get_portaldata_by_id(first_id)
+        if target_portal and target_portal.shell and target_portal.shell.valid then
+            return target_portal
+        else
+            return nil
+        end
+    end
+
+    -- A. 获取列车对象
     local train = nil
     if entry_portaldata.waiting_car and entry_portaldata.waiting_car.valid then
         train = entry_portaldata.waiting_car.train
@@ -461,13 +516,11 @@ local function select_target_exit(entry_portaldata)
         train = entry_portaldata.entry_car.train
     end
 
-    -- B. [优先级 1] 尝试解码 LTN 指令
     if train then
+        -- B. [优先级 1] LTN 绝对 ID 匹配
         local specific_id = get_schedule_target_id(train)
-        -- 如果找到了密码，并且这个密码对应的出口确实连接着当前入口
-        if specific_id and entry_portaldata.target_ids[specific_id] then
+        if specific_id and targets[specific_id] then
             local target_portal = State.get_portaldata_by_id(specific_id)
-            -- 验证出口有效性
             if target_portal and target_portal.shell and target_portal.shell.valid then
                 if RiftRail.DEBUG_MODE_ENABLED then
                     -- 仅在排队阶段打印日志，避免 sync_momentum 刷屏
@@ -480,13 +533,53 @@ local function select_target_exit(entry_portaldata)
                 return target_portal
             end
         end
+
+        -- C. [优先级 2] 玩家相对索引匹配
+        local index = get_circuit_target_index(train)
+        if index then
+            -- 将无序的 target_ids 转换为有序列表，确保索引对应的出口是固定的
+            local sorted_targets = {}
+            for t_id, _ in pairs(entry_portaldata.target_ids) do
+                table.insert(sorted_targets, t_id)
+            end
+            -- 排序 (从小到大)
+            table.sort(sorted_targets)
+
+            -- 取出对应索引的 ID
+            local target_id_by_index = sorted_targets[index]
+            if target_id_by_index then
+                local target_portal = State.get_portaldata_by_id(target_id_by_index)
+                if target_portal and target_portal.shell and target_portal.shell.valid then
+                    if entry_portaldata.waiting_car then
+                        if RiftRail.DEBUG_MODE_ENABLED then
+                            log_tp("智能路由: 识别到玩家索引 " .. index .. "，精准导向出口。")
+                        end
+                    end
+                    return target_portal
+                end
+            end
+        end
     end
 
-    -- C. [优先级 2] 兜底逻辑：遍历列表，返回第一个有效出口
-    for target_id, _ in pairs(entry_portaldata.target_ids) do
-        local target_portal = State.get_portaldata_by_id(target_id)
-        if target_portal and target_portal.shell and target_portal.shell.valid then
-            return target_portal
+    -- D. [优先级 3] 兜底逻辑
+    -- first_id 在上面已经获取了，直接尝试使用
+    local target_portal = State.get_portaldata_by_id(first_id)
+    if target_portal and target_portal.shell and target_portal.shell.valid then
+        return target_portal
+    end
+
+    -- 如果第一个无效，遍历剩下的找一个有效的
+    for target_id, _ in pairs(targets) do
+        if target_id ~= first_id then
+            target_portal = State.get_portaldata_by_id(target_id)
+            if target_portal and target_portal.shell and target_portal.shell.valid then
+                if entry_portaldata.waiting_car then
+                    if RiftRail.DEBUG_MODE_ENABLED then
+                        log_tp("智能路由: 未识别到特定目标，使用兜底出口 ID " .. target_id .. "。")
+                    end
+                end
+                return target_portal
+            end
         end
     end
 
