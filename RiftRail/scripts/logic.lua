@@ -44,7 +44,37 @@ local function refresh_all_guis()
     end
 end
 
+-- ============================================================================
+-- 辅助函数：检查连接数并在归零时自动关闭物流开关
+-- ============================================================================
+local function check_and_reset_logistics(portaldata)
+    if not portaldata then
+        return
+    end
+
+    local connection_count = 0
+    if portaldata.mode == "entry" and portaldata.target_ids then
+        for _ in pairs(portaldata.target_ids) do
+            connection_count = connection_count + 1
+        end
+    elseif portaldata.mode == "exit" and portaldata.source_ids then
+        for _ in pairs(portaldata.source_ids) do
+            connection_count = connection_count + 1
+        end
+    end
+
+    -- 如果连接数已清零，则强制关闭开关
+    if connection_count == 0 then
+        portaldata.cybersyn_enabled = false
+        portaldata.ltn_enabled = false
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_debug("[Logic] Portal " .. portaldata.id .. " 连接数为零，已关闭 Cybersyn 和 LTN 开关")
+        end
+    end
+end
+-- ============================================================================
 -- 辅助函数：构建包含图标的富文本显示名称
+-- ============================================================================
 local function build_display_name(portaldata)
     local richtext = ""
     if portaldata and portaldata.icon and portaldata.icon.type and portaldata.icon.name then
@@ -56,7 +86,9 @@ local function build_display_name(portaldata)
     return richtext
 end
 
+-- ============================================================================
 -- 辅助函数：根据当前模式强制刷新车站限制 (防止引擎自动同步或未初始化)
+-- ============================================================================
 function Logic.refresh_station_limit(portaldata)
     if not (portaldata and portaldata.children) then
         return
@@ -134,7 +166,6 @@ local function update_collider_state(portaldata)
     end
 end
 
--- scripts/logic.lua
 -- ============================================================================
 -- 1. 更新名称
 -- ============================================================================
@@ -227,6 +258,9 @@ function Logic.set_mode(player_index, portal_id, mode, skip_sync)
                 target.source_ids[my_data.id] = nil
             end
         end
+
+        -- [新增] 检查刚刚被断开的目标
+        check_and_reset_logistics(target)
         -- [多对多改造] 清空整个目标列表
         my_data.target_ids = {}
 
@@ -245,6 +279,8 @@ function Logic.set_mode(player_index, portal_id, mode, skip_sync)
                 src_data.mode = "neutral"
                 -- 注意：这里简单处理了，实际上可能需要触发源端的GUI刷新
             end
+            -- [新增] 检查刚刚被断开的来源
+            check_and_reset_logistics(src_data)
         end
         my_data.source_ids = {}
         -- [新增] 清理互斥锁
@@ -362,8 +398,9 @@ function Logic.pair_portals(player_index, source_id, target_id)
 end
 
 -- ============================================================================
--- 4. 解绑逻辑 (重构：适配多对一结构)
+-- 4. 解绑逻辑 (v2.0 - 代理到新函数)
 -- ============================================================================
+-- 这个函数现在主要由 GUI 的“踢出”按钮调用，并且只处理“入口”
 function Logic.unpair_portals(player_index, portal_id)
     local player = nil
     if player_index then
@@ -375,61 +412,20 @@ function Logic.unpair_portals(player_index, portal_id)
         return
     end
 
-    -- 分支 A: 这是一个 入口 (Entry)，或者被当作入口处理
-    -- 操作：切断它通往出口的线，并将其重置为中立
-    -- [多对多改造] 判断模式与 target_ids 表
-    if portal.mode == "entry" and portal.target_ids and next(portal.target_ids) then
-        -- [多对多改造] 这是一个“全部断开”的操作
-        local count = 0
-        -- 遍历所有目标，并逐个通知它们断开连接
+    -- [多对多改造] 将所有逻辑代理到 unpair_portals_specific
+    if portal.mode == "entry" and portal.target_ids then
+        -- 遍历所有目标并逐个断开
         for target_id, _ in pairs(portal.target_ids) do
-            local target = State.get_portaldata_by_id(target_id)
-            if target and target.source_ids then
-                target.source_ids[portal_id] = nil
-            end
-            count = count + 1
+            Logic.unpair_portals_specific(player_index, portal.id, target_id)
         end
-
-        -- 1. 清理自身的所有目标指针
-        portal.target_ids = {}
-
-        -- 3. 将自身重置为中立 (因为它失去了唯一的目标)
-        -- 注意：目标(出口)保持原样，因为可能还有其他入口连着它
-        Logic.set_mode(nil, portal_id, "neutral", true)
-
-        -- 4. 反馈消息
-        if player then -- 只有当 player 存在时才打印消息
-            -- [多对多改造] 使用更通用的反馈消息
-            player.print({ "messages.rift-rail-unpair-all-success", count })
-        end
-
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_debug("[Logic] 断开连接: Entry " .. portal.id .. " -x- Exit " .. (target_id or "nil"))
-        end
-
-        -- 分支 B: 这是一个 出口 (Exit)
-        -- 操作：由于出口是被动端，这意味着“断开所有连接”
-    elseif portal.source_ids and next(portal.source_ids) then
-        local count = 0
-        -- 遍历所有连着我的入口，强制它们断开
-        for src_id, _ in pairs(portal.source_ids) do
-            local src_data = State.get_portaldata_by_id(src_id)
-            if src_data then
-                -- 递归调用自己，走分支 A 逻辑
-                -- 这样可以复用分支 A 中的清理和模式重置逻辑
-                Logic.unpair_portals(player_index, src_id)
-                count = count + 1
-            end
-        end
-        -- 彻底清空列表 (双重保险)
-        portal.source_ids = {}
-
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_debug("[Logic] 出口清空: Exit " .. portal.id .. " 断开了 " .. count .. " 个来源")
+    elseif portal.mode == "exit" and portal.source_ids then
+        -- 遍历所有来源并逐个断开
+        for source_id, _ in pairs(portal.source_ids) do
+            Logic.unpair_portals_specific(player_index, source_id, portal.id)
         end
     end
 
-    refresh_all_guis()
+    -- refresh_all_guis() 已经包含在 _specific 函数中，这里无需重复调用
 end
 
 -- ============================================================================
@@ -707,6 +703,10 @@ function Logic.unpair_portals_specific(player_index, source_id, target_id)
     if target.source_ids then
         target.source_ids[source_id] = nil
     end
+
+    -- [新增] 检查双方的连接数，如果归零则自动关闭开关
+    check_and_reset_logistics(source)
+    check_and_reset_logistics(target)
 
     -- 3. 反馈消息
     if player then

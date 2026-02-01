@@ -312,11 +312,11 @@ function Builder.on_built(event)
     if station_entity and core_entity then
         -- 连接红色信号线
         core_entity.get_wire_connector(defines.wire_connector_id.circuit_red, true).connect_to(
-            station_entity.get_wire_connector(defines.wire_connector_id.circuit_red, true), false, defines.wire_origin
-            .script)
+        station_entity.get_wire_connector(defines.wire_connector_id.circuit_red, true), false, defines.wire_origin
+        .script)
         -- 连接绿色信号线
         core_entity.get_wire_connector(defines.wire_connector_id.circuit_green, true).connect_to(
-            station_entity.get_wire_connector(defines.wire_connector_id.circuit_green, true), false,
+        station_entity.get_wire_connector(defines.wire_connector_id.circuit_green, true), false,
             defines.wire_origin.script)
         if RiftRail.DEBUG_MODE_ENABLED then
             log_debug("[Builder] 车站和核心的红绿信号线已连接")
@@ -485,7 +485,16 @@ function Builder.on_destroy(event, player_index)
                 end
             end
         end ]]
-        Logic.unpair_portals(player_index, data.id)
+        -- [多对多改造] 拆除时，必须对每一个连接都执行“精准解绑”
+        if data.mode == "entry" and data.target_ids then
+            for target_id, _ in pairs(data.target_ids) do
+                Logic.unpair_portals_specific(player_index, data.id, target_id)
+            end
+        elseif data.mode == "exit" and data.source_ids then
+            for source_id, _ in pairs(data.source_ids) do
+                Logic.unpair_portals_specific(player_index, source_id, data.id)
+            end
+        end
 
         local shell_to_check = data.shell
         if shell_to_check and shell_to_check.valid then
