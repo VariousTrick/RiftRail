@@ -81,7 +81,7 @@ local function register_route(portal_data, partner_data)
 
     if RiftRail.DEBUG_MODE_ENABLED then
         ltn_log("[LTNCompat] 已注册路由: " ..
-        source_surface .. " -> " .. dest_surface .. " | Entry:" .. portal_data.id .. " -> Exit:" .. partner_data.id)
+            source_surface .. " -> " .. dest_surface .. " | Entry:" .. portal_data.id .. " -> Exit:" .. partner_data.id)
     end
 end
 
@@ -172,10 +172,164 @@ function LTN.init(dependencies)
     if dependencies.log_debug then
         log_debug = dependencies.log_debug
     end
+
+    -- 初始化双向验证池子（用于 LTN 注册）
+    if not storage.rr_ltn_pools then
+        storage.rr_ltn_pools = {}
+    end
+
     ltn_log("[LTNCompat] 模块已加载 (运行时检测 LTN 接口)。")
 end
 
--- 切换连接状态
+-- ============================================================================
+-- 双向验证池子管理 (用于 LTN 真实注册)
+-- ============================================================================
+
+-- 获取池子
+local function get_pool(s1, s2)
+    if not storage.rr_ltn_pools then
+        storage.rr_ltn_pools = {}
+    end
+    if not storage.rr_ltn_pools[s1] then
+        storage.rr_ltn_pools[s1] = {}
+    end
+    if not storage.rr_ltn_pools[s1][s2] then
+        storage.rr_ltn_pools[s1][s2] = {}
+    end
+    return storage.rr_ltn_pools[s1][s2]
+end
+
+-- 加入池子：建立双向连接并向 LTN 注册
+local function join_pool(portaldata, target_portal)
+    if not (portaldata and target_portal) then
+        return 0
+    end
+
+    -- [关键] 只有 entry 模式的传送门才能加入池子
+    -- 因为 entry 代表"从这个地表出发的入口"，exit 不需要在池子里
+    if portaldata.mode ~= "entry" then
+        return 0
+    end
+
+    local s1 = portaldata.surface.index
+    local s2 = target_portal.surface.index
+    local uid = portaldata.unit_number
+    local station = get_station(portaldata)
+
+    if not (station and station.valid) then
+        return 0
+    end
+
+    local my_pool = get_pool(s1, s2)
+    if my_pool[uid] then
+        -- 已经在池子里，返回当前连接数
+        local partner_pool = get_pool(s2, s1)
+        local count = 0
+        for _ in pairs(partner_pool) do
+            count = count + 1
+        end
+        return count
+    end
+
+    -- 1. 加入自己的池子
+    my_pool[uid] = station
+    ltn_log("[Pool] " .. portaldata.name .. " 加入池子: " .. s1 .. " -> " .. s2)
+
+    -- 2. 扫描反向池子，建立双向连接
+    local partner_pool = get_pool(s2, s1)
+    local count = 0
+
+    for partner_uid, partner_station in pairs(partner_pool) do
+        if partner_station and partner_station.valid then
+            -- 找到对应的 portaldata（通过传送门外壳ID匹配）
+            local partner_data = nil
+            if storage.rift_rails then
+                for _, pd in pairs(storage.rift_rails) do
+                    if pd.unit_number == partner_uid then
+                        partner_data = pd
+                        break
+                    end
+                end
+            end
+
+            if partner_data then
+                -- 向 LTN 注册双向连接
+                local ok, err = pcall(function()
+                    local nid = compute_network_id(station, partner_station, -1)
+                    remote.call("logistic-train-network", "connect_surfaces", station, partner_station, nid)
+                end)
+
+                if ok then
+                    count = count + 1
+                    ltn_log("[LTN] 已向 LTN 注册双向连接: " .. portaldata.name .. " <-> " .. partner_data.name)
+                else
+                    ltn_log("[LTN] 注册失败: " .. tostring(err))
+                end
+            end
+        end
+    end
+
+    ltn_log("[Pool] 建立连接数: " .. count)
+    return count
+end
+
+-- 离开池子：断开连接并从 LTN 注销
+local function leave_pool(portaldata, target_portal)
+    if not portaldata then
+        return
+    end
+
+    -- [关键] 只有 entry 才会在池子里，exit 直接返回
+    if portaldata.mode ~= "entry" then
+        return
+    end
+
+    local s1 = portaldata.surface.index
+    local uid = portaldata.unit_number
+    local station = get_station(portaldata)
+
+    -- 定义清理函数
+    local function clean_specific_pool(surface_index_2)
+        local my_pool = get_pool(s1, surface_index_2)
+        if my_pool[uid] then
+            -- 1. 扫描反向池子，断开 LTN 连接
+            local partner_pool = get_pool(surface_index_2, s1)
+            for partner_uid, partner_station in pairs(partner_pool) do
+                if partner_station and partner_station.valid and station and station.valid then
+                    -- 从 LTN 断开连接
+                    local ok, err = pcall(function()
+                        remote.call("logistic-train-network", "disconnect_surfaces", station, partner_station)
+                    end)
+
+                    if ok then
+                        ltn_log("[LTN] 已从 LTN 注销连接: " .. portaldata.name)
+                    else
+                        ltn_log("[LTN] 注销失败: " .. tostring(err))
+                    end
+                end
+            end
+
+            -- 2. 移出池子
+            my_pool[uid] = nil
+            ltn_log("[Pool] " .. portaldata.name .. " 离开池子: " .. s1 .. " -> " .. surface_index_2)
+        end
+    end
+
+    -- 根据是否指定目标来清理
+    if target_portal then
+        -- 情况 A: 知道对方是谁，精准清理
+        clean_specific_pool(target_portal.surface.index)
+    else
+        -- 情况 B: 不知道对方是谁，清理所有连接
+        if storage.rr_ltn_pools and storage.rr_ltn_pools[s1] then
+            for s2, _ in pairs(storage.rr_ltn_pools[s1]) do
+                clean_specific_pool(s2)
+            end
+        end
+    end
+end
+
+-- 切换连接状态（使用双向验证池子）
 function LTN.update_connection(select_portal, target_portal, connect, player)
     if not is_ltn_active() then
         if player then
@@ -193,44 +347,41 @@ function LTN.update_connection(select_portal, target_portal, connect, player)
         return
     end
 
-    local ok, err = pcall(function()
-        if connect then
-            -- [修改] 强制使用 -1 (全网络)，忽略 GUI 设置
-            -- local nid = compute_network_id(station1, station2, tonumber(select_portal.ltn_network_id) or -1)
-            local nid = compute_network_id(station1, station2, -1)
-            remote.call("logistic-train-network", "connect_surfaces", station1, station2, nid)
-            if RiftRail.DEBUG_MODE_ENABLED then
-                ltn_log("[LTNCompat] 已建立跨面连接 network_id=" .. nid)
-            end
-
-            -- 分别检查每一方是否为 Entry，只注册合法路径
-            register_route(select_portal, target_portal)
-            register_route(target_portal, select_portal)
-        else
-            remote.call("logistic-train-network", "disconnect_surfaces", station1, station2)
-            if RiftRail.DEBUG_MODE_ENABLED then
-                ltn_log("[LTNCompat] 已断开跨面连接")
-            end
-
-            -- 注销时同样分别处理
-            unregister_route(select_portal, target_portal)
-            unregister_route(target_portal, select_portal)
+    -- 1. [关键] 检查操作"之前"的真实连接状态（双向池子）
+    local was_connected = false
+    if storage.rr_ltn_pools then
+        local s1, s2 = select_portal.surface.index, target_portal.surface.index
+        local u1, u2 = station1.unit_number, station2.unit_number
+        local pool1 = storage.rr_ltn_pools[s1] and storage.rr_ltn_pools[s1][s2]
+        local pool2 = storage.rr_ltn_pools[s2] and storage.rr_ltn_pools[s2][s1]
+        if pool1 and pool1[u1] and pool2 and pool2[u2] then
+            was_connected = true
         end
-    end)
-    if not ok then
-        if RiftRail.DEBUG_MODE_ENABLED then
-            ltn_log("[LTNCompat] 调用失败: " .. tostring(err))
-        end
-        if player then
-            player.print({ "messages.rift-rail-error-ltn-call-failed", tostring(err) })
-        end
-        return
     end
 
-    --[[     select_portal.ltn_enabled = connect
-    target_portal.ltn_enabled = connect ]]
+    -- 2. 维护单向池子（用于时刻表创作）
+    if connect then
+        -- 分别检查每一方是否为 Entry，只注册合法路径
+        register_route(select_portal, target_portal)
+        register_route(target_portal, select_portal)
+    else
+        -- 注销时同样分别处理
+        unregister_route(select_portal, target_portal)
+        unregister_route(target_portal, select_portal)
+    end
 
-    -- 玩家通知（带双向 GPS 标签，受设置控制）
+    -- 3. 执行双向池子的入池/退池逻辑（使用外部传入的 connect 参数）
+    if connect then
+        -- 外部已经判断了双方都开启，执行加入池子
+        join_pool(select_portal, target_portal)
+        join_pool(target_portal, select_portal)
+    else
+        -- 至少有一方关闭，执行离开池子
+        leave_pool(select_portal, target_portal)
+        leave_pool(target_portal, select_portal)
+    end
+
+    -- 4. 准备消息参数
     local name1 = select_portal.name or "RiftRail"
     local pos1 = select_portal.shell.position
     local surface1 = select_portal.shell.surface.name
@@ -241,13 +392,40 @@ function LTN.update_connection(select_portal, target_portal, connect, player)
     local surface2 = target_portal.shell.surface.name
     local gps2 = "[gps=" .. pos2.x .. "," .. pos2.y .. "," .. surface2 .. "]"
 
-    for _, p in pairs(game.connected_players) do
-        local setting = settings.get_player_settings(p)["rift-rail-show-logistics-notifications"]
+    local msg = nil
+
+    -- 5. 根据"现在"的状态和"过去"的状态，决定消息内容
+    if connect then
+        -- 双方都开启了
+        msg = { "messages.rift-rail-info-ltn-connected", name1, gps1, name2, gps2 }
+    elseif was_connected then
+        -- 之前连接着，现在至少有一方关闭了
+        msg = { "messages.rift-rail-info-ltn-disconnected", name1, gps1, name2, gps2 }
+    elseif select_portal.ltn_enabled and not target_portal.ltn_enabled then
+        -- 只有 A 开启，等待 B
+        msg = { "messages.rift-rail-info-ltn-waiting-partner", name1, gps1, name2, gps2 }
+    elseif not select_portal.ltn_enabled and target_portal.ltn_enabled then
+        -- 只有 B 开启，等待 A
+        msg = { "messages.rift-rail-info-ltn-waiting-partner", name2, gps2, name1, gps1 }
+    end
+
+    if not msg then
+        return
+    end
+
+    -- 6. 发送消息
+    if player then
+        -- 场景 A: 玩家点击开关 -> 私聊反馈
+        local setting = settings.get_player_settings(player)["rift-rail-show-logistics-notifications"]
         if setting and setting.value then
-            if connect then
-                p.print({ "messages.rift-rail-info-ltn-connected", name1, gps1, name2, gps2 })
-            else
-                p.print({ "messages.rift-rail-info-ltn-disconnected", name1, gps1, name2, gps2 })
+            player.print(msg)
+        end
+    else
+        -- 场景 B: 拆除/虫咬/脚本 -> 全服广播
+        for _, p in pairs(game.connected_players) do
+            local setting = settings.get_player_settings(p)["rift-rail-show-logistics-notifications"]
+            if setting and setting.value then
+                p.print(msg)
             end
         end
     end
@@ -320,7 +498,7 @@ local function find_best_route_station(from_surface_idx, to_surface_idx, referen
                 -- 使用缓存的 [出口位置] 进行距离计算
                 -- 逻辑：我们希望 train 到了出口后，离 destination (reference_pos) 最近
                 local dist_sq = (reference_pos.x - route_data.exit_position.x) ^ 2 +
-                (reference_pos.y - route_data.exit_position.y) ^ 2
+                    (reference_pos.y - route_data.exit_position.y) ^ 2
 
                 if dist_sq < min_dist_sq then
                     min_dist_sq = dist_sq
@@ -526,6 +704,40 @@ if script.active_mods["logistic-train-network"] then
         if RiftRail.DEBUG_MODE_ENABLED then
             ltn_log("LTN兼容模式: SE-Glue 托管")
         end
+    end
+end
+
+-- 供迁移脚本调用的函数，用于清理旧版 LTN 远程连接
+function LTN.purge_legacy_connections()
+    if not (remote.interfaces["logistic-train-network"] and storage.rift_rails) then
+        return
+    end
+
+    if RiftRail.DEBUG_MODE_ENABLED then
+        ltn_log("[Migration] 开始清理旧版 LTN 连接...")
+    end
+
+    -- 收集所有有效车站实体
+    local stations = {}
+    for _, portal in pairs(storage.rift_rails) do
+        local station = get_station(portal)
+        if station and station.valid then
+            stations[#stations + 1] = station
+        end
+    end
+
+    -- 暴力断开所有可能的连接 (O(N^2))
+    for i = 1, #stations do
+        for j = i + 1, #stations do
+            pcall(remote.call, "logistic-train-network", "disconnect_surfaces", stations[i], stations[j])
+        end
+    end
+
+    -- 同步清空双向池子，避免残留
+    storage.rr_ltn_pools = {}
+
+    if RiftRail.DEBUG_MODE_ENABLED then
+        ltn_log("[Migration] 旧版 LTN 连接清理完成。")
     end
 end
 
