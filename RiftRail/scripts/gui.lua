@@ -440,7 +440,8 @@ function GUI.build_or_update(player, entity)
     end
 
     -- network_id 输入 (仅 LTN)
-    if script.active_mods["LogisticTrainNetwork"] then
+    -- [已注释：默认使用 -1，不再提供手动设置]
+    --[[ if script.active_mods["LogisticTrainNetwork"] then
         local ltn_net_flow = inner_flow.add({ type = "flow", direction = "horizontal" })
         ltn_net_flow.style.vertical_align = "center"
         ltn_net_flow.add({ type = "label", caption = { "gui.rift-rail-ltn-network-label" } })
@@ -465,7 +466,7 @@ function GUI.build_or_update(player, entity)
             tooltip = { "gui.rift-rail-ltn-network-tooltip" },
             enabled = ltn_apply_enabled,
         })
-    end
+    end ]]
 
     -- 9. 远程预览 (适配 Exit 模式下的来源预览)
     inner_flow.add({ type = "line", direction = "horizontal" })
@@ -718,7 +719,7 @@ function GUI.handle_click(event)
         end
 
         -- 应用 LTN Network ID
-    elseif el_name == "rift_rail_ltn_apply_network" then
+        --[[ elseif el_name == "rift_rail_ltn_apply_network" then
         -- 查找 network_id 文本框
         local function find_field(element)
             if element.name == "rift_rail_ltn_network_id" then
@@ -741,7 +742,7 @@ function GUI.handle_click(event)
                 remote.call("RiftRail", "set_ltn_enabled", player.index, my_data.id, true)
             end
             GUI.build_or_update(player, my_data.shell)
-        end
+        end ]]
     end
 end
 
