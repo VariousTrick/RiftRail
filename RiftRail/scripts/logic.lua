@@ -480,12 +480,11 @@ function Logic.set_cybersyn_enabled(player_index, portal_id, enabled)
     -- 3. 遍历所有伙伴，通知兼容模块去重新评估连接状态
     for _, partner_data in pairs(partners) do
         if partner_data and CybersynSE and CybersynSE.update_connection then
-            -- [核心修改] 不再传递 "connect" 参数，让兼容模块自己决定
             -- 根据自己是源还是目标，正确传递参数
             if my_data.mode == "entry" then
-                CybersynSE.update_connection(my_data, partner_data, nil, player)
+                CybersynSE.update_connection(my_data, partner_data, nil, player, false, enabled)
             else -- exit or neutral
-                CybersynSE.update_connection(partner_data, my_data, nil, player)
+                CybersynSE.update_connection(partner_data, my_data, nil, player, false, enabled)
             end
         end
     end
@@ -526,10 +525,10 @@ function Logic.set_ltn_enabled(player_index, portal_id, enabled)
             -- update_connection 内部会根据双方的 ltn_enabled 状态决定是否注册
             if my_data.mode == "entry" then
                 local should_connect = my_data.ltn_enabled and partner_data.ltn_enabled
-                LTN.update_connection(my_data, partner_data, should_connect, player)
+                LTN.update_connection(my_data, partner_data, should_connect, player, enabled)
             else -- exit
                 local should_connect = partner_data.ltn_enabled and my_data.ltn_enabled
-                LTN.update_connection(partner_data, my_data, should_connect, player)
+                LTN.update_connection(partner_data, my_data, should_connect, player, enabled)
             end
         end
     end
@@ -650,11 +649,11 @@ function Logic.unpair_portals_specific(player_index, source_id, target_id)
 
     -- [新增] 在断开连接关系后，强制通知兼容模块清理连接
     if CybersynSE and CybersynSE.update_connection then
-        -- 强制发送 "false" 指令来清理
+        -- 强制发送 "false" 指令来清理（最后一个参数 nil 表示非用户操作）
         if source.mode == "entry" then
-            CybersynSE.update_connection(source, target, false, player)
+            CybersynSE.update_connection(source, target, false, player, false, nil)
         else
-            CybersynSE.update_connection(target, source, false, player)
+            CybersynSE.update_connection(target, source, false, player, false, nil)
         end
     end
 
