@@ -195,7 +195,9 @@ function LTN.update_connection(select_portal, target_portal, connect, player)
 
     local ok, err = pcall(function()
         if connect then
-            local nid = compute_network_id(station1, station2, tonumber(select_portal.ltn_network_id) or -1)
+            -- [修改] 强制使用 -1 (全网络)，忽略 GUI 设置
+            -- local nid = compute_network_id(station1, station2, tonumber(select_portal.ltn_network_id) or -1)
+            local nid = compute_network_id(station1, station2, -1)
             remote.call("logistic-train-network", "connect_surfaces", station1, station2, nid)
             if RiftRail.DEBUG_MODE_ENABLED then
                 ltn_log("[LTNCompat] 已建立跨面连接 network_id=" .. nid)
