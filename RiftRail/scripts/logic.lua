@@ -451,7 +451,7 @@ function Logic.open_remote_view_by_target(player_index, target_id)
 end
 
 -- ============================================================================
--- 6. Cybersyn 开关控制 (最终版：智能同步与多对一保护)
+-- 6. Cybersyn 开关控制 (v4.0 - 彻底解耦，仅通知)
 -- ============================================================================
 function Logic.set_cybersyn_enabled(player_index, portal_id, enabled)
     local player = game.get_player(player_index)
@@ -461,65 +461,31 @@ function Logic.set_cybersyn_enabled(player_index, portal_id, enabled)
         return
     end
 
-    -- 更新自身状态
+    -- 1. 只修改自己的开关状态
     my_data.cybersyn_enabled = enabled
 
-    if my_data.mode == "entry" then
-        -- [多对多改造] 遍历所有目标进行同步
-        if my_data.target_ids then
-            for target_id, _ in pairs(my_data.target_ids) do
-                local partner = State.get_portaldata_by_id(target_id)
-                if partner then
-                    -- 1. 智能状态同步
-                    if enabled then
-                        -- A. 开启时：确保总闸(出口)也是开的
-                        if not partner.cybersyn_enabled then
-                            partner.cybersyn_enabled = true
-                        end
-                    else
-                        -- B. 关闭时：检查是否需要关闭总闸 (最后一个关灯的人负责关总闸)
-                        local any_other_active = false
-                        if partner.source_ids then
-                            for src_id, _ in pairs(partner.source_ids) do
-                                if src_id ~= my_data.id then
-                                    local src = State.get_portaldata_by_id(src_id)
-                                    if src and src.cybersyn_enabled then
-                                        any_other_active = true
-                                        break
-                                    end
-                                end
-                            end
-                        end
-                        -- 如果没有其他开启的来源，顺便把总闸也关了
-                        if not any_other_active then
-                            partner.cybersyn_enabled = false
-                        end
-                    end
-
-                    -- 2. 执行连接
-                    if CybersynSE then
-                        -- 计算连接意图：只有双方都开启才算连接
-                        local should_connect = my_data.cybersyn_enabled and partner.cybersyn_enabled
-                        CybersynSE.update_connection(my_data, partner, should_connect, player)
-                    end
-                end
-            end
+    -- 2. 收集所有与自己有连接关系的伙伴
+    local partners = {}
+    if my_data.target_ids then
+        for target_id, _ in pairs(my_data.target_ids) do
+            table.insert(partners, State.get_portaldata_by_id(target_id))
         end
-    elseif my_data.mode == "exit" then
-        -- [总闸逻辑]
-        -- 强制同步所有来源的状态，保持一致性
-        if my_data.source_ids then
-            for src_id, _ in pairs(my_data.source_ids) do
-                local source = State.get_portaldata_by_id(src_id)
-                if source then
-                    -- 强制同步来源状态
-                    source.cybersyn_enabled = enabled
+    end
+    if my_data.source_ids then
+        for source_id, _ in pairs(my_data.source_ids) do
+            table.insert(partners, State.get_portaldata_by_id(source_id))
+        end
+    end
 
-                    if CybersynSE then
-                        -- 这里的 connect 也就等于 enabled，因为两者现在状态一致了
-                        CybersynSE.update_connection(source, my_data, enabled, player)
-                    end
-                end
+    -- 3. 遍历所有伙伴，通知兼容模块去重新评估连接状态
+    for _, partner_data in pairs(partners) do
+        if partner_data and CybersynSE and CybersynSE.update_connection then
+            -- [核心修改] 不再传递 "connect" 参数，让兼容模块自己决定
+            -- 根据自己是源还是目标，正确传递参数
+            if my_data.mode == "entry" then
+                CybersynSE.update_connection(my_data, partner_data, nil, player)
+            else -- exit or neutral
+                CybersynSE.update_connection(partner_data, my_data, nil, player)
             end
         end
     end
@@ -707,6 +673,16 @@ function Logic.unpair_portals_specific(player_index, source_id, target_id)
     -- [新增] 检查双方的连接数，如果归零则自动关闭开关
     check_and_reset_logistics(source)
     check_and_reset_logistics(target)
+
+    -- [新增] 在断开连接关系后，强制通知兼容模块清理连接
+    if CybersynSE and CybersynSE.update_connection then
+        -- 强制发送 "false" 指令来清理
+        if source.mode == "entry" then
+            CybersynSE.update_connection(source, target, false, player)
+        else
+            CybersynSE.update_connection(target, source, false, player)
+        end
+    end
 
     -- 3. 反馈消息
     if player then

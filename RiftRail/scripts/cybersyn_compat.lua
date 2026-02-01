@@ -90,7 +90,9 @@ end
 -- 策略：不依赖 Rift Rail 内部的配对数据（因为可能已迁移），而是遍历所有传送门，
 -- 尝试清理所有可能的两两组合。这能确保 100% 清除所有残留的脏数据。
 function CybersynSE.purge_legacy_connections()
-    if not (remote.interfaces["cybersyn"] and storage.rift_rails) then return end
+    if not (remote.interfaces["cybersyn"] and storage.rift_rails) then
+        return
+    end
     log_cs("[Migration] 开始执行暴力清理 (Brute Force Purge)...")
 
     -- 1. 收集所有现存的有效车站实体
@@ -344,78 +346,83 @@ end
 
 -- 更新连接状态
 function CybersynSE.update_connection(portaldata, target_portal, connect, player, is_migration)
-    -- 如果是断开连接(connect=false)，允许 target_portal 为空
-    if not portaldata then
+    if not portaldata or not target_portal then
         return
     end
-    if connect and not target_portal then
+
+    local station1 = get_station(portaldata)
+    local station2 = get_station(target_portal)
+    if not (station1 and station1.valid and station2 and station2.valid) then
         return
-    end -- 连接时必须有对象
+    end
 
-    -- 只有“入口”且“有配对目标”且“开关开启”才有资格入池
-    -- [多对多改造] 检查 target_ids 是否存在且不为空
-    local should_be_in_pool = connect and (portaldata.mode == "entry") and
-        (portaldata.target_ids and next(portaldata.target_ids))
-
-    if should_be_in_pool then
-        local count = join_pool(portaldata, target_portal)
-        --[[ portaldata.cybersyn_enabled = true
-        target_portal.cybersyn_enabled = true -- 仅做标记同步 ]]
-
-        -- 混合通知逻辑
-        if not is_migration then
-            local gps = "[gps=" ..
-                portaldata.shell.position.x ..
-                "," .. portaldata.shell.position.y .. "," .. portaldata.shell.surface.name .. "]"
-            local msg
-            if count > 0 then
-                msg = { "messages.rift-rail-info-cybersyn-link-established", portaldata.name, gps, count }
-            else
-                msg = { "messages.rift-rail-info-cybersyn-waiting-partner", portaldata.name, gps }
-            end
-
-            if player then
-                -- 场景 A: 玩家点击开关 -> 私聊反馈
-                local setting = settings.get_player_settings(player)["rift-rail-show-logistics-notifications"]
-                if setting and setting.value then
-                    player.print(msg)
-                end
-            else
-                -- 场景 B: 脚本/逻辑触发 -> 全服广播
-                for _, p in pairs(game.connected_players) do
-                    local setting = settings.get_player_settings(p)["rift-rail-show-logistics-notifications"]
-                    if setting and setting.value then
-                        p.print(msg)
-                    end
-                end
-            end
+    -- 1. [关键] 检查操作“之前”的真实连接状态
+    -- 我们通过检查“海关池”来确定上一刻是否真的双向连通
+    local was_connected = false
+    if storage.rr_cybersyn_pools then
+        local s1, s2 = portaldata.surface.index, target_portal.surface.index
+        local u1, u2 = portaldata.unit_number, target_portal.unit_number
+        local pool1 = storage.rr_cybersyn_pools[s1] and storage.rr_cybersyn_pools[s1][s2]
+        local pool2 = storage.rr_cybersyn_pools[s2] and storage.rr_cybersyn_pools[s2][s1]
+        if pool1 and pool1[u1] and pool2 and pool2[u2] then
+            was_connected = true
         end
+    end
+
+    -- 2. 计算操作“之后”期望的连接状态
+    local should_connect_now = portaldata.cybersyn_enabled and target_portal.cybersyn_enabled
+
+    -- 3. 执行核心的入池/退池逻辑
+    if should_connect_now then
+        join_pool(portaldata, target_portal)
     else
         leave_pool(portaldata, target_portal)
-        if not connect then
-            --[[ portaldata.cybersyn_enabled = false ]]
-        end
-        -- 混合通知逻辑 (断开)
-        if not is_migration then
-            local gps = "[gps=" ..
-                portaldata.shell.position.x ..
-                "," .. portaldata.shell.position.y .. "," .. portaldata.shell.surface.name .. "]"
-            local msg = { "messages.rift-rail-info-cybersyn-disconnected", portaldata.name, gps }
+    end
 
-            if player then
-                -- 场景 A: 玩家点击开关 -> 私聊反馈
-                local setting = settings.get_player_settings(player)["rift-rail-show-logistics-notifications"]
-                if setting and setting.value then
-                    player.print(msg)
-                end
-            else
-                -- 场景 B: 拆除/虫咬/脚本 -> 全服广播
-                for _, p in pairs(game.connected_players) do
-                    local setting = settings.get_player_settings(p)["rift-rail-show-logistics-notifications"]
-                    if setting and setting.value then
-                        p.print(msg)
-                    end
-                end
+    -- 迁移模式下不发送任何通知
+    if is_migration then
+        return
+    end
+
+    -- 4. 准备消息参数 (保持不变)
+    local name1 = portaldata.name or "Portal"
+    local gps1 = "[gps=" ..
+        portaldata.shell.position.x .. "," .. portaldata.shell.position.y .. "," .. portaldata.shell.surface.name .. "]"
+    local name2 = target_portal.name or "Portal"
+    local gps2 = "[gps=" ..
+        target_portal.shell.position.x ..
+        "," .. target_portal.shell.position.y .. "," .. target_portal.shell.surface.name .. "]"
+
+    local msg = nil
+
+    -- 5. 根据“现在”的状态和“过去”的状态，决定消息内容
+    if should_connect_now then
+        msg = { "messages.rift-rail-info-cybersyn-connected", name1, gps1, name2, gps2 }
+    elseif was_connected then -- 如果现在不连接了，但过去是连着的
+        msg = { "messages.rift-rail-info-cybersyn-disconnected", name1, gps1, name2, gps2 }
+    elseif portaldata.cybersyn_enabled and not target_portal.cybersyn_enabled then
+        msg = { "messages.rift-rail-info-cybersyn-waiting-partner", name1, gps1, name2, gps2 }
+    elseif not portaldata.cybersyn_enabled and target_portal.cybersyn_enabled then
+        msg = { "messages.rift-rail-info-cybersyn-waiting-partner", name2, gps2, name1, gps1 }
+    end
+
+    if not msg then
+        return
+    end
+
+    -- 6. 发送消息
+    if player then
+        -- 场景 A: 玩家点击开关 -> 私聊反馈
+        local setting = settings.get_player_settings(player)["rift-rail-show-logistics-notifications"]
+        if setting and setting.value then
+            player.print(msg)
+        end
+    else
+        -- 场景 B: 拆除/虫咬/脚本 -> 全服广播
+        for _, p in pairs(game.connected_players) do
+            local setting = settings.get_player_settings(p)["rift-rail-show-logistics-notifications"]
+            if setting and setting.value then
+                p.print(msg)
             end
         end
     end
