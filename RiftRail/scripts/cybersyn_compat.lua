@@ -345,7 +345,13 @@ end
 -- ============================================================================
 
 -- 更新连接状态
-function CybersynSE.update_connection(portaldata, target_portal, connect, player, is_migration)
+-- @param portaldata 当前操作的传送门
+-- @param target_portal 对方传送门
+-- @param connect 连接状态（双方都开启时为 true）
+-- @param player 操作的玩家
+-- @param is_migration 是否为迁移模式
+-- @param my_enabled 当前操作建筑的新状态（用于区分开启/关闭操作）
+function CybersynSE.update_connection(portaldata, target_portal, connect, player, is_migration, my_enabled)
     if not portaldata or not target_portal then
         return
     end
@@ -395,15 +401,25 @@ function CybersynSE.update_connection(portaldata, target_portal, connect, player
 
     local msg = nil
 
-    -- 5. 根据“现在”的状态和“过去”的状态，决定消息内容
-    if should_connect_now then
-        msg = { "messages.rift-rail-info-cybersyn-connected", name1, gps1, name2, gps2 }
-    elseif was_connected then -- 如果现在不连接了，但过去是连着的
-        msg = { "messages.rift-rail-info-cybersyn-disconnected", name1, gps1, name2, gps2 }
-    elseif portaldata.cybersyn_enabled and not target_portal.cybersyn_enabled then
-        msg = { "messages.rift-rail-info-cybersyn-waiting-partner", name1, gps1, name2, gps2 }
-    elseif not portaldata.cybersyn_enabled and target_portal.cybersyn_enabled then
-        msg = { "messages.rift-rail-info-cybersyn-waiting-partner", name2, gps2, name1, gps1 }
+    -- 5. 根据操作类型和连接状态，决定消息内容
+    if my_enabled then
+        -- 用户正在开启开关
+        if should_connect_now then
+            -- 双方都开启了 → 连接建立
+            msg = { "messages.rift-rail-info-cybersyn-connected", name1, gps1, name2, gps2 }
+        else
+            -- 只有自己开启，对方关闭 → 等待伙伴
+            msg = { "messages.rift-rail-info-cybersyn-waiting-partner", name1, gps1, name2, gps2 }
+        end
+    else
+        -- 用户正在关闭开关，或者非用户操作（断开连接/销毁等）
+        if was_connected then
+            -- 之前是连接着的 → 已断开
+            msg = { "messages.rift-rail-info-cybersyn-disconnected", name1, gps1, name2, gps2 }
+        elseif my_enabled == false then
+            -- 用户主动关闭且之前是孤立的 → 已关闭
+            msg = { "messages.rift-rail-info-cybersyn-disabled", name1, gps1 }
+        end
     end
 
     if not msg then
@@ -431,7 +447,7 @@ end
 -- 传送门被销毁
 function CybersynSE.on_portal_destroyed(portaldata)
     if portaldata and portaldata.cybersyn_enabled then
-        CybersynSE.update_connection(portaldata, nil, false, nil, false)
+        CybersynSE.update_connection(portaldata, nil, false, nil, false, nil)
     end
 end
 

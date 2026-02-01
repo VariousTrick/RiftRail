@@ -330,7 +330,12 @@ local function leave_pool(portaldata, target_portal)
 end
 
 -- 切换连接状态（使用双向验证池子）
-function LTN.update_connection(select_portal, target_portal, connect, player)
+-- @param select_portal 当前操作的传送门
+-- @param target_portal 对方传送门
+-- @param connect 连接状态（双方都开启时为 true）
+-- @param player 操作的玩家
+-- @param my_enabled 当前操作建筑的新状态（用于区分开启/关闭操作）
+function LTN.update_connection(select_portal, target_portal, connect, player, my_enabled)
     if not is_ltn_active() then
         if player then
             player.print({ "messages.rift-rail-error-ltn-not-found" })
@@ -394,19 +399,25 @@ function LTN.update_connection(select_portal, target_portal, connect, player)
 
     local msg = nil
 
-    -- 5. 根据"现在"的状态和"过去"的状态，决定消息内容
-    if connect then
-        -- 双方都开启了
-        msg = { "messages.rift-rail-info-ltn-connected", name1, gps1, name2, gps2 }
-    elseif was_connected then
-        -- 之前连接着，现在至少有一方关闭了
-        msg = { "messages.rift-rail-info-ltn-disconnected", name1, gps1, name2, gps2 }
-    elseif select_portal.ltn_enabled and not target_portal.ltn_enabled then
-        -- 只有 A 开启，等待 B
-        msg = { "messages.rift-rail-info-ltn-waiting-partner", name1, gps1, name2, gps2 }
-    elseif not select_portal.ltn_enabled and target_portal.ltn_enabled then
-        -- 只有 B 开启，等待 A
-        msg = { "messages.rift-rail-info-ltn-waiting-partner", name2, gps2, name1, gps1 }
+    -- 5. 根据操作类型和连接状态，决定消息内容
+    if my_enabled then
+        -- 用户正在开启开关
+        if connect then
+            -- 双方都开启了 → 连接建立
+            msg = { "messages.rift-rail-info-ltn-connected", name1, gps1, name2, gps2 }
+        else
+            -- 只有自己开启，对方关闭 → 等待伙伴
+            msg = { "messages.rift-rail-info-ltn-waiting-partner", name1, gps1, name2, gps2 }
+        end
+    else
+        -- 用户正在关闭开关
+        if was_connected then
+            -- 之前是连接着的 → 已断开
+            msg = { "messages.rift-rail-info-ltn-disconnected", name1, gps1, name2, gps2 }
+        else
+            -- 之前就是孤立的 → 已关闭
+            msg = { "messages.rift-rail-info-ltn-disabled", name1, gps1 }
+        end
     end
 
     if not msg then
