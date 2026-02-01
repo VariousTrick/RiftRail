@@ -376,7 +376,7 @@ script.on_event(defines.events.on_entity_cloned, function(event)
                 else
                     if RiftRail.DEBUG_MODE_ENABLED then
                         log_debug("RiftRail Clone Error: 在位置 " ..
-                        serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
+                            serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
                     end
                 end
             end
@@ -795,7 +795,16 @@ script.on_configuration_changed(function(event)
         end
     end
 
-    -- [迁移任务 5] 为新的 LTN 路由表系统填充数据
+    -- [迁移任务 5] 清理旧版 LTN 远程连接 (只执行一次)
+    if not storage.rift_rail_ltn_remote_purged then
+        log_debug("[Migration] 正在清理旧版 LTN 连接...")
+        if LTN.purge_legacy_connections then
+            LTN.purge_legacy_connections()
+        end
+        storage.rift_rail_ltn_remote_purged = true
+    end
+
+    -- [迁移任务 6] 为新的 LTN 路由表系统填充数据
     -- 检查一个标志位，确保这个迁移只运行一次
     if not storage.rift_rail_ltn_table_migrated then
         log_debug("[Migration] 正在为 LTN 路由表系统填充数据...")
@@ -1033,7 +1042,7 @@ remote.add_interface("RiftRail", {
                     return "Error: 'get_by_id' requires a custom ID parameter."
                 end
                 return State.get_portaldata_by_id(search_param) or
-                "Error: Struct with custom ID " .. tostring(search_param) .. " not found."
+                    "Error: Struct with custom ID " .. tostring(search_param) .. " not found."
             elseif portaldata_key == "get_by_unit" then
                 if not search_param then
                     return "Error: 'get_by_unit' requires a unit_number parameter."

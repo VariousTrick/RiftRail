@@ -494,7 +494,7 @@ function Logic.set_cybersyn_enabled(player_index, portal_id, enabled)
 end
 
 -- ============================================================================
--- 7. LTN 开关控制 (最终版：智能同步与多对一保护)
+-- 7. LTN 开关控制 (独立状态模式，类似 Cybersyn)
 -- ==========================================================================
 function Logic.set_ltn_enabled(player_index, portal_id, enabled)
     local player = game.get_player(player_index)
@@ -503,59 +503,33 @@ function Logic.set_ltn_enabled(player_index, portal_id, enabled)
         return
     end
 
-    -- 更新自身状态
+    -- 1. 只修改自己的开关状态
     my_data.ltn_enabled = enabled
 
-    if my_data.mode == "entry" then
-        -- [多对多改造] 遍历所有目标进行同步
-        if my_data.target_ids then
-            for target_id, _ in pairs(my_data.target_ids) do
-                local partner = State.get_portaldata_by_id(target_id)
-                if partner then
-                    -- 1. 智能状态同步
-                    if enabled then
-                        -- A. 开启时：确保总闸(出口)也是开的
-                        if not partner.ltn_enabled then
-                            partner.ltn_enabled = true
-                        end
-                    else
-                        -- B. 关闭时：检查是否需要关闭总闸
-                        local any_other_active = false
-                        if partner.source_ids then
-                            for src_id, _ in pairs(partner.source_ids) do
-                                if src_id ~= my_data.id then
-                                    local src = State.get_portaldata_by_id(src_id)
-                                    if src and src.ltn_enabled then
-                                        any_other_active = true
-                                        break
-                                    end
-                                end
-                            end
-                        end
-                        if not any_other_active then
-                            partner.ltn_enabled = false
-                        end
-                    end
-
-                    -- 2. 执行连接
-                    if LTN then
-                        local should_connect = my_data.ltn_enabled and partner.ltn_enabled
-                        LTN.update_connection(my_data, partner, should_connect, player)
-                    end
-                end
-            end
+    -- 2. 收集所有与自己有连接关系的伙伴
+    local partners = {}
+    if my_data.target_ids then
+        for target_id, _ in pairs(my_data.target_ids) do
+            table.insert(partners, State.get_portaldata_by_id(target_id))
         end
-    elseif my_data.mode == "exit" then
-        -- [总闸逻辑] 强制同步
-        if my_data.source_ids then
-            for src_id, _ in pairs(my_data.source_ids) do
-                local source = State.get_portaldata_by_id(src_id)
-                if source then
-                    source.ltn_enabled = enabled
-                    if LTN then
-                        LTN.update_connection(source, my_data, enabled, player)
-                    end
-                end
+    end
+    if my_data.source_ids then
+        for source_id, _ in pairs(my_data.source_ids) do
+            table.insert(partners, State.get_portaldata_by_id(source_id))
+        end
+    end
+
+    -- 3. 遍历所有伙伴，通知兼容模块去重新评估连接状态
+    for _, partner_data in pairs(partners) do
+        if partner_data and LTN and LTN.update_connection then
+            -- 根据自己是源还是目标，正确传递参数
+            -- update_connection 内部会根据双方的 ltn_enabled 状态决定是否注册
+            if my_data.mode == "entry" then
+                local should_connect = my_data.ltn_enabled and partner_data.ltn_enabled
+                LTN.update_connection(my_data, partner_data, should_connect, player)
+            else -- exit
+                local should_connect = partner_data.ltn_enabled and my_data.ltn_enabled
+                LTN.update_connection(partner_data, my_data, should_connect, player)
             end
         end
     end
