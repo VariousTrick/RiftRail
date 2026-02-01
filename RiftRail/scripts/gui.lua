@@ -197,40 +197,52 @@ function GUI.build_or_update(player, entity)
     })
     mode_switch.style.bottom_margin = 12
 
+    -- [新增] 统一计算连接数，确保 GUI 显示与按钮状态绝对一致
+    local connection_count = 0
+    local current_connections = nil
+
+    if my_data.mode == "entry" then
+        current_connections = my_data.target_ids
+    elseif my_data.mode == "exit" then
+        current_connections = my_data.source_ids
+    end
+
+    if current_connections then
+        for _ in pairs(current_connections) do
+            connection_count = connection_count + 1
+        end
+    end
+
+    -- 定义一个通用的启用状态变量
+    local any_connection_exists = (connection_count > 0)
+
     -- 6. 连接状态
     inner_flow.add({ type = "line", direction = "horizontal" })
     local status_flow = inner_flow.add({ type = "flow", direction = "vertical" })
     status_flow.add({ type = "label", caption = { "gui.rift-rail-status-label" } })
 
     -- [多对多改造] 重构连接状态显示
+    -- [修改] 使用预计算的 count
     if my_data.mode == "entry" then
-        local count = 0
-        if my_data.target_ids then
-            for _ in pairs(my_data.target_ids) do
-                count = count + 1
-            end
-        end
-        if count > 0 then
+        if connection_count > 0 then
             status_flow.add({
                 type = "label",
-                caption = { "gui.rift-rail-status-connected-targets", count }, -- 新增本地化 key
+                caption = { "gui.rift-rail-status-connected-targets", connection_count },
                 style = "bold_label",
             })
         else
             status_flow.add({ type = "label", caption = { "gui.rift-rail-status-unpaired" }, style = "bold_label" })
         end
     elseif my_data.mode == "exit" then
-        local count = 0
-        if my_data.source_ids then
-            for _ in pairs(my_data.source_ids) do
-                count = count + 1
-            end
+        if connection_count > 0 then
+            status_flow.add({
+                type = "label",
+                caption = { "gui.rift-rail-status-connected-sources", connection_count },
+                style = "bold_label",
+            })
+        else
+            status_flow.add({ type = "label", caption = { "gui.rift-rail-status-unpaired" }, style = "bold_label" })
         end
-        status_flow.add({
-            type = "label",
-            caption = { "gui.rift-rail-status-connected-sources", count },
-            style = "bold_label",
-        })
     else -- neutral
         status_flow.add({ type = "label", caption = { "gui.rift-rail-status-unpaired" }, style = "bold_label" })
     end
@@ -403,9 +415,9 @@ function GUI.build_or_update(player, entity)
         cs_flow.style.vertical_align = "center"
         cs_flow.add({ type = "label", caption = { "gui.rift-rail-cybersyn-label" } })
 
-        -- [多对多改造] 判定条件更新：检查 target_ids
-        local cs_enabled = (my_data.mode == "entry" and my_data.target_ids and next(my_data.target_ids)) or
-        (my_data.mode == "exit" and my_data.source_ids and next(my_data.source_ids))
+        -- Cybersyn 开关启用条件
+        -- [修改] 直接使用计数结果，强制一致
+        local cs_enabled = any_connection_exists
 
         cs_flow.add({
             type = "switch",
@@ -425,8 +437,8 @@ function GUI.build_or_update(player, entity)
         ltn_flow.style.vertical_align = "center"
         ltn_flow.add({ type = "label", caption = { "gui.rift-rail-ltn-label" } })
 
-        local ltn_btn_enabled = (my_data.mode == "entry" and my_data.target_ids and next(my_data.target_ids)) or
-        (my_data.mode == "exit" and my_data.source_ids and next(my_data.source_ids))
+        -- LTN 开关启用条件
+        local ltn_btn_enabled = any_connection_exists
 
         ltn_flow.add({
             type = "switch",
@@ -456,8 +468,8 @@ function GUI.build_or_update(player, entity)
         })
         nid_field.style.width = 80
 
-        local ltn_apply_enabled = (my_data.mode == "entry" and my_data.target_ids and next(my_data.target_ids)) or
-        (my_data.mode == "exit" and my_data.source_ids and next(my_data.source_ids))
+        -- LTN 应用按钮启用条件
+        local ltn_apply_enabled = any_connection_exists
 
         ltn_net_flow.add({
             type = "button",
