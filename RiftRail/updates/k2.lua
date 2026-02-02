@@ -1,4 +1,4 @@
--- Check if space age integration is selected
+-- Check if krastorio2 integration is selected
 
 local selected_integration = settings.startup["rift-rail-mod-integration"].value
 if selected_integration ~= "krastorio2" then
@@ -19,28 +19,28 @@ if asm then
     asm.crafting_categories = asm.crafting_categories or {}
     table.insert(asm.crafting_categories, "rift-rail-k2-only")
 end
+
 -- set new recipe for rift-rail-placer in Krastorio2
 local recipe = data.raw.recipe["rift-rail-placer"]
 if recipe then
     recipe.category = "rift-rail-k2-only"
-end
-
--- Modify Rift Rail recipe if Krastorio2 mod is active
-local tech = data.raw.technology["rift-rail-tech"]
-if recipe then
-    recipe.ingredients = {
-        { type = "item", name = "rail",                         amount = 100 },
-        { type = "item", name = "kr-rare-metals",               amount = 50 },
-        { type = "item", name = "kr-ai-core",                   amount = 50 },
-        { type = "item", name = "kr-energy-control-unit",       amount = 50 },
-        { type = "item", name = "kr-charged-matter-stabilizer", amount = 50 },
-        { type = "item", name = "kr-imersium-beam",             amount = 50 },
-        { type = "item", name = "kr-gps-satellite",             amount = 2 },
-        { type = "item", name = "kr-matter-cube",               amount = 8 }
-    }
+    -- Modify Rift Rail recipe if Krastorio2 mod is active
+    if recipe then
+        recipe.ingredients = {
+            { type = "item", name = "rail",                         amount = 100 },
+            { type = "item", name = "kr-rare-metals",               amount = 50 },
+            { type = "item", name = "kr-ai-core",                   amount = 50 },
+            { type = "item", name = "kr-energy-control-unit",       amount = 50 },
+            { type = "item", name = "kr-charged-matter-stabilizer", amount = 50 },
+            { type = "item", name = "kr-imersium-beam",             amount = 50 },
+            { type = "item", name = "kr-gps-satellite",             amount = 2 },
+            { type = "item", name = "kr-matter-cube",               amount = 8 }
+        }
+    end
 end
 
 -- Resarch Unit Change for Rift Rail if Krastorio2 mod is active
+local tech = data.raw.technology["rift-rail-tech"]
 if tech then
     tech.prerequisites = { "kr-singularity-tech-card" }
     tech.unit = {
