@@ -2,6 +2,12 @@
 -- Rift Rail - 主入口
 -- 功能：事件分发、日志管理、模块加载
 -- 更新：集成传送逻辑、补全玩家传送、事件分流
+-- add print msg tp the game when the mod is loaded
+script.on_event(defines.events.on_player_joined_game, function(event)
+    local player = game.get_player(event.player_index)
+    player.print(
+        "[color=green]Rift Rail[/color] mod loaded! [color=red]Please select your desired rift rail mode in the mod settings![/color]")
+end)
 
 -- ============================================================================
 -- 1. 统一的日志与状态中心
