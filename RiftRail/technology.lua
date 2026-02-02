@@ -8,11 +8,12 @@ local riftrail_tech = {
     icon_size = 64,
     prerequisites = { "automated-rail-transportation" },
     unit = {
-        count = 200,
+        count = 1500,
         ingredients = {
             { "automation-science-pack", 1 },
-            { "logistic-science-pack", 1 },
-            { "chemical-science-pack", 1 },
+            { "logistic-science-pack",   1 },
+            { "chemical-science-pack",   1 },
+            { "space-science-pack",      1 }
         },
         time = 30
     },
