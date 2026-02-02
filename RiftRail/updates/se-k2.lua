@@ -10,18 +10,14 @@ end
 local recipe = data.raw.recipe["rift-rail-placer"]
 if recipe then
     recipe.ingredients = {
-        { type = "item", name = "se-space-rail",            amount = 100 },
-        { type = "item", name = "kr-matter-cube",           amount = 50 },
-        { type = "item", name = "kr-gps-satellite",         amount = 2 },
-        { type = "item", name = "kr-energy-control-unit",   amount = 50 },
-        { type = "item", name = "se-naquium-plate",         amount = 50 },
-        { type = "item", name = "kr-ai-core",               amount = 50 },
-        { type = "item", name = "se-superconductive-cable", amount = 100 },
-        { type = "item", name = "se-naquium-tessaract",     amount = 8 },
-        { type = "item", name = "se-nanomaterial",          amount = 100 }
+        { type = "item", name = "se-space-rail",               amount = 100 },
+        { type = "item", name = "kr-matter-cube",              amount = 50 },
+        { type = "item", name = "kr-gps-satellite",            amount = 2 },
+        { type = "item", name = "kr-energy-control-unit",      amount = 50 },
+        { type = "item", name = "kr-ai-core",                  amount = 50 },
+        { type = "item", name = "se-naquium-tessaract",        amount = 8 },
+        { type = "item", name = "energy-shield-mk5-equipment", amount = 4 }
     }
-    -- recipe lock to Space Exploration Manufacturing ficility
-    recipe.category = "space-manufacturing"
 end
 
 
@@ -34,7 +30,7 @@ if tech then
     }
     tech.unit = {
         -- Resarch Unit Change for Rift Rail if Space Exploration mod is active
-        count = 4000, -- change amount as needed
+        count = 3500, -- change amount as needed
         ingredients = {
             { "se-rocket-science-pack",       1 },
             { "se-astronomic-science-pack-4", 1 },
