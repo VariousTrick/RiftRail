@@ -116,7 +116,7 @@ data:extend({
         energy_required = 30,
         ingredients = {
             { type = "item", name = "rail",                        amount = 100 },
-            { type = "item", name = "satellite",                   amount = 2 },
+            { type = "item", name = "radar",                       amount = 2 },
             { type = "item", name = "processing-unit",             amount = 50 },
             { type = "item", name = "steel-plate",                 amount = 150 },
             { type = "item", name = "energy-shield-mk2-equipment", amount = 5 },
