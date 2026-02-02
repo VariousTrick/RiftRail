@@ -30,7 +30,6 @@ if recipe then
     }
 
     -- recipe requires assembler 3 to craft and space
-
     recipe.category = "assembler3-crafting"
     recipe.surface_conditions = {
         {
@@ -47,7 +46,7 @@ local tech = data.raw.technology["rift-rail-tech"]
 if tech then
     tech.prerequisites = { "promethium-science-pack" }
     tech.unit = {
-        count = 4000, -- set amount of science packs required
+        count = 2500, -- set amount of science packs required
         ingredients = {
             { "promethium-science-pack",      1 },
             { "cryogenic-science-pack",       1 },
@@ -73,3 +72,4 @@ for _, name in pairs(recycling_recipes) do
         data.raw.recipe[name] = nil -- optionally remove all
     end
 end
+
