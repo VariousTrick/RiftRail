@@ -1,6 +1,6 @@
 ---------------------------------------------------------------------------------------------------
 Version: 0.8.1
-Date: 02. 02. 2026
+Date: 2026-02-02
   Features:
     - Added comprehensive balancing modes for Vanilla, Space Exploration, Krastorio 2, and the upcoming Space Age expansion. (Huge thanks to Ldmf for this massive contribution!)
     - Added a startup setting (dropdown menu) to switch between different balance modes (Default: Normal).
