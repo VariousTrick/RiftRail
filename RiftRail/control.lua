@@ -6,7 +6,7 @@
 script.on_event(defines.events.on_player_joined_game, function(event)
     local player = game.get_player(event.player_index)
     player.print(
-        "[color=green]Rift Rail[/color] mod loaded! [color=red]Please select your desired rift rail mode in the mod settings![/color]")
+        { "messages.rift-rail-welcome" })
 end)
 
 -- ============================================================================
@@ -375,7 +375,7 @@ script.on_event(defines.events.on_entity_cloned, function(event)
                 else
                     if RiftRail.DEBUG_MODE_ENABLED then
                         log_debug("RiftRail Clone Error: 在位置 " ..
-                        serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
+                            serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
                     end
                 end
             end
@@ -932,7 +932,7 @@ remote.add_interface("RiftRail", {
                     return "Error: 'get_by_id' requires a custom ID parameter."
                 end
                 return State.get_portaldata_by_id(search_param) or
-                "Error: Struct with custom ID " .. tostring(search_param) .. " not found."
+                    "Error: Struct with custom ID " .. tostring(search_param) .. " not found."
             elseif portaldata_key == "get_by_unit" then
                 if not search_param then
                     return "Error: 'get_by_unit' requires a unit_number parameter."
