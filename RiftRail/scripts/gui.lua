@@ -107,8 +107,25 @@ function GUI.build_or_update(player, entity)
     end
     local player_settings = storage.rift_rail_player_settings[player.index]
 
+    -- [新增] 统计当前连接数，用于决定初始视图模式
+    local connection_count = 0
+    if my_data.mode == "entry" then
+        if my_data.target_ids then
+            for _ in pairs(my_data.target_ids) do
+                connection_count = connection_count + 1
+            end
+        end
+    elseif my_data.mode == "exit" then
+        if my_data.source_ids then
+            for _ in pairs(my_data.source_ids) do
+                connection_count = connection_count + 1
+            end
+        end
+    end
+
     -- [多对多改造] 确定当前视图模式 (管理/添加)
-    local view_mode = "management" -- 默认为管理模式
+    -- 未配对时强制进入 addition 模式，已配对时默认 management 模式
+    local view_mode = (connection_count == 0) and "addition" or "management"
     if player.gui.screen.rift_rail_main_frame and player.gui.screen.rift_rail_main_frame.valid and player.gui.screen.rift_rail_main_frame.tags.view_mode then
         view_mode = player.gui.screen.rift_rail_main_frame.tags.view_mode
     end
@@ -193,25 +210,9 @@ function GUI.build_or_update(player, entity)
         left_label_caption = { "gui.rift-rail-mode-entry" },
         right_label_caption = { "gui.rift-rail-mode-exit" },
         tooltip = (switch_state == "left" and { "gui.rift-rail-mode-tooltip-left" }) or
-        (switch_state == "right" and { "gui.rift-rail-mode-tooltip-right" }) or { "gui.rift-rail-mode-tooltip-none" },
+            (switch_state == "right" and { "gui.rift-rail-mode-tooltip-right" }) or { "gui.rift-rail-mode-tooltip-none" },
     })
     mode_switch.style.bottom_margin = 12
-
-    -- [新增] 统一计算连接数，确保 GUI 显示与按钮状态绝对一致
-    local connection_count = 0
-    local current_connections = nil
-
-    if my_data.mode == "entry" then
-        current_connections = my_data.target_ids
-    elseif my_data.mode == "exit" then
-        current_connections = my_data.source_ids
-    end
-
-    if current_connections then
-        for _ in pairs(current_connections) do
-            connection_count = connection_count + 1
-        end
-    end
 
     -- 定义一个通用的启用状态变量
     local any_connection_exists = (connection_count > 0)
@@ -257,13 +258,14 @@ function GUI.build_or_update(player, entity)
     local selector_flow = inner_flow.add({ type = "flow", direction = "horizontal" })
     selector_flow.style.vertical_align = "center"
 
-    local selector_caption_key = "gui.rift-rail-target-selector" -- 默认
-    if my_data.mode == "exit" then
-        selector_caption_key = "gui.rift-rail-source-selector"
-    end
-    -- 在添加模式下，强制显示特定标题
-    if view_mode == "addition" then
-        selector_caption_key = "gui.rift-rail-add-new-connection" -- 新增本地化 key
+    local selector_caption_key = nil
+    if view_mode == "management" then
+        -- 管理模式：显示"已连接的..."
+        selector_caption_key = (my_data.mode == "entry") and "gui.rift-rail-connected-targets-label" or
+        "gui.rift-rail-connected-sources-label"
+    else
+        -- 添加模式：显示"添加新连接"
+        selector_caption_key = "gui.rift-rail-add-new-connection"
     end
 
     selector_flow.add({ type = "label", caption = { selector_caption_key } })
