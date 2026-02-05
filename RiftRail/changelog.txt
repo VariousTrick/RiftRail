@@ -2,7 +2,7 @@
 Version: 0.8.1
 Date: 2026-02-02
   Features:
-    - Added comprehensive balancing modes for Vanilla, Space Exploration, Krastorio 2, and the upcoming Space Age expansion. (Huge thanks to Ldmf for this massive contribution!)
+    - Added comprehensive balancing modes for Vanilla, Space Exploration, Krastorio 2, and Space Age expansion. (Huge thanks to Ldmf for this massive contribution!)
     - Added a startup setting (dropdown menu) to switch between different balance modes (Default: Normal).
     - Added an in-game message on first load to guide players to the new balance settings.
     - Added a new "Normal" (default) recipe and technology progression, designed to fit into the mid-game.
@@ -10,7 +10,7 @@ Date: 2026-02-02
   Changes:
     - The "Recycling" recipe for the Rift Rail placer, which appeared in Factorio 2.0, has been disabled to prevent confusion. (Contribution by Ldmf)
   功能:
-    - 为原版、太空探索 (SE)、Krastorio 2 以及即将到来的太空时代 (SA) 添加了全面的平衡模式。(非常感谢 Ldmf 的巨大贡献！)
+    - 为原版、太空探索 (SE)、Krastorio 2 以及太空时代 (SA) 添加了全面的平衡模式。(非常感谢 Ldmf 的巨大贡献！)
     - 添加了一个启动项设置（下拉菜单），用于在不同的平衡模式之间切换（默认为普通模式）。
     - 添加了首次加载游戏时的游戏内消息，以引导玩家了解新的平衡性设置。
     - 添加了全新的“普通模式”（默认）配方和科技进程，旨在融入游戏中期。
