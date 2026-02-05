@@ -817,7 +817,7 @@ script.on_configuration_changed(function(event)
         if script.active_mods["space-exploration"] then
             local migration_performed = false
             for _, portal in pairs(storage.rift_rails) do
-                if portal.shell and portal.shell.valid and portal.cybersyn_enabled and portal.mode == "entry" and portal.paired_to_id then
+                if portal.shell and portal.shell.valid and portal.cybersyn_enabled and portal.paired_to_id then
                     local partner = State.get_portaldata_by_id(portal.paired_to_id)
                     if partner and partner.shell and partner.shell.valid then
                         -- 静默重建
