@@ -9,8 +9,7 @@
     "? cybersyn",
     "? space-exploration",
     "? LogisticTrainNetwork >= 2.6.0",
-    "? Krastorio 2",
-    "? Space Exploration",
+    "? Krastorio2",
     "? space-age"
   ],
   "description": "非对称跨地表单向铁路传送门系统。当前为开发测试版本。"
