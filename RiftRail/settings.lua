@@ -74,7 +74,9 @@ data:extend({
         default_value = "none", -- only one value can be active
         allowed_values = { "none", "base", "space-age", "krastorio2", "space-exploration", "se-k2" },
         order = "a[riftrail]-a[mod-integration]",
-        description = "Select which mod integration to enable (only one can be active)"
+        localised_name = { "mod-setting-name.rift-rail-mod-integration" },
+        localised_description = { "mod-setting-description.rift-rail-mod-integration" },
+        --[[ description = "Select which mod integration to enable (only one can be active)" ]]
     },
     -- LTN 防堵塞清理机制开关
     {
