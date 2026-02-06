@@ -486,9 +486,9 @@ end
 -- 使用 return 代替 goto continue，逻辑更清晰
 -- 使用路由表进行精准、高效的站点插入
 -- 辅助函数：查表并在表中寻找离 reference_pos 最近的传送门名称
--- 辅助函数：查表并在表中寻找离 reference_pos 最近的传送门
+-- 辅助函数：两阶段查找最佳路径（先找最近入口，再找该入口下最近出口）
 -- 返回：最佳车站名, 最佳出口ID (Tick密码)
-local function find_best_route_station(from_surface_idx, to_surface_idx, reference_pos)
+local function find_best_route_station(from_surface_idx, to_surface_idx, start_pos, dest_pos)
     local routing_table = storage.rift_rail_ltn_routing_table
     local available_entries = routing_table[from_surface_idx] and routing_table[from_surface_idx][to_surface_idx]
 
@@ -496,27 +496,49 @@ local function find_best_route_station(from_surface_idx, to_surface_idx, referen
         return nil, nil
     end
 
-    -- 2. 双层遍历寻找最佳路径
-    -- 层级: 入口 -> 出口列表
-    local best_station_name = nil
-    local best_exit_id = nil
-    local min_dist_sq = math.huge
+    -- 阶段1：基于起点位置，找最近的入口
+    local best_entry_id = nil
+    local best_entry_data = nil
+    local min_entry_dist_sq = math.huge
 
-    for _, exit_list in pairs(available_entries) do
-        -- 兼容性检查：确保是新结构 (List)
+    for entry_id, exit_list in pairs(available_entries) do
+        -- 兼容性检查：确保是新结构
         if not exit_list.station_name then
-            for _, route_data in pairs(exit_list) do
-                -- 使用缓存的 [出口位置] 进行距离计算
-                -- 逻辑：我们希望 train 到了出口后，离 destination (reference_pos) 最近
-                local dist_sq = (reference_pos.x - route_data.exit_position.x) ^ 2 +
-                    (reference_pos.y - route_data.exit_position.y) ^ 2
+            -- 获取任意一个出口的数据来读取入口信息
+            local sample_route = next(exit_list)
+            if sample_route then
+                local route_data = exit_list[sample_route]
+                -- 计算起点到入口的距离（同一地表，坐标系一致）
+                local dist_sq = (start_pos.x - route_data.position.x) ^ 2 +
+                    (start_pos.y - route_data.position.y) ^ 2
 
-                if dist_sq < min_dist_sq then
-                    min_dist_sq = dist_sq
-                    best_station_name = route_data.station_name
-                    best_exit_id = route_data.exit_unit_number
+                if dist_sq < min_entry_dist_sq then
+                    min_entry_dist_sq = dist_sq
+                    best_entry_id = entry_id
+                    best_entry_data = exit_list
                 end
             end
+        end
+    end
+
+    if not best_entry_data then
+        return nil, nil
+    end
+
+    -- 阶段2：在最佳入口的所有出口中，找离终点最近的出口
+    local best_station_name = nil
+    local best_exit_id = nil
+    local min_exit_dist_sq = math.huge
+
+    for _, route_data in pairs(best_entry_data) do
+        -- 计算终点到出口的距离（同一地表，坐标系一致）
+        local dist_sq = (dest_pos.x - route_data.exit_position.x) ^ 2 +
+            (dest_pos.y - route_data.exit_position.y) ^ 2
+
+        if dist_sq < min_exit_dist_sq then
+            min_exit_dist_sq = dist_sq
+            best_station_name = route_data.station_name
+            best_exit_id = route_data.exit_unit_number
         end
     end
 
@@ -613,10 +635,10 @@ local function process_single_delivery(train_id, deliveries, stops)
 
     -- [阶段 C] Requester -> Loco Surface (回程/去往下一站)
     if r_index and to_entity.surface.index ~= loco.surface.index then
-        -- 接收两个返回值
-        local station, exit_id = find_best_route_station(to_entity.surface.index, loco.surface.index, to_entity.position)
+        -- 起点：Requester位置，终点：列车原位置
+        local station, exit_id = find_best_route_station(to_entity.surface.index, loco.surface.index, to_entity.position,
+            loco.position)
         if station then
-            -- 传入 exit_id
             insert_portal_sequence(train, station, exit_id, r_index + 1)
             if RiftRail.DEBUG_MODE_ENABLED then
                 ltn_log("插入回程路由: " .. to_entity.surface.name .. " -> " .. loco.surface.name)
@@ -626,8 +648,9 @@ local function process_single_delivery(train_id, deliveries, stops)
 
     -- [阶段 B] Provider -> Requester (送货)
     if r_index and from_entity.surface.index ~= to_entity.surface.index then
+        -- 起点：Provider位置，终点：Requester位置
         local station, exit_id = find_best_route_station(from_entity.surface.index, to_entity.surface.index,
-            from_entity.position)
+            from_entity.position, to_entity.position)
         if station then
             insert_portal_sequence(train, station, exit_id, r_index)
             if RiftRail.DEBUG_MODE_ENABLED then
@@ -638,7 +661,9 @@ local function process_single_delivery(train_id, deliveries, stops)
 
     -- [阶段 A] Loco -> Provider (取货)
     if p_index and loco.surface.index ~= from_entity.surface.index then
-        local station, exit_id = find_best_route_station(loco.surface.index, from_entity.surface.index, loco.position)
+        -- 起点：列车位置，终点：Provider位置
+        local station, exit_id = find_best_route_station(loco.surface.index, from_entity.surface.index, loco.position,
+            from_entity.position)
         if station then
             insert_portal_sequence(train, station, exit_id, p_index)
             if RiftRail.DEBUG_MODE_ENABLED then
