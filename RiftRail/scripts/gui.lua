@@ -262,7 +262,7 @@ function GUI.build_or_update(player, entity)
     if view_mode == "management" then
         -- 管理模式：显示"已连接的..."
         selector_caption_key = (my_data.mode == "entry") and "gui.rift-rail-connected-targets-label" or
-        "gui.rift-rail-connected-sources-label"
+            "gui.rift-rail-connected-sources-label"
     else
         -- 添加模式：显示"添加新连接"
         selector_caption_key = "gui.rift-rail-add-new-connection"
@@ -486,14 +486,13 @@ function GUI.build_or_update(player, entity)
     inner_flow.add({ type = "line", direction = "horizontal" })
 
     -- [多对多改造] 统一预览逻辑：直接使用下拉框选中的目标
-    -- 无论 Entry/Exit，也无论 Management/Addition 模式，只要下拉框里有选中的 ID，就预览它
     -- dropdown_ids 和 selected_idx 是我们在上面构建列表时生成的局部变量
     local preview_target_id = nil
     if dropdown_ids and selected_idx and selected_idx > 0 then
         preview_target_id = dropdown_ids[selected_idx]
     end
 
-    if preview_target_id then
+    if view_mode == "management" and preview_target_id then
         inner_flow.add({
             type = "checkbox",
             name = "rift_rail_preview_check",
@@ -512,7 +511,7 @@ function GUI.build_or_update(player, entity)
     })
 
     -- 远程观察按钮
-    if preview_target_id then
+    if view_mode == "management" and preview_target_id then
         tool_flow.add({
             type = "button",
             name = "rift_rail_remote_view_button",
@@ -521,7 +520,7 @@ function GUI.build_or_update(player, entity)
     end
 
     -- 10. 摄像头预览窗口
-    if preview_target_id and player_settings.show_preview then
+    if view_mode == "management" and preview_target_id and player_settings.show_preview then
         local partner = State.get_portaldata_by_id(preview_target_id)
         if partner and partner.shell and partner.shell.valid then
             inner_flow.add({
