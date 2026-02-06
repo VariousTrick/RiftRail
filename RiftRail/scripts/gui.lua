@@ -273,19 +273,17 @@ function GUI.build_or_update(player, entity)
     -- 仅在管理模式下显示“添加”或“取消”按钮
     if view_mode == "management" then
         selector_flow.add({
-            type = "sprite-button",
+            type = "button",
             name = "rift_rail_enter_add_mode_button",
-            sprite = "utility/add",
-            tooltip = { "gui.rift-rail-tooltip-add-connection" }, -- 新增本地化 key
-            style = "tool_button",
+            caption = { "gui.rift-rail-btn-enter-add-mode" },
+            tooltip = { "gui.rift-rail-tooltip-add-connection" },
         })
     else -- addition mode
         selector_flow.add({
-            type = "sprite-button",
+            type = "button",
             name = "rift_rail_cancel_add_mode_button",
-            sprite = "utility/close",
-            tooltip = { "gui.rift-rail-tooltip-cancel-add" }, -- 新增本地化 key
-            style = "tool_button_red",
+            caption = { "gui.rift-rail-btn-cancel-add-mode" },
+            tooltip = { "gui.rift-rail-tooltip-cancel-add" },
         })
     end
 
