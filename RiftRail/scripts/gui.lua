@@ -124,8 +124,8 @@ function GUI.build_or_update(player, entity)
     end
 
     -- [多对多改造] 确定当前视图模式 (管理/添加)
-    -- 未配对时强制进入 addition 模式，已配对时默认 management 模式
-    local view_mode = (connection_count == 0) and "addition" or "management"
+    -- 总是默认进入 management 模式，用户可以点击"添加"按钮进入 addition 模式
+    local view_mode = "management"
     if player.gui.screen.rift_rail_main_frame and player.gui.screen.rift_rail_main_frame.valid and player.gui.screen.rift_rail_main_frame.tags.view_mode then
         view_mode = player.gui.screen.rift_rail_main_frame.tags.view_mode
     end
