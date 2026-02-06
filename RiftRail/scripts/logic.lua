@@ -330,9 +330,8 @@ function Logic.pair_portals(player_index, source_id, target_id)
     end
 
     -- [多对多改造] 智能方向修正
-    -- 如果发起者(source)是出口，说明玩家想“反向连接”（让对方连我）
-    -- 我们交换源和目标，统一转为 "Entry -> Exit" 的逻辑进行处理
-    if source.mode == "exit" then
+    -- 如果发起者(source)是出口，或者目标(target)是入口，则交换以统一为 "Entry -> Exit"
+    if source.mode == "exit" or (target.mode == "entry" and source.mode ~= "entry") then
         -- 交换数据对象
         local temp_data = source
         source = target
