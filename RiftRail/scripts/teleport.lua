@@ -485,6 +485,14 @@ local function select_target_exit(entry_portaldata)
         return nil
     end
 
+    -- 如果已缓存出口，优先使用
+    if entry_portaldata.selected_exit_id then
+        local cached_portal = State.get_portaldata_by_id(entry_portaldata.selected_exit_id)
+        if cached_portal and cached_portal.shell and cached_portal.shell.valid then
+            return cached_portal
+        end
+    end
+
     -- [防御性检查 2] 确保 target_ids 是一个有效的表
     local targets = entry_portaldata.target_ids
     if type(targets) ~= "table" then
@@ -594,6 +602,9 @@ end
 local function initialize_teleport_session(entry_portal, exit_portal)
     -- 1. 抢占互斥锁
     exit_portal.locking_entry_id = entry_portal.unit_number
+
+    -- 缓存出口，后续车厢不再重新选择
+    entry_portal.selected_exit_id = exit_portal.id
 
     -- 2. 迁移车厢引用
     entry_portal.entry_car = entry_portal.waiting_car
@@ -780,6 +791,7 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
     -- 5. 重置状态变量
     entry_portaldata.entry_car = nil
     entry_portaldata.exit_car = nil
+    entry_portaldata.selected_exit_id = nil
     exit_portaldata.entry_car = nil
     exit_portaldata.exit_car = nil
     exit_portaldata.old_train_id = nil
