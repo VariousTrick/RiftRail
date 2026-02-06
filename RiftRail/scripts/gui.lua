@@ -303,7 +303,13 @@ function GUI.build_or_update(player, entity)
             connected_ids_map = my_data.source_ids or {}
         end
 
+        local ordered_ids = {}
         for id, _ in pairs(connected_ids_map) do
+            table.insert(ordered_ids, id)
+        end
+        table.sort(ordered_ids)
+
+        for idx, id in ipairs(ordered_ids) do
             local p_data = State.get_portaldata_by_id(id)
             if p_data then
                 -- 构建列表项文本
@@ -311,7 +317,12 @@ function GUI.build_or_update(player, entity)
                 if p_data.icon and p_data.icon.name then
                     icon_str = "[" .. p_data.icon.type .. "=" .. p_data.icon.name .. "] "
                 end
-                local item_text = { "", icon_str, p_data.name, " (ID:", p_data.id, ") [", p_data.surface.name, "]" }
+                local item_text = {
+                    "",
+                    "[", tostring(idx), "] ",
+                    icon_str, p_data.name,
+                    " (ID:", p_data.id, ") [", p_data.surface.name, "]",
+                }
                 table.insert(dropdown_items, item_text)
                 table.insert(dropdown_ids, id)
             end
