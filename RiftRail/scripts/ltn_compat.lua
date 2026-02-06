@@ -486,7 +486,7 @@ end
 -- 使用 return 代替 goto continue，逻辑更清晰
 -- 使用路由表进行精准、高效的站点插入
 -- 辅助函数：查表并在表中寻找离 reference_pos 最近的传送门名称
--- 辅助函数：两阶段查找最佳路径（先找最近入口，再找该入口下最近出口）
+-- 辅助函数：找总距离最小的路径（起点→入口 + 出口→终点）
 -- 返回：最佳车站名, 最佳出口ID (Tick密码)
 local function find_best_route_station(from_surface_idx, to_surface_idx, start_pos, dest_pos)
     local routing_table = storage.rift_rail_ltn_routing_table
@@ -496,49 +496,32 @@ local function find_best_route_station(from_surface_idx, to_surface_idx, start_p
         return nil, nil
     end
 
-    -- 阶段1：基于起点位置，找最近的入口
-    local best_entry_id = nil
-    local best_entry_data = nil
-    local min_entry_dist_sq = math.huge
+    -- 遍历所有入口和出口组合，找总距离最小的路径
+    local best_station_name = nil
+    local best_exit_id = nil
+    local min_total_dist_sq = math.huge
 
     for entry_id, exit_list in pairs(available_entries) do
         -- 兼容性检查：确保是新结构
         if not exit_list.station_name then
-            -- 获取任意一个出口的数据来读取入口信息
-            local sample_route = next(exit_list)
-            if sample_route then
-                local route_data = exit_list[sample_route]
+            for exit_id, route_data in pairs(exit_list) do
                 -- 计算起点到入口的距离（同一地表，坐标系一致）
-                local dist_sq = (start_pos.x - route_data.position.x) ^ 2 +
+                local entry_dist_sq = (start_pos.x - route_data.position.x) ^ 2 +
                     (start_pos.y - route_data.position.y) ^ 2
 
-                if dist_sq < min_entry_dist_sq then
-                    min_entry_dist_sq = dist_sq
-                    best_entry_id = entry_id
-                    best_entry_data = exit_list
+                -- 计算终点到出口的距离（同一地表，坐标系一致）
+                local exit_dist_sq = (dest_pos.x - route_data.exit_position.x) ^ 2 +
+                    (dest_pos.y - route_data.exit_position.y) ^ 2
+
+                -- 总距离 = 入口距离 + 出口距离
+                local total_dist_sq = entry_dist_sq + exit_dist_sq
+
+                if total_dist_sq < min_total_dist_sq then
+                    min_total_dist_sq = total_dist_sq
+                    best_station_name = route_data.station_name
+                    best_exit_id = route_data.exit_unit_number
                 end
             end
-        end
-    end
-
-    if not best_entry_data then
-        return nil, nil
-    end
-
-    -- 阶段2：在最佳入口的所有出口中，找离终点最近的出口
-    local best_station_name = nil
-    local best_exit_id = nil
-    local min_exit_dist_sq = math.huge
-
-    for _, route_data in pairs(best_entry_data) do
-        -- 计算终点到出口的距离（同一地表，坐标系一致）
-        local dist_sq = (dest_pos.x - route_data.exit_position.x) ^ 2 +
-            (dest_pos.y - route_data.exit_position.y) ^ 2
-
-        if dist_sq < min_exit_dist_sq then
-            min_exit_dist_sq = dist_sq
-            best_station_name = route_data.station_name
-            best_exit_id = route_data.exit_unit_number
         end
     end
 
