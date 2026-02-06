@@ -363,14 +363,20 @@ function Logic.pair_portals(player_index, source_id, target_id)
     if not source.target_ids then
         source.target_ids = {}
     end
-    -- [多对多改造] 将目标 ID 加入列表
-    source.target_ids[target_id] = true
+    -- [多对多改造] 将目标 ID 加入列表 (缓存实体ID)
+    source.target_ids[target_id] = {
+        custom_id = target_id,
+        unit_number = target.shell.unit_number
+    }
 
     -- 目标记录源 (多对一支持)
     if not target.source_ids then
         target.source_ids = {}
     end
-    target.source_ids[source_id] = true
+    target.source_ids[source_id] = {
+        custom_id = source_id,
+        unit_number = source.shell.unit_number
+    }
     -- 注意：目标 (Exit) 的 paired_to_id 保持为 nil，因为它不再指向单一对象
 
     -- 4. 智能调整模式

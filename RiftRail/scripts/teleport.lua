@@ -378,8 +378,8 @@ local function calculate_arrival_orientation(entry_shell_dir, exit_geo_dir, curr
 
     if RiftRail.DEBUG_MODE_ENABLED then
         log_tp("方向计算: 车厢=" ..
-        string.format("%.2f", current_ori) ..
-        ", 入口=" .. entry_shell_ori .. ", 判定=" .. (is_nose_in and "顺向(NoseIn)" or "逆向(TailIn)"))
+            string.format("%.2f", current_ori) ..
+            ", 入口=" .. entry_shell_ori .. ", 判定=" .. (is_nose_in and "顺向(NoseIn)" or "逆向(TailIn)"))
     end
 
     -- 3. 计算出口基准朝向
@@ -517,20 +517,21 @@ local function select_target_exit(entry_portaldata)
     end
 
     if train then
-        -- B. [优先级 1] LTN 绝对 ID 匹配
+        -- B. [优先级 1] LTN 绝对 ID 匹配（查缓存的 unit_number）
         local specific_id = get_schedule_target_id(train)
-        if specific_id and targets[specific_id] then
-            local target_portal = State.get_portaldata_by_id(specific_id)
-            if target_portal and target_portal.shell and target_portal.shell.valid then
-                if RiftRail.DEBUG_MODE_ENABLED then
-                    -- 仅在排队阶段打印日志，避免 sync_momentum 刷屏
-                    if entry_portaldata.waiting_car then
-                        if RiftRail.DEBUG_MODE_ENABLED then
-                            log_tp("智能路由: 识别到 Tick 密码 " .. specific_id .. "，精准导向出口。")
+        if specific_id then
+            for target_id, target_info in pairs(targets) do
+                -- target_info 现在是 {custom_id, unit_number} table
+                if type(target_info) == "table" and target_info.unit_number == specific_id then
+                    local target_portal = State.get_portaldata_by_id(target_id)
+                    if target_portal and target_portal.shell and target_portal.shell.valid then
+                        if RiftRail.DEBUG_MODE_ENABLED and entry_portaldata.waiting_car then
+                            log_tp("智能路由: 识别到 Tick 实体ID " .. specific_id .. "，精准导向出口。")
                         end
+                        return target_portal
                     end
+                    break -- 找到就直接break，不需要继续遍历
                 end
-                return target_portal
             end
         end
 
@@ -737,7 +738,8 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
     if final_train and final_train.valid then
         if RiftRail.DEBUG_MODE_ENABLED then
             log_tp("【销毁后】准备恢复: actual_index=" ..
-            tostring(actual_index_before_cleanup) .. ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index))
+                tostring(actual_index_before_cleanup) ..
+                ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index))
         end
         -- 使用统一函数恢复状态 (参数 true 代表同时恢复速度)
         restore_train_state(final_train, exit_portaldata, true, actual_index_before_cleanup)
@@ -752,7 +754,7 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         if SE_TELEPORT_FINISHED_EVENT_ID and exit_portaldata.old_train_id then
             if RiftRail.DEBUG_MODE_ENABLED then
                 log_tp("SE兼容触发 on_train_teleport_finished 事件: new_train_id = " ..
-                tostring(final_train.id) .. ", old_train_id = " .. tostring(exit_portaldata.old_train_id))
+                    tostring(final_train.id) .. ", old_train_id = " .. tostring(exit_portaldata.old_train_id))
             end
             script.raise_event(SE_TELEPORT_FINISHED_EVENT_ID, {
                 train = final_train,
@@ -1040,9 +1042,9 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
             local target_index = index_before_spawn or exit_portaldata.saved_schedule_index
             if RiftRail.DEBUG_MODE_ENABLED then
                 log_tp("【创建后】准备恢复: index_before_spawn=" ..
-                tostring(index_before_spawn) ..
-                ", saved_index=" ..
-                tostring(exit_portaldata.saved_schedule_index) .. ", 使用target=" .. tostring(target_index))
+                    tostring(index_before_spawn) ..
+                    ", saved_index=" ..
+                    tostring(exit_portaldata.saved_schedule_index) .. ", 使用target=" .. tostring(target_index))
             end
             restore_train_state(merged_train, exit_portaldata, false, target_index)
         end

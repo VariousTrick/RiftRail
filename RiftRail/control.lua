@@ -898,6 +898,51 @@ script.on_configuration_changed(function(event)
             end
         end
     end
+    -- [新增迁移任务] v0.10.1 缓存实体ID (Entity Unit Number Caching)
+    -- 目标：在 target_ids 和 source_ids 的 value 中同时缓存 custom_id 和 unit_number
+    -- 这样以后即使需要根据 unit_number 反向查询，也不需要迁移脚本
+    if storage.rift_rails then
+        log_debug("[Migration] 开始执行实体ID缓存 (Entity Unit Number Caching)...")
+
+        -- 1. 处理入口的 target_ids（已在v0.10.0转为表，现在升级value结构）
+        for _, portal in pairs(storage.rift_rails) do
+            if portal.mode == "entry" and portal.target_ids then
+                for target_id, target_info in pairs(portal.target_ids) do
+                    -- 如果value还是true（旧格式），需要升级
+                    if target_info == true then
+                        local target = State.get_portaldata_by_id(target_id)
+                        if target and target.shell and target.shell.valid then
+                            portal.target_ids[target_id] = {
+                                custom_id = target_id,
+                                unit_number = target.shell.unit_number
+                            }
+                            log_debug("[Migration] 入口 ID " .. portal.id .. " 升级 target_ids[" .. target_id .. "]")
+                        end
+                    end
+                end
+            end
+        end
+
+        -- 2. 处理出口的 source_ids（同步缓存以备后用）
+        for _, portal in pairs(storage.rift_rails) do
+            if portal.mode == "exit" and portal.source_ids then
+                for source_id, source_info in pairs(portal.source_ids) do
+                    if source_info == true or (type(source_info) == "table" and not source_info.unit_number) then
+                        local source = State.get_portaldata_by_id(source_id)
+                        if source and source.shell and source.shell.valid then
+                            portal.source_ids[source_id] = {
+                                custom_id = source_id,
+                                unit_number = source.shell.unit_number
+                            }
+                            log_debug("[Migration] 出口 ID " .. portal.id .. " 升级 source_ids[" .. source_id .. "]")
+                        end
+                    end
+                end
+            end
+        end
+        log_debug("[Migration] 实体ID缓存完成。")
+    end
+
     -- [新增迁移任务] v0.10.0 物流连接重置 (Logistics Reset - 暴力清洗版)
     if storage.rift_rails then
         log_debug("[Migration] 开始执行物流连接重置 (Purge & Re-evaluate)...")
