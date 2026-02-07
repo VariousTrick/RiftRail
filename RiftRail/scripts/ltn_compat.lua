@@ -580,7 +580,6 @@ local function insert_portal_sequence(train, station_name, exit_id, insert_index
             compare_type = "or",
             condition = {
                 first_signal = { type = "virtual", name = "riftrail-go-to-id" },
-                second_signal = { type = "virtual", name = "signal-0" },
                 comparator = "=",
                 constant = exit_id
             }
