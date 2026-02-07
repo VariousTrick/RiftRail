@@ -440,7 +440,7 @@ local function get_circuit_go_to_id(train)
             if cond.type == "circuit" and cond.condition then
                 local signal = cond.condition.first_signal
                 if signal and signal.name == "riftrail-go-to-id" then
-                    return cond.condition.constant  -- 返回目标传送门的自定义ID
+                    return cond.condition.constant -- 返回目标传送门的自定义ID
                 end
             end
         end
