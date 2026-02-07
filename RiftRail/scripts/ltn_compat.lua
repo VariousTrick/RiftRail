@@ -335,7 +335,10 @@ end
 -- @param connect 连接状态（双方都开启时为 true）
 -- @param player 操作的玩家
 -- @param my_enabled 当前操作建筑的新状态（用于区分开启/关闭操作）
-function LTN.update_connection(select_portal, target_portal, connect, player, my_enabled)
+function LTN.update_connection(select_portal, target_portal, connect, player, my_enabled, silent)
+    -- silent 参数用于静默模式（例如迁移时），默认为 false
+    silent = silent or false
+
     if not is_ltn_active() then
         if player then
             player.print({ "messages.rift-rail-error-ltn-not-found" })
@@ -424,7 +427,11 @@ function LTN.update_connection(select_portal, target_portal, connect, player, my
         return
     end
 
-    -- 6. 发送消息
+    -- 6. 发送消息（静默模式下跳过）
+    if silent then
+        return
+    end
+
     if player then
         -- 场景 A: 玩家点击开关 -> 私聊反馈
         local setting = settings.get_player_settings(player)["rift-rail-show-logistics-notifications"]

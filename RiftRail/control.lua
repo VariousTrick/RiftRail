@@ -960,8 +960,9 @@ script.on_configuration_changed(function(event)
                     local partner = State.get_portaldata_by_id(target_id)
                     if partner then
                         -- [LTN] LTN 没有暴力清洗功能，所以保持“先断开后连接”的传统逻辑
+                        -- 使用静默模式，避免在迁移时向玩家发送消息
                         if LTN then
-                            LTN.update_connection(portal, partner, false, nil)
+                            LTN.update_connection(portal, partner, false, nil, nil, true)
                         end
 
                         -- [重建连接]
@@ -974,7 +975,7 @@ script.on_configuration_changed(function(event)
                         end
                         if portal.ltn_enabled then
                             if LTN then
-                                LTN.update_connection(portal, partner, true, nil)
+                                LTN.update_connection(portal, partner, true, nil, nil, true)
                             end
                         end
                     end
