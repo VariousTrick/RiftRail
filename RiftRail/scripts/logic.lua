@@ -487,9 +487,9 @@ function Logic.set_cybersyn_enabled(player_index, portal_id, enabled)
         if partner_data and CybersynSE and CybersynSE.update_connection then
             -- 根据自己是源还是目标，正确传递参数
             if my_data.mode == "entry" then
-                CybersynSE.update_connection(my_data, partner_data, nil, player, false, enabled)
+                CybersynSE.update_connection(my_data, partner_data, nil, player, false, enabled, true)
             else -- exit or neutral
-                CybersynSE.update_connection(partner_data, my_data, nil, player, false, enabled)
+                CybersynSE.update_connection(partner_data, my_data, nil, player, false, enabled, false)
             end
         end
     end
@@ -530,10 +530,10 @@ function Logic.set_ltn_enabled(player_index, portal_id, enabled)
             -- update_connection 内部会根据双方的 ltn_enabled 状态决定是否注册
             if my_data.mode == "entry" then
                 local should_connect = my_data.ltn_enabled and partner_data.ltn_enabled
-                LTN.update_connection(my_data, partner_data, should_connect, player, enabled)
+                LTN.update_connection(my_data, partner_data, should_connect, player, enabled, nil, true)
             else -- exit
                 local should_connect = partner_data.ltn_enabled and my_data.ltn_enabled
-                LTN.update_connection(partner_data, my_data, should_connect, player, enabled)
+                LTN.update_connection(partner_data, my_data, should_connect, player, enabled, nil, false)
             end
         end
     end

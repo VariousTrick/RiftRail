@@ -372,7 +372,8 @@ end
 -- @param player 操作的玩家
 -- @param is_migration 是否为迁移模式
 -- @param my_enabled 当前操作建筑的新状态（用于区分开启/关闭操作）
-function CybersynSE.update_connection(portaldata, target_portal, connect, player, is_migration, my_enabled)
+-- @param operator_is_first 是否由第一个参数触发（用于消息排序）
+function CybersynSE.update_connection(portaldata, target_portal, connect, player, is_migration, my_enabled, operator_is_first)
     if not portaldata or not target_portal then
         return
     end
@@ -411,14 +412,21 @@ function CybersynSE.update_connection(portaldata, target_portal, connect, player
         return
     end
 
-    -- 4. 准备消息参数 (保持不变)
-    local name1 = portaldata.name or "Portal"
+    -- 4. 准备消息参数 (根据操作者顺序调整)
+    local first_portal = portaldata
+    local second_portal = target_portal
+    if operator_is_first == false then
+        first_portal = target_portal
+        second_portal = portaldata
+    end
+
+    local name1 = first_portal.name or "Portal"
     local gps1 = "[gps=" ..
-        portaldata.shell.position.x .. "," .. portaldata.shell.position.y .. "," .. portaldata.shell.surface.name .. "]"
-    local name2 = target_portal.name or "Portal"
+        first_portal.shell.position.x .. "," .. first_portal.shell.position.y .. "," .. first_portal.shell.surface.name .. "]"
+    local name2 = second_portal.name or "Portal"
     local gps2 = "[gps=" ..
-        target_portal.shell.position.x ..
-        "," .. target_portal.shell.position.y .. "," .. target_portal.shell.surface.name .. "]"
+        second_portal.shell.position.x ..
+        "," .. second_portal.shell.position.y .. "," .. second_portal.shell.surface.name .. "]"
 
     local msg = nil
 

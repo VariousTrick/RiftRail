@@ -353,7 +353,7 @@ end
 -- @param connect 连接状态（双方都开启时为 true）
 -- @param player 操作的玩家
 -- @param my_enabled 当前操作建筑的新状态（用于区分开启/关闭操作）
-function LTN.update_connection(select_portal, target_portal, connect, player, my_enabled, silent)
+function LTN.update_connection(select_portal, target_portal, connect, player, my_enabled, silent, operator_is_first)
     -- silent 参数用于静默模式（例如迁移时），默认为 false
     silent = silent or false
 
@@ -407,15 +407,22 @@ function LTN.update_connection(select_portal, target_portal, connect, player, my
         leave_pool(target_portal, select_portal)
     end
 
-    -- 4. 准备消息参数
-    local name1 = select_portal.name or "RiftRail"
-    local pos1 = select_portal.shell.position
-    local surface1 = select_portal.shell.surface.name
+    -- 4. 准备消息参数 (根据操作者顺序调整)
+    local first_portal = select_portal
+    local second_portal = target_portal
+    if operator_is_first == false then
+        first_portal = target_portal
+        second_portal = select_portal
+    end
+
+    local name1 = first_portal.name or "RiftRail"
+    local pos1 = first_portal.shell.position
+    local surface1 = first_portal.shell.surface.name
     local gps1 = "[gps=" .. pos1.x .. "," .. pos1.y .. "," .. surface1 .. "]"
 
-    local name2 = target_portal.name or "RiftRail"
-    local pos2 = target_portal.shell.position
-    local surface2 = target_portal.shell.surface.name
+    local name2 = second_portal.name or "RiftRail"
+    local pos2 = second_portal.shell.position
+    local surface2 = second_portal.shell.surface.name
     local gps2 = "[gps=" .. pos2.x .. "," .. pos2.y .. "," .. surface2 .. "]"
 
     local msg = nil
