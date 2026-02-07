@@ -856,7 +856,14 @@ script.on_configuration_changed(function(event)
     if storage.rift_rails then
         log_debug("[Migration] 开始执行多对多架构统一迁移 (v0.9.0-v0.10.1)...")
 
+        local neutral_paired_count = 0
         for _, portal in pairs(storage.rift_rails) do
+            -- [新增] 中立模式旧配对清理
+            if portal.mode == "neutral" and portal.paired_to_id then
+                neutral_paired_count = neutral_paired_count + 1
+                portal.paired_to_id = nil
+            end
+
             -- ============================================================
             -- [Part 1] 处理出口：paired_to_id -> source_ids（v0.9.0 网格化架构）
             -- 旧逻辑：出口通过 paired_to_id 指向唯一的入口
@@ -878,7 +885,7 @@ script.on_configuration_changed(function(event)
                             unit_number = source.shell.unit_number
                         }
                         log_debug("[Migration] 转换出口 ID " ..
-                        portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> source_ids (带缓存)")
+                            portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> source_ids (带缓存)")
                     end
 
                     -- [关键] 清空出口的配对指针，标志着它正式转为多对一被动模式
@@ -922,7 +929,7 @@ script.on_configuration_changed(function(event)
                             unit_number = target.shell.unit_number
                         }
                         log_debug("[Migration] 转换入口 ID " ..
-                        portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> target_ids (带缓存)")
+                            portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> target_ids (带缓存)")
                     end
 
                     -- [关键] 清空旧字段，完成数据结构升级
@@ -946,6 +953,10 @@ script.on_configuration_changed(function(event)
             end
         end
 
+        if neutral_paired_count > 0 then
+            log_debug("[Migration] 清理中立配对: " .. neutral_paired_count .. " 个")
+            game.print({ "messages.rift-rail-migration-neutral-pairs-cleared", neutral_paired_count })
+        end
         log_debug("[Migration] 多对多架构统一迁移完成。")
     end
 
