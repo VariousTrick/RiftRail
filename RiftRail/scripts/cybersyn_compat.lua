@@ -278,22 +278,43 @@ local function leave_pool(portaldata, target_portal)
 
     -- 定义一个内部清理函数，用来清理特定方向的连接
     local function clean_specific_pool(surface_index_2)
-        local my_pool = get_pool(s1, surface_index_2)
-        if my_pool[uid] then
-            -- 1. 扫描回程池，断开连接
-            local partner_pool = get_pool(surface_index_2, s1)
-            for _, partner_station in pairs(partner_pool) do
-                -- station 即使无效了，只要不为 nil，传给 remove 接口也是安全的(会尝试用ID删)
-                if partner_station and partner_station.valid and station then
-                    -- 无论 station 是否 valid，只要它曾经注册过，我们就尝试注销
-                    -- 注意：如果 station 彻底没了，这里可能注销失败，但我们在迁移脚本里有兜底
-                    if station.valid then
-                        unlink_stations(station, partner_station)
-                    end
+        -- [关键] 检查该 entry 是否还有其他启用了 Cybersyn 的出口通往目标地表
+        local still_has_connection = false
+        if portaldata.target_ids and portaldata.cybersyn_enabled then
+            for target_id, _ in pairs(portaldata.target_ids) do
+                local other_exit = State.get_portaldata_by_id(target_id)
+                if other_exit and
+                    other_exit.surface.index == surface_index_2 and
+                    other_exit.cybersyn_enabled then
+                    still_has_connection = true
+                    break
                 end
             end
-            -- 2. 移出池子
-            my_pool[uid] = nil
+        end
+
+        -- 只有当完全失去对该地表的 Cybersyn 连接能力时，才移出池子并断开连接
+        if not still_has_connection then
+            local my_pool = get_pool(s1, surface_index_2)
+            if my_pool[uid] then
+                -- 1. 扫描回程池，断开连接
+                local partner_pool = get_pool(surface_index_2, s1)
+                for _, partner_station in pairs(partner_pool) do
+                    -- station 即使无效了，只要不为 nil，传给 remove 接口也是安全的(会尝试用ID删)
+                    if partner_station and partner_station.valid and station then
+                        -- 无论 station 是否 valid，只要它曾经注册过，我们就尝试注销
+                        -- 注意：如果 station 彻底没了，这里可能注销失败，但我们在迁移脚本里有兜底
+                        if station.valid then
+                            unlink_stations(station, partner_station)
+                        end
+                    end
+                end
+                -- 2. 移出池子
+                my_pool[uid] = nil
+                log_cs("[Pool] " ..
+                portaldata.name .. " 离开池子: " .. s1 .. " -> " .. surface_index_2 .. " (失去所有到该地表的Cybersyn连接)")
+            end
+        else
+            log_cs("[Pool] " .. portaldata.name .. " 保留在池子中: 仍有其他启用Cybersyn的出口到地表 " .. surface_index_2)
         end
     end
 
@@ -416,8 +437,8 @@ function CybersynSE.update_connection(portaldata, target_portal, connect, player
         if was_connected then
             -- 之前是连接着的 → 已断开
             msg = { "messages.rift-rail-info-cybersyn-disconnected", name1, gps1, name2, gps2 }
-        elseif my_enabled == false then
-            -- 用户主动关闭且之前是孤立的 → 已关闭
+        else
+            -- 之前就是孤立的 → 已关闭（包括拆除、关闭开关等所有情况）
             msg = { "messages.rift-rail-info-cybersyn-disabled", name1, gps1 }
         end
     end
