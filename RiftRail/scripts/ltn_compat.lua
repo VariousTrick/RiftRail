@@ -290,28 +290,46 @@ local function leave_pool(portaldata, target_portal)
 
     -- 定义清理函数
     local function clean_specific_pool(surface_index_2)
-        local my_pool = get_pool(s1, surface_index_2)
-        if my_pool[uid] then
-            -- 1. 扫描反向池子，断开 LTN 连接
-            local partner_pool = get_pool(surface_index_2, s1)
-            for partner_uid, partner_station in pairs(partner_pool) do
-                if partner_station and partner_station.valid and station and station.valid then
-                    -- 从 LTN 断开连接
-                    local ok, err = pcall(function()
-                        remote.call("logistic-train-network", "disconnect_surfaces", station, partner_station)
-                    end)
-
-                    if ok then
-                        ltn_log("[LTN] 已从 LTN 注销连接: " .. portaldata.name)
-                    else
-                        ltn_log("[LTN] 注销失败: " .. tostring(err))
-                    end
+        -- [关键] 检查该 entry 在路由表中是否还有通往目标地表的其他记录
+        local still_has_connection = false
+        if storage.rift_rail_ltn_routing_table then
+            local rt = storage.rift_rail_ltn_routing_table[s1]
+            if rt and rt[surface_index_2] and rt[surface_index_2][uid] then
+                -- 检查路由表中是否还有任何出口记录
+                if next(rt[surface_index_2][uid]) ~= nil then
+                    still_has_connection = true
                 end
             end
+        end
 
-            -- 2. 移出池子
-            my_pool[uid] = nil
-            ltn_log("[Pool] " .. portaldata.name .. " 离开池子: " .. s1 .. " -> " .. surface_index_2)
+        -- 只有当完全失去对该地表的 LTN 连接能力时，才移出池子并通知 LTN
+        if not still_has_connection then
+            local my_pool = get_pool(s1, surface_index_2)
+            if my_pool[uid] then
+                -- 1. 扫描反向池子，断开所有 LTN 连接
+                local partner_pool = get_pool(surface_index_2, s1)
+                for partner_uid, partner_station in pairs(partner_pool) do
+                    if partner_station and partner_station.valid and station and station.valid then
+                        -- 从 LTN 断开连接
+                        local ok, err = pcall(function()
+                            remote.call("logistic-train-network", "disconnect_surfaces", station, partner_station)
+                        end)
+
+                        if ok then
+                            ltn_log("[LTN] 已从 LTN 注销连接: " .. portaldata.name .. " <-> partner")
+                        else
+                            ltn_log("[LTN] 注销失败: " .. tostring(err))
+                        end
+                    end
+                end
+
+                -- 2. 移出池子
+                my_pool[uid] = nil
+                ltn_log("[Pool] " ..
+                portaldata.name .. " 离开池子: " .. s1 .. " -> " .. surface_index_2 .. " (失去所有到该地表的LTN连接)")
+            end
+        else
+            ltn_log("[Pool] " .. portaldata.name .. " 保留在池子中: 路由表中仍有到地表 " .. surface_index_2 .. " 的其他连接")
         end
     end
 

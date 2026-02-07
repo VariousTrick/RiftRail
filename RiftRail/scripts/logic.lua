@@ -662,6 +662,16 @@ function Logic.unpair_portals_specific(player_index, source_id, target_id)
         end
     end
 
+    -- [新增] LTN 清理逻辑（与 Cybersyn 对等）
+    if LTN and LTN.update_connection then
+        -- 强制发送 "false" 指令来清理（最后一个参数 nil 表示非用户操作）
+        if source.mode == "entry" then
+            LTN.update_connection(source, target, false, player, false, nil)
+        else
+            LTN.update_connection(target, source, false, player, false, nil)
+        end
+    end
+
     -- 3. 反馈消息
     if player then
         -- 复用现有的本地化字符串，提示已断开与某某的连接
