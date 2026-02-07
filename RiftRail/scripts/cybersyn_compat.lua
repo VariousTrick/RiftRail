@@ -311,7 +311,7 @@ local function leave_pool(portaldata, target_portal)
                 -- 2. 移出池子
                 my_pool[uid] = nil
                 log_cs("[Pool] " ..
-                portaldata.name .. " 离开池子: " .. s1 .. " -> " .. surface_index_2 .. " (失去所有到该地表的Cybersyn连接)")
+                    portaldata.name .. " 离开池子: " .. s1 .. " -> " .. surface_index_2 .. " (失去所有到该地表的Cybersyn连接)")
             end
         else
             log_cs("[Pool] " .. portaldata.name .. " 保留在池子中: 仍有其他启用Cybersyn的出口到地表 " .. surface_index_2)
@@ -373,7 +373,8 @@ end
 -- @param is_migration 是否为迁移模式
 -- @param my_enabled 当前操作建筑的新状态（用于区分开启/关闭操作）
 -- @param operator_is_first 是否由第一个参数触发（用于消息排序）
-function CybersynSE.update_connection(portaldata, target_portal, connect, player, is_migration, my_enabled, operator_is_first)
+function CybersynSE.update_connection(portaldata, target_portal, connect, player, is_migration, my_enabled,
+                                      operator_is_first)
     if not portaldata or not target_portal then
         return
     end
@@ -422,7 +423,8 @@ function CybersynSE.update_connection(portaldata, target_portal, connect, player
 
     local name1 = first_portal.name or "Portal"
     local gps1 = "[gps=" ..
-        first_portal.shell.position.x .. "," .. first_portal.shell.position.y .. "," .. first_portal.shell.surface.name .. "]"
+        first_portal.shell.position.x ..
+        "," .. first_portal.shell.position.y .. "," .. first_portal.shell.surface.name .. "]"
     local name2 = second_portal.name or "Portal"
     local gps2 = "[gps=" ..
         second_portal.shell.position.x ..

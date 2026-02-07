@@ -326,7 +326,7 @@ local function leave_pool(portaldata, target_portal)
                 -- 2. 移出池子
                 my_pool[uid] = nil
                 ltn_log("[Pool] " ..
-                portaldata.name .. " 离开池子: " .. s1 .. " -> " .. surface_index_2 .. " (失去所有到该地表的LTN连接)")
+                    portaldata.name .. " 离开池子: " .. s1 .. " -> " .. surface_index_2 .. " (失去所有到该地表的LTN连接)")
             end
         else
             ltn_log("[Pool] " .. portaldata.name .. " 保留在池子中: 路由表中仍有到地表 " .. surface_index_2 .. " 的其他连接")
