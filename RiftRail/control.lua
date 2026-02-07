@@ -847,85 +847,46 @@ script.on_configuration_changed(function(event)
             game.print({ "messages.rift-rail-migration-v080-warning" })
         end
     end
-    -- [新增迁移任务] v0.9.0 网格化架构重构 (Grid Structure Migration)
-    -- 目标：将出口的 paired_to_id 转换为 source_ids 表，实现多对一支持
+    -- [统一迁移任务] v0.9.0-v0.10.1 多对多架构 + 实体ID缓存
+    -- 整合三个版本的迁移任务，通过单次遍历完成所有数据结构升级
+    -- 目标：
+    -- 1. v0.9.0: 将出口的 paired_to_id 转换为 source_ids 表（多对一支持）
+    -- 2. v0.10.0: 将入口的 paired_to_id 转换为 target_ids 表（一对多支持）
+    -- 3. v0.10.1: 在值结构中同时缓存 custom_id 和 unit_number（性能优化）
     if storage.rift_rails then
-        log_debug("[Migration] 开始执行网格化架构迁移 (多对一支持)...")
-        for _, portal in pairs(storage.rift_rails) do
-            -- 1. 结构初始化：确保所有实例都有 source_ids 表
-            if not portal.source_ids then
-                portal.source_ids = {}
-            end
+        log_debug("[Migration] 开始执行多对多架构统一迁移 (v0.9.0-v0.10.1)...")
 
-            -- 2. 数据转换：仅针对出口 (Exit)
+        for _, portal in pairs(storage.rift_rails) do
+            -- ============================================================
+            -- [Part 1] 处理出口：paired_to_id -> source_ids（v0.9.0 网格化架构）
             -- 旧逻辑：出口通过 paired_to_id 指向唯一的入口
-            -- 新逻辑：出口通过 source_ids 记录所有来源，paired_to_id 应为 nil (因为它不指向单一目标)
-            if portal.mode == "exit" and portal.paired_to_id then
-                -- 将旧的配对对象加入来源列表
-                portal.source_ids[portal.paired_to_id] = true
-
-                log_debug("[Migration] 转换出口 ID " .. portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> source_ids")
-
-                -- [关键] 清空出口的配对指针，标志着它正式转为多对一被动模式
-                portal.paired_to_id = nil
-            end
-
-            -- 注意：入口 (Entry) 保持 paired_to_id 不变，它依然指向唯一的出口
-        end
-    end
-    -- [新增迁移任务] v0.10.0 一对多架构重构 (One-to-Many Migration)
-    -- 目标：将入口的 paired_to_id 转换为 target_ids 表，正式支持多目标存储
-    if storage.rift_rails then
-        log_debug("[Migration] 开始执行一对多架构迁移 (入口目标列表化)...")
-        for _, portal in pairs(storage.rift_rails) do
-            -- 仅处理入口模式
-            if portal.mode == "entry" then
-                -- 1. 结构初始化：确保所有入口都有 target_ids 表
-                if not portal.target_ids then
-                    portal.target_ids = {}
+            -- 新逻辑：出口通过 source_ids 记录所有来源，paired_to_id 应为 nil
+            -- ============================================================
+            if portal.mode == "exit" then
+                -- 1. 结构初始化：确保所有出口都有 source_ids 表
+                if not portal.source_ids then
+                    portal.source_ids = {}
                 end
 
-                -- 2. 数据转换：如果有旧的单目标配对
+                -- 2. 数据转换：将旧的单一配对转换为带缓存的来源列表
                 if portal.paired_to_id then
-                    -- 将旧的配对 ID 放入新表，键为 ID，值为 true
-                    portal.target_ids[portal.paired_to_id] = true
+                    local source = State.get_portaldata_by_id(portal.paired_to_id)
+                    if source and source.shell and source.shell.valid then
+                        -- 直接创建带缓存的完整结构（整合 v0.10.1）
+                        portal.source_ids[portal.paired_to_id] = {
+                            custom_id = portal.paired_to_id,
+                            unit_number = source.shell.unit_number
+                        }
+                        log_debug("[Migration] 转换出口 ID " ..
+                        portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> source_ids (带缓存)")
+                    end
 
-                    log_debug("[Migration] 转换入口 ID " .. portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> target_ids")
-
-                    -- [关键] 清空旧字段，完成数据结构升级
+                    -- [关键] 清空出口的配对指针，标志着它正式转为多对一被动模式
                     portal.paired_to_id = nil
                 end
-            end
-        end
-    end
-    -- [新增迁移任务] v0.10.1 缓存实体ID (Entity Unit Number Caching)
-    -- 目标：在 target_ids 和 source_ids 的 value 中同时缓存 custom_id 和 unit_number
-    -- 这样以后即使需要根据 unit_number 反向查询，也不需要迁移脚本
-    if storage.rift_rails then
-        log_debug("[Migration] 开始执行实体ID缓存 (Entity Unit Number Caching)...")
 
-        -- 1. 处理入口的 target_ids（已在v0.10.0转为表，现在升级value结构）
-        for _, portal in pairs(storage.rift_rails) do
-            if portal.mode == "entry" and portal.target_ids then
-                for target_id, target_info in pairs(portal.target_ids) do
-                    -- 如果value还是true（旧格式），需要升级
-                    if target_info == true then
-                        local target = State.get_portaldata_by_id(target_id)
-                        if target and target.shell and target.shell.valid then
-                            portal.target_ids[target_id] = {
-                                custom_id = target_id,
-                                unit_number = target.shell.unit_number
-                            }
-                            log_debug("[Migration] 入口 ID " .. portal.id .. " 升级 target_ids[" .. target_id .. "]")
-                        end
-                    end
-                end
-            end
-        end
-
-        -- 2. 处理出口的 source_ids（同步缓存以备后用）
-        for _, portal in pairs(storage.rift_rails) do
-            if portal.mode == "exit" and portal.source_ids then
+                -- 3. 升级现有 source_ids 结构（v0.10.1 实体ID缓存）
+                -- 处理已存在但格式为旧版的 source_ids（值为 true 或缺少 unit_number）
                 for source_id, source_info in pairs(portal.source_ids) do
                     if source_info == true or (type(source_info) == "table" and not source_info.unit_number) then
                         local source = State.get_portaldata_by_id(source_id)
@@ -934,13 +895,58 @@ script.on_configuration_changed(function(event)
                                 custom_id = source_id,
                                 unit_number = source.shell.unit_number
                             }
-                            log_debug("[Migration] 出口 ID " .. portal.id .. " 升级 source_ids[" .. source_id .. "]")
+                            log_debug("[Migration] 出口 ID " .. portal.id .. " 升级 source_ids[" .. source_id .. "] 为缓存结构")
+                        end
+                    end
+                end
+            end
+
+            -- ============================================================
+            -- [Part 2] 处理入口：paired_to_id -> target_ids（v0.10.0 一对多架构）
+            -- 旧逻辑：入口通过 paired_to_id 指向唯一的出口
+            -- 新逻辑：入口通过 target_ids 可以指向多个出口
+            -- ============================================================
+            if portal.mode == "entry" then
+                -- 1. 结构初始化：确保所有入口都有 target_ids 表
+                if not portal.target_ids then
+                    portal.target_ids = {}
+                end
+
+                -- 2. 数据转换：将旧的单一配对转换为带缓存的目标列表
+                if portal.paired_to_id then
+                    local target = State.get_portaldata_by_id(portal.paired_to_id)
+                    if target and target.shell and target.shell.valid then
+                        -- 直接创建带缓存的完整结构（整合 v0.10.1）
+                        portal.target_ids[portal.paired_to_id] = {
+                            custom_id = portal.paired_to_id,
+                            unit_number = target.shell.unit_number
+                        }
+                        log_debug("[Migration] 转换入口 ID " ..
+                        portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> target_ids (带缓存)")
+                    end
+
+                    -- [关键] 清空旧字段，完成数据结构升级
+                    portal.paired_to_id = nil
+                end
+
+                -- 3. 升级现有 target_ids 结构（v0.10.1 实体ID缓存）
+                -- 处理已存在但格式为旧版的 target_ids（值为 true 或缺少 unit_number）
+                for target_id, target_info in pairs(portal.target_ids) do
+                    if target_info == true or (type(target_info) == "table" and not target_info.unit_number) then
+                        local target = State.get_portaldata_by_id(target_id)
+                        if target and target.shell and target.shell.valid then
+                            portal.target_ids[target_id] = {
+                                custom_id = target_id,
+                                unit_number = target.shell.unit_number
+                            }
+                            log_debug("[Migration] 入口 ID " .. portal.id .. " 升级 target_ids[" .. target_id .. "] 为缓存结构")
                         end
                     end
                 end
             end
         end
-        log_debug("[Migration] 实体ID缓存完成。")
+
+        log_debug("[Migration] 多对多架构统一迁移完成。")
     end
 
     -- [新增迁移任务] v0.10.0 物流连接重置 (Logistics Reset - 暴力清洗版)
