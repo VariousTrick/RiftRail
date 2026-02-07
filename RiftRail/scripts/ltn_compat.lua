@@ -75,8 +75,9 @@ local function register_route(portal_data, partner_data)
         station_name = station.backer_name,
         position = portal_data.shell.position,       -- 入口位置
         unit_number = unit_number,                   -- 入口 ID
-        exit_position = partner_data.shell.position, -- [新增] 缓存出口位置
-        exit_unit_number = partner_data.unit_number, -- [新增] 缓存出口 ID (Tick密码)
+        exit_position = partner_data.shell.position, -- 缓存出口位置
+        exit_custom_id = partner_data.id,            -- 缓存出口自定义 ID (用于信号)
+        exit_unit_number = partner_data.unit_number, -- 缓存出口实体 ID (预留，可能以后会用)
     }
 
     if RiftRail.DEBUG_MODE_ENABLED then
@@ -551,7 +552,7 @@ local function find_best_route_station(from_surface_idx, to_surface_idx, start_p
                 if total_dist_sq < min_total_dist_sq then
                     min_total_dist_sq = total_dist_sq
                     best_station_name = route_data.station_name
-                    best_exit_id = route_data.exit_unit_number
+                    best_exit_id = route_data.exit_custom_id
                 end
             end
         end
@@ -567,15 +568,23 @@ local function insert_portal_sequence(train, station_name, exit_id, insert_index
         return
     end
 
-    -- [关键] 构造等待条件：Tick = 出口ID
-    -- 这是一个巧妙的 Hack，利用 wait_conditions 传递数据给 teleport.lua
+    -- [关键] 构造等待条件：使用信号 riftrail-go-to-id 传递目标ID
     local wait_conds = {
         { type = "inactivity", compare_type = "and", ticks = 120 }, -- 基础防呆：静止2秒
     }
     if exit_id then
-        -- 写入密码。注意：ticks 是等待时间，如果 ID 很大，列车会等很久。
-        -- 但不用担心，teleport.lua 会在列车进站停稳的瞬间（撞击 collider）接管并传送它。
-        table.insert(wait_conds, { type = "time", compare_type = "or", ticks = exit_id })
+        -- 使用信号方式：在电路条件中传递目标ID
+        -- teleport.lua 会在列车进站停稳的瞬间（撞击 collider）读取这个信号
+        table.insert(wait_conds, {
+            type = "circuit",
+            compare_type = "or",
+            condition = {
+                first_signal = { type = "virtual", name = "riftrail-go-to-id" },
+                second_signal = { type = "virtual", name = "signal-0" },
+                comparator = "=",
+                constant = exit_id
+            }
+        })
     end
 
     if settings.global["rift-rail-ltn-use-teleported"].value then
