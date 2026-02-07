@@ -569,9 +569,7 @@ local function insert_portal_sequence(train, station_name, exit_id, insert_index
     end
 
     -- [关键] 构造等待条件：使用信号 riftrail-go-to-id 传递目标ID
-    local wait_conds = {
-        { type = "inactivity", compare_type = "and", ticks = 120 }, -- 基础防呆：静止2秒
-    }
+    local wait_conds = {}
     if exit_id then
         -- 使用信号方式：在电路条件中传递目标ID
         -- teleport.lua 会在列车进站停稳的瞬间（撞击 collider）读取这个信号
