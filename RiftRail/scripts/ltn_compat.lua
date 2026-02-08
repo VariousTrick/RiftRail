@@ -475,6 +475,31 @@ function LTN.update_connection(select_portal, target_portal, connect, player, my
     end
 end
 
+-- 更新路由表中的车站名（当玩家改名时调用）
+function LTN.update_station_name_in_routes(entry_unit_number, new_station_name)
+    local table = storage.rift_rail_ltn_routing_table
+    if not table then
+        return
+    end
+
+    -- 遍历所有地表对
+    for source_surface, dest_surfaces in pairs(table) do
+        for dest_surface, entries in pairs(dest_surfaces) do
+            -- 检查这个入口是否存在
+            local entry_routes = entries[entry_unit_number]
+            if entry_routes then
+                -- 更新该入口的所有出口记录
+                for exit_id, route_data in pairs(entry_routes) do
+                    route_data.station_name = new_station_name
+                end
+                if RiftRail.DEBUG_MODE_ENABLED then
+                    log_debug("[LTN] 已更新路由表中的车站名: entry_id=" .. entry_unit_number .. " -> " .. new_station_name)
+                end
+            end
+        end
+    end
+end
+
 function LTN.on_portal_destroyed(select_portal)
     -- 优先清理路由表
     -- [多对多改造] 遍历 target_ids

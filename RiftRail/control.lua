@@ -270,6 +270,11 @@ script.on_event(defines.events.on_entity_renamed, function(event)
     -- 强制刷新列车限制，修正引擎因改名可能产生的自动同步错误
     Logic.refresh_station_limit(portaldata)
 
+    -- 更新 LTN 路由表中的车站名缓存
+    if portaldata.ltn_enabled and LTN.update_station_name_in_routes then
+        LTN.update_station_name_in_routes(portaldata.unit_number, final_backer_name)
+    end
+
     if portaldata.shell and portaldata.shell.valid then
         for _, player in pairs(game.connected_players) do
             local frame = player.gui.screen.rift_rail_main_frame
