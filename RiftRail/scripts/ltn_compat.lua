@@ -5,13 +5,14 @@
 
 local LTN = {}
 local State = nil
-local log_debug = function() end
+local log_ltn = function() end
+local ROUTING_TABLE_VERSION = 2
 
 -- 日志：遵循全局调试开关（不再绕过）
 local function ltn_log(msg)
     if RiftRail and RiftRail.DEBUG_MODE_ENABLED then
-        if log_debug then
-            log_debug("[LTN] " .. msg)
+        if log_ltn then
+            log_ltn("[LTN] " .. msg)
         else
             log("[RiftRail:LTN] " .. msg)
             if game then
@@ -36,42 +37,55 @@ local function get_station(portaldata)
     return nil
 end
 
+local function get_or_create_route_bucket(source_surface, dest_surface, entry_unit_number)
+    local routing_table = storage.rift_rail_ltn_routing_table
+    if not routing_table then
+        storage.rift_rail_ltn_routing_table = {}
+        routing_table = storage.rift_rail_ltn_routing_table
+    end
+
+    if not routing_table[source_surface] then
+        routing_table[source_surface] = {}
+    end
+    if not routing_table[source_surface][dest_surface] then
+        routing_table[source_surface][dest_surface] = {}
+    end
+    if not routing_table[source_surface][dest_surface][entry_unit_number] then
+        routing_table[source_surface][dest_surface][entry_unit_number] = {}
+    end
+
+    return routing_table[source_surface][dest_surface][entry_unit_number]
+end
+
+-- 迁移旧版路由表结构，仅在版本变更时运行
+local function migrate_routing_table()
+    -- 版本不匹配 → 直接清空整个路由表，让系统重新通过规范接口重建
+    storage.rift_rail_ltn_routing_table = {}
+    storage.rift_rail_ltn_routing_table_version = ROUTING_TABLE_VERSION
+
+    if RiftRail.DEBUG_MODE_ENABLED then
+        ltn_log("[Migration] 已清空路由表，等待系统重建")
+    end
+end
+
 -- 写入路由表的核心函数 (v2.0 - 支持多对多 & 缓存出口信息)
 local function register_route(portal_data, partner_data)
-    if not (portal_data and partner_data and portal_data.mode == "entry") then
+    if not portal_data or not partner_data or portal_data.mode ~= "entry" then
+        return
+    end
+
+    local station = get_station(portal_data)
+    if not station then
         return
     end
 
     local source_surface = portal_data.surface.index
     local dest_surface = partner_data.surface.index
     local unit_number = portal_data.unit_number
-    local station = get_station(portal_data)
-
-    if not station then
-        return
-    end
-
-    local table = storage.rift_rail_ltn_routing_table
-    if not table[source_surface] then
-        table[source_surface] = {}
-    end
-    if not table[source_surface][dest_surface] then
-        table[source_surface][dest_surface] = {}
-    end
-
-    -- [关键修改] 数据结构升级：入口ID -> 出口ID -> 详细数据
-    -- 这样同一个入口连接多个出口时，数据不会互相覆盖
-    if not table[source_surface][dest_surface][unit_number] then
-        table[source_surface][dest_surface][unit_number] = {}
-    end
-
-    -- 如果旧数据是残留的非表结构 (旧版本兼容)，先清空
-    if type(table[source_surface][dest_surface][unit_number].station_name) == "string" then
-        table[source_surface][dest_surface][unit_number] = {}
-    end
+    local route_bucket = get_or_create_route_bucket(source_surface, dest_surface, unit_number)
 
     -- 写入新数据：包含出口的 ID 和 位置 (用于快速计算距离)
-    table[source_surface][dest_surface][unit_number][partner_data.unit_number] = {
+    route_bucket[partner_data.unit_number] = {
         station_name = station.backer_name,
         position = portal_data.shell.position,       -- 入口位置
         unit_number = unit_number,                   -- 入口 ID
@@ -88,7 +102,12 @@ end
 
 -- 从路由表删除的核心函数 (v2.0 - 精准删除)
 local function unregister_route(portal_data, partner_data)
-    if not (portal_data and partner_data) then
+    if not portal_data or not partner_data then
+        return
+    end
+
+    local routing_table = storage.rift_rail_ltn_routing_table
+    if not routing_table then
         return
     end
 
@@ -97,32 +116,24 @@ local function unregister_route(portal_data, partner_data)
     local unit_number = portal_data.unit_number
     local exit_unit_number = partner_data.unit_number
 
-    local table = storage.rift_rail_ltn_routing_table
-    -- 安全检查层级
-    if table and table[source_surface] and table[source_surface][dest_surface] and table[source_surface][dest_surface][unit_number] then
-        local entry_record = table[source_surface][dest_surface][unit_number]
+    local entry_record = routing_table[source_surface] and
+        routing_table[source_surface][dest_surface] and
+        routing_table[source_surface][dest_surface][unit_number]
+    if not entry_record then
+        return
+    end
 
-        -- [自适应兼容] 检查是旧结构还是新结构
-        if entry_record.station_name then
-            -- 旧结构：直接把整个入口记录删了 (虽然有点暴力，但在迁移期是安全的)
-            table[source_surface][dest_surface][unit_number] = nil
-            if RiftRail.DEBUG_MODE_ENABLED then
-                ltn_log("[LTNCompat] 已清理旧版单向路由: ID " .. portal_data.id)
-            end
-        else
-            -- 新结构：精准移除指定的出口
-            if entry_record[exit_unit_number] then
-                entry_record[exit_unit_number] = nil
-                if RiftRail.DEBUG_MODE_ENABLED then
-                    ltn_log("[LTNCompat] 已注销路由: Entry:" .. portal_data.id .. " -x- Exit:" .. partner_data.id)
-                end
-            end
-
-            -- 如果该入口下没有任何出口了，清理入口 Key
-            if next(entry_record) == nil then
-                table[source_surface][dest_surface][unit_number] = nil
-            end
+    -- 新结构：精准移除指定的出口
+    if entry_record[exit_unit_number] then
+        entry_record[exit_unit_number] = nil
+        if RiftRail.DEBUG_MODE_ENABLED then
+            ltn_log("[LTNCompat] 已注销路由: Entry:" .. portal_data.id .. " -x- Exit:" .. partner_data.id)
         end
+    end
+
+    -- 如果该入口下没有任何出口了，清理入口 Key
+    if next(entry_record) == nil then
+        routing_table[source_surface][dest_surface][unit_number] = nil
     end
 end
 
@@ -170,13 +181,19 @@ end
 
 function LTN.init(dependencies)
     State = dependencies.State
-    if dependencies.log_debug then
-        log_debug = dependencies.log_debug
+    if dependencies.log_ltn then
+        log_ltn = dependencies.log_ltn
+    elseif dependencies.log_debug then
+        log_ltn = dependencies.log_debug
     end
 
     -- 初始化双向验证池子（用于 LTN 注册）
     if not storage.rr_ltn_pools then
         storage.rr_ltn_pools = {}
+    end
+
+    if storage.rift_rail_ltn_routing_table_version ~= ROUTING_TABLE_VERSION then
+        migrate_routing_table()
     end
 
     ltn_log("[LTNCompat] 模块已加载 (运行时检测 LTN 接口)。")
@@ -348,21 +365,18 @@ local function leave_pool(portaldata, target_portal)
     end
 end
 
--- 切换连接状态（使用双向验证池子）
--- @param select_portal 当前操作的传送门
--- @param target_portal 对方传送门
--- @param connect 连接状态（双方都开启时为 true）
--- @param player 操作的玩家
--- @param my_enabled 当前操作建筑的新状态（用于区分开启/关闭操作）
-function LTN.update_connection(select_portal, target_portal, connect, player, my_enabled, silent, operator_is_first)
-    -- silent 参数用于静默模式（例如迁移时），默认为 false
-    silent = silent or false
-
+--- 验证 LTN 连接的输入参数
+--- @param select_portal table 操作的源传送门对象
+--- @param target_portal table 目标传送门对象
+--- @param player LuaPlayer|nil 进行操作的玩家（可选，仅用于错误提示）
+--- @return LuaEntity|nil 源传送门对应的 LTN 车站实体
+--- @return LuaEntity|nil 目标传送门对应的 LTN 车站实体
+local function validate_ltn_connection_inputs(select_portal, target_portal, player)
     if not is_ltn_active() then
         if player then
             player.print({ "messages.rift-rail-error-ltn-not-found" })
         end
-        return
+        return nil, nil
     end
 
     local station1 = get_station(select_portal)
@@ -371,44 +385,78 @@ function LTN.update_connection(select_portal, target_portal, connect, player, my
         if player then
             player.print({ "messages.rift-rail-error-ltn-no-station" })
         end
-        return
+        return nil, nil
     end
 
-    -- 1. [关键] 检查操作"之前"的真实连接状态（双向池子）
-    local was_connected = false
-    if storage.rr_ltn_pools then
-        local s1, s2 = select_portal.surface.index, target_portal.surface.index
-        local u1, u2 = station1.unit_number, station2.unit_number
-        local pool1 = storage.rr_ltn_pools[s1] and storage.rr_ltn_pools[s1][s2]
-        local pool2 = storage.rr_ltn_pools[s2] and storage.rr_ltn_pools[s2][s1]
-        if pool1 and pool1[u1] and pool2 and pool2[u2] then
-            was_connected = true
-        end
+    return station1, station2
+end
+
+--- 获取两个传送门之间的现有连接状态
+--- @param station1 LuaEntity 源传送门的 LTN 车站实体
+--- @param station2 LuaEntity 目标传送门的 LTN 车站实体
+--- @param select_portal table 源传送门数据
+--- @param target_portal table 目标传送门数据
+--- @return boolean 双向池子中是否都存在对应的连接
+local function get_existing_connection_state(station1, station2, select_portal, target_portal)
+    if not storage.rr_ltn_pools then
+        return false
     end
 
-    -- 2. 维护单向池子（用于时刻表创作）
+    local s1, s2 = select_portal.surface.index, target_portal.surface.index
+    local u1, u2 = station1.unit_number, station2.unit_number
+    local pool1 = storage.rr_ltn_pools[s1] and storage.rr_ltn_pools[s1][s2]
+    local pool2 = storage.rr_ltn_pools[s2] and storage.rr_ltn_pools[s2][s1]
+    if pool1 and pool1[u1] and pool2 and pool2[u2] then
+        return true
+    end
+
+    return false
+end
+
+--- 更新 LTN 路由表（注册或注销路由）
+--- @param connect boolean 连接状态（true 注册路由，false 注销路由）
+--- @param select_portal table 源传送门（通常为 Entry）
+--- @param target_portal table 目标传送门（可为 Entry 或 Exit）
+local function update_routing_for_connection(connect, select_portal, target_portal)
     if connect then
         -- 分别检查每一方是否为 Entry，只注册合法路径
         register_route(select_portal, target_portal)
         register_route(target_portal, select_portal)
-    else
-        -- 注销时同样分别处理
-        unregister_route(select_portal, target_portal)
-        unregister_route(target_portal, select_portal)
+        return
     end
 
-    -- 3. 执行双向池子的入池/退池逻辑（使用外部传入的 connect 参数）
+    -- 注销时同样分别处理
+    unregister_route(select_portal, target_portal)
+    unregister_route(target_portal, select_portal)
+end
+
+--- 管理 LTN 连接池（加入或离开池子）
+--- @param connect boolean 连接状态（true 加入池子，false 离开池子）
+--- @param select_portal table 源传送门对象
+--- @param target_portal table 目标传送门对象
+local function update_pools_for_connection(connect, select_portal, target_portal)
     if connect then
         -- 外部已经判断了双方都开启，执行加入池子
         join_pool(select_portal, target_portal)
         join_pool(target_portal, select_portal)
-    else
-        -- 至少有一方关闭，执行离开池子
-        leave_pool(select_portal, target_portal)
-        leave_pool(target_portal, select_portal)
+        return
     end
 
-    -- 4. 准备消息参数 (根据操作者顺序调整)
+    -- 至少有一方关闭，执行离开池子
+    leave_pool(select_portal, target_portal)
+    leave_pool(target_portal, select_portal)
+end
+
+--- 构造 LTN 连接状态变化的提示消息
+--- @param my_enabled boolean 当前操作建筑的新状态（true=开启，false=关闭）
+--- @param was_connected boolean 操作前是否已连接
+--- @param connect boolean 操作后的连接状态（true=连接，false=断开）
+--- @param select_portal table 源传送门对象
+--- @param target_portal table 目标传送门对象
+--- @param operator_is_first boolean|nil 操作者的传送门顺序标记（true=操作 select_portal，false=操作 target_portal）
+--- @return table|nil 本地化的消息表，若无需消息则返回 nil
+local function build_connection_message(my_enabled, was_connected, connect, select_portal, target_portal,
+                                        operator_is_first)
     local first_portal = select_portal
     local second_portal = target_portal
     if operator_is_first == false then
@@ -426,35 +474,33 @@ function LTN.update_connection(select_portal, target_portal, connect, player, my
     local surface2 = second_portal.shell.surface.name
     local gps2 = "[gps=" .. pos2.x .. "," .. pos2.y .. "," .. surface2 .. "]"
 
-    local msg = nil
-
-    -- 5. 根据操作类型和连接状态，决定消息内容
     if my_enabled then
         -- 用户正在开启开关
         if connect then
             -- 双方都开启了 → 连接建立
-            msg = { "messages.rift-rail-info-ltn-connected", name1, gps1, name2, gps2 }
-        else
-            -- 只有自己开启，对方关闭 → 等待伙伴
-            msg = { "messages.rift-rail-info-ltn-waiting-partner", name1, gps1, name2, gps2 }
+            return { "messages.rift-rail-info-ltn-connected", name1, gps1, name2, gps2 }
         end
-    else
-        -- 用户正在关闭开关
-        if was_connected then
-            -- 之前是连接着的 → 已断开
-            msg = { "messages.rift-rail-info-ltn-disconnected", name1, gps1, name2, gps2 }
-        else
-            -- 之前就是孤立的 → 已关闭
-            msg = { "messages.rift-rail-info-ltn-disabled", name1, gps1 }
-        end
+
+        -- 只有自己开启，对方关闭 → 等待伙伴
+        return { "messages.rift-rail-info-ltn-waiting-partner", name1, gps1, name2, gps2 }
     end
 
-    if not msg then
-        return
+    -- 用户正在关闭开关
+    if was_connected then
+        -- 之前是连接着的 → 已断开
+        return { "messages.rift-rail-info-ltn-disconnected", name1, gps1, name2, gps2 }
     end
 
-    -- 6. 发送消息（静默模式下跳过）
-    if silent then
+    -- 之前就是孤立的 → 已关闭
+    return { "messages.rift-rail-info-ltn-disabled", name1, gps1 }
+end
+
+--- 发送 LTN 连接状态提示消息
+--- @param msg table|nil 本地化的消息内容（为 nil 时跳过发送）
+--- @param player LuaPlayer|nil 目标玩家（为 nil 时广播给全服）
+--- @param silent boolean|nil 静默模式开关（true 时不发送任何消息）
+local function send_connection_message(msg, player, silent)
+    if not msg or silent then
         return
     end
 
@@ -464,26 +510,61 @@ function LTN.update_connection(select_portal, target_portal, connect, player, my
         if setting and setting.value then
             player.print(msg)
         end
-    else
-        -- 场景 B: 拆除/虫咬/脚本 -> 全服广播
-        for _, p in pairs(game.connected_players) do
-            local setting = settings.get_player_settings(p)["rift-rail-show-logistics-notifications"]
-            if setting and setting.value then
-                p.print(msg)
-            end
+        return
+    end
+
+    -- 场景 B: 拆除/虫咬/脚本 -> 全服广播
+    for _, p in pairs(game.connected_players) do
+        local setting = settings.get_player_settings(p)["rift-rail-show-logistics-notifications"]
+        if setting and setting.value then
+            p.print(msg)
         end
     end
 end
 
+--- 切换 LTN 连接状态（使用双向验证池子）
+--- @param select_portal table 当前操作的源传送门对象
+--- @param target_portal table 对方的目标传送门对象
+--- @param connect boolean 连接状态（true=建立连接，false=断开连接）
+--- @param player LuaPlayer|nil 进行操作的玩家（可选，仅用于错误提示和通知）
+--- @param my_enabled boolean 当前操作建筑的新状态（true=开启，false=关闭）
+--- @param silent boolean|nil 静默模式开关（true时跳过所有消息发送，用于迁移等自动化场景）
+--- @param operator_is_first boolean|nil 操作者的传送门顺序标记（true=操作 select_portal，false=操作 target_portal，用于调整消息中的传送门显示顺序）
+function LTN.update_connection(select_portal, target_portal, connect, player, my_enabled, silent, operator_is_first)
+    -- silent 参数用于静默模式（例如迁移时），默认为 false
+    silent = silent or false
+
+    local station1, station2 = validate_ltn_connection_inputs(select_portal, target_portal, player)
+    if not station1 or not station2 then
+        return
+    end
+
+    -- 1. [关键] 检查操作"之前"的真实连接状态（双向池子）
+    local was_connected = get_existing_connection_state(station1, station2, select_portal, target_portal)
+
+    -- 2. 维护单向池子（用于时刻表创作）
+    update_routing_for_connection(connect, select_portal, target_portal)
+
+    -- 3. 执行双向池子的入池/退池逻辑（使用外部传入的 connect 参数）
+    update_pools_for_connection(connect, select_portal, target_portal)
+
+    -- 4. 准备消息参数 (根据操作者顺序调整)
+    local msg = build_connection_message(my_enabled, was_connected, connect, select_portal, target_portal,
+        operator_is_first)
+
+    -- 5. 发送消息（静默模式下跳过）
+    send_connection_message(msg, player, silent)
+end
+
 -- 更新路由表中的车站名（当玩家改名时调用）
 function LTN.update_station_name_in_routes(entry_unit_number, new_station_name)
-    local table = storage.rift_rail_ltn_routing_table
-    if not table then
+    local routing_table = storage.rift_rail_ltn_routing_table
+    if not routing_table then
         return
     end
 
     -- 遍历所有地表对
-    for source_surface, dest_surfaces in pairs(table) do
+    for source_surface, dest_surfaces in pairs(routing_table) do
         for dest_surface, entries in pairs(dest_surfaces) do
             -- 检查这个入口是否存在
             local entry_routes = entries[entry_unit_number]
@@ -493,7 +574,7 @@ function LTN.update_station_name_in_routes(entry_unit_number, new_station_name)
                     route_data.station_name = new_station_name
                 end
                 if RiftRail.DEBUG_MODE_ENABLED then
-                    log_debug("[LTN] 已更新路由表中的车站名: entry_id=" .. entry_unit_number .. " -> " .. new_station_name)
+                    ltn_log("已更新路由表中的车站名: entry_id=" .. entry_unit_number .. " -> " .. new_station_name)
                 end
             end
         end
@@ -550,37 +631,66 @@ local function find_best_route_station(from_surface_idx, to_surface_idx, start_p
     local routing_table = storage.rift_rail_ltn_routing_table
     local available_entries = routing_table[from_surface_idx] and routing_table[from_surface_idx][to_surface_idx]
 
+    if RiftRail.DEBUG_MODE_ENABLED then
+        ltn_log("find_best_route_station: from=" .. from_surface_idx .. " to=" .. to_surface_idx)
+    end
+
     if not (available_entries and next(available_entries)) then
+        if RiftRail.DEBUG_MODE_ENABLED then
+            ltn_log("available_entries为空")
+        end
         return nil, nil
     end
 
+    if RiftRail.DEBUG_MODE_ENABLED then
+        ltn_log("available_entries存在，开始遍历")
+    end
+
     -- 遍历所有入口和出口组合，找总距离最小的路径
+    -- （此处仅处理新结构，旧结构已在迁移时清空）
     local best_station_name = nil
     local best_exit_id = nil
     local min_total_dist_sq = math.huge
 
     for entry_id, exit_list in pairs(available_entries) do
-        -- 兼容性检查：确保是新结构
-        if not exit_list.station_name then
+        if RiftRail.DEBUG_MODE_ENABLED then
+            ltn_log("处理entry_id=" .. entry_id .. " exit_list类型=" .. type(exit_list))
+        end
+
+        -- 遍历该入口的所有出口
+        if type(exit_list) == "table" then
             for exit_id, route_data in pairs(exit_list) do
-                -- 计算起点到入口的距离（同一地表，坐标系一致）
-                local entry_dist_sq = (start_pos.x - route_data.position.x) ^ 2 +
-                    (start_pos.y - route_data.position.y) ^ 2
+                if type(route_data) == "table" and route_data.position and route_data.exit_position then
+                    if RiftRail.DEBUG_MODE_ENABLED then
+                        ltn_log("处理exit_id=" .. exit_id)
+                    end
 
-                -- 计算终点到出口的距离（同一地表，坐标系一致）
-                local exit_dist_sq = (dest_pos.x - route_data.exit_position.x) ^ 2 +
-                    (dest_pos.y - route_data.exit_position.y) ^ 2
+                    -- 计算起点到入口的距离（同一地表，坐标系一致）
+                    local entry_dist_sq = (start_pos.x - route_data.position.x) ^ 2 +
+                        (start_pos.y - route_data.position.y) ^ 2
 
-                -- 总距离 = 入口距离 + 出口距离
-                local total_dist_sq = entry_dist_sq + exit_dist_sq
+                    -- 计算终点到出口的距离（同一地表，坐标系一致）
+                    local exit_dist_sq = (dest_pos.x - route_data.exit_position.x) ^ 2 +
+                        (dest_pos.y - route_data.exit_position.y) ^ 2
 
-                if total_dist_sq < min_total_dist_sq then
-                    min_total_dist_sq = total_dist_sq
-                    best_station_name = route_data.station_name
-                    best_exit_id = route_data.exit_custom_id
+                    -- 总距离 = 入口距离 + 出口距离
+                    local total_dist_sq = entry_dist_sq + exit_dist_sq
+
+                    if total_dist_sq < min_total_dist_sq then
+                        min_total_dist_sq = total_dist_sq
+                        best_station_name = route_data.station_name
+                        best_exit_id = route_data.exit_custom_id
+                        if RiftRail.DEBUG_MODE_ENABLED then
+                            ltn_log("找到更优路线: station=" .. best_station_name .. " dist_sq=" .. total_dist_sq)
+                        end
+                    end
                 end
             end
         end
+    end
+
+    if RiftRail.DEBUG_MODE_ENABLED then
+        ltn_log("返回结果: station=" .. tostring(best_station_name) .. " exit_id=" .. tostring(best_exit_id))
     end
 
     return best_station_name, best_exit_id
@@ -838,6 +948,8 @@ function LTN.rebuild_routing_table_from_storage()
         storage.rift_rail_ltn_routing_table = {}
     end
 
+    local should_connect = is_ltn_active()
+
     -- 2. 遍历所有传送门
     if storage.rift_rails then
         for _, portaldata in pairs(storage.rift_rails) do
@@ -849,6 +961,9 @@ function LTN.rebuild_routing_table_from_storage()
                     if partner then
                         -- 4. 注册每一条路径
                         register_route(portaldata, partner)
+                        if should_connect then
+                            LTN.update_connection(portaldata, partner, true, nil, true, true, true)
+                        end
                     end
                 end
             end
