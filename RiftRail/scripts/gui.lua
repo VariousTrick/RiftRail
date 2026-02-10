@@ -210,7 +210,7 @@ function GUI.build_or_update(player, entity)
         left_label_caption = { "gui.rift-rail-mode-entry" },
         right_label_caption = { "gui.rift-rail-mode-exit" },
         tooltip = (switch_state == "left" and { "gui.rift-rail-mode-tooltip-left" }) or
-            (switch_state == "right" and { "gui.rift-rail-mode-tooltip-right" }) or { "gui.rift-rail-mode-tooltip-none" },
+        (switch_state == "right" and { "gui.rift-rail-mode-tooltip-right" }) or { "gui.rift-rail-mode-tooltip-none" },
     })
     mode_switch.style.bottom_margin = 12
 
@@ -262,7 +262,7 @@ function GUI.build_or_update(player, entity)
     if view_mode == "management" then
         -- 管理模式：显示"已连接的..."
         selector_caption_key = (my_data.mode == "entry") and "gui.rift-rail-connected-targets-label" or
-            "gui.rift-rail-connected-sources-label"
+        "gui.rift-rail-connected-sources-label"
     else
         -- 添加模式：显示"添加新连接"
         selector_caption_key = "gui.rift-rail-add-new-connection"
@@ -319,9 +319,16 @@ function GUI.build_or_update(player, entity)
                 end
                 local item_text = {
                     "",
-                    "[", tostring(idx), "] ",
-                    icon_str, p_data.name,
-                    " (ID:", p_data.id, ") [", p_data.surface.name, "]",
+                    "[",
+                    tostring(idx),
+                    "] ",
+                    icon_str,
+                    p_data.name,
+                    " (ID:",
+                    p_data.id,
+                    ") [",
+                    p_data.surface.name,
+                    "]",
                 }
                 table.insert(dropdown_items, item_text)
                 table.insert(dropdown_ids, id)
@@ -419,29 +426,7 @@ function GUI.build_or_update(player, entity)
         enabled = station_exists,
     })
 
-    -- 8. Cybersyn 开关 (适配多对一启用条件)
-    if script.active_mods["cybersyn"] and script.active_mods["space-exploration"] then
-        inner_flow.add({ type = "line", direction = "horizontal" })
-        local cs_flow = inner_flow.add({ type = "flow", direction = "horizontal" })
-        cs_flow.style.vertical_align = "center"
-        cs_flow.add({ type = "label", caption = { "gui.rift-rail-cybersyn-label" } })
-
-        -- Cybersyn 开关启用条件
-        -- [修改] 直接使用计数结果，强制一致
-        local cs_enabled = any_connection_exists
-
-        cs_flow.add({
-            type = "switch",
-            name = "rift_rail_cybersyn_switch",
-            switch_state = my_data.cybersyn_enabled and "right" or "left",
-            right_label_caption = { "gui.rift-rail-cybersyn-connected" },
-            left_label_caption = { "gui.rift-rail-cybersyn-disconnected" },
-            tooltip = { "gui.rift-rail-cybersyn-tooltip" },
-            enabled = cs_enabled,
-        })
-    end
-
-    -- 8b. LTN 开关 (适配多对一启用条件)
+    -- 8. LTN 开关 (适配多对一启用条件)
     if script.active_mods["LogisticTrainNetwork"] then
         inner_flow.add({ type = "line", direction = "horizontal" })
         local ltn_flow = inner_flow.add({ type = "flow", direction = "horizontal" })
@@ -796,9 +781,6 @@ function GUI.handle_switch_state_changed(event)
             mode = "exit"
         end
         remote.call("RiftRail", "set_portal_mode", player.index, my_data.id, mode)
-    elseif el_name == "rift_rail_cybersyn_switch" then
-        local enabled = (event.element.switch_state == "right")
-        remote.call("RiftRail", "set_cybersyn_enabled", player.index, my_data.id, enabled)
     elseif el_name == "rift_rail_ltn_switch" then
         local enabled = (event.element.switch_state == "right")
         remote.call("RiftRail", "set_ltn_enabled", player.index, my_data.id, enabled)
