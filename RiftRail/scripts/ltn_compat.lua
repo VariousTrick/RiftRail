@@ -183,7 +183,7 @@ compute_desired_routes = function(portal_data)
             local should_register = (portal_data.mode == "entry")
             result[target_id] = {
                 partner = partner_data,
-                should_register = should_register
+                should_register = should_register,
             }
         end
     end
@@ -301,8 +301,7 @@ p_join_pool = function(portal_data, dest_surface, batch_mode)
             if partner_station and partner_station.valid and station.valid then
                 local ok, err = pcall(function()
                     local nid = compute_network_id(station, partner_station, -1)
-                    remote.call("logistic-train-network", "connect_surfaces",
-                        station, partner_station, nid)
+                    remote.call("logistic-train-network", "connect_surfaces", station, partner_station, nid)
                 end)
 
                 if ok then
@@ -345,8 +344,7 @@ p_leave_pool = function(portal_data, dest_surface, batch_mode)
         for partner_unit, partner_station in pairs(partner_pool) do
             if partner_station and partner_station.valid then
                 local ok, err = pcall(function()
-                    remote.call("logistic-train-network", "disconnect_surfaces",
-                        station, partner_station)
+                    remote.call("logistic-train-network", "disconnect_surfaces", station, partner_station)
                 end)
 
                 if ok then
@@ -366,9 +364,7 @@ p_leave_pool = function(portal_data, dest_surface, batch_mode)
     end
 
     -- Step 2: 将自己从池子中移除
-    if storage.rr_ltn_pools and
-        storage.rr_ltn_pools[source_surface] and
-        storage.rr_ltn_pools[source_surface][dest_surface] then
+    if storage.rr_ltn_pools and storage.rr_ltn_pools[source_surface] and storage.rr_ltn_pools[source_surface][dest_surface] then
         storage.rr_ltn_pools[source_surface][dest_surface][unit_number] = nil
 
         if RiftRail.DEBUG_MODE_ENABLED then
@@ -401,8 +397,7 @@ p_commit_all_ltn_connections = function()
     for source_surface, destinations in pairs(storage.rr_ltn_pools) do
         for dest_surface, source_pool in pairs(destinations) do
             -- 获取反向池子
-            local dest_pool = storage.rr_ltn_pools[dest_surface] and
-                storage.rr_ltn_pools[dest_surface][source_surface]
+            local dest_pool = storage.rr_ltn_pools[dest_surface] and storage.rr_ltn_pools[dest_surface][source_surface]
 
             if dest_pool then
                 -- 将两个池子中的所有传送门两两配对
@@ -411,8 +406,7 @@ p_commit_all_ltn_connections = function()
                         if source_station.valid and dest_station.valid then
                             local ok, err = pcall(function()
                                 local nid = compute_network_id(source_station, dest_station, -1)
-                                remote.call("logistic-train-network", "connect_surfaces",
-                                    source_station, dest_station, nid)
+                                remote.call("logistic-train-network", "connect_surfaces", source_station, dest_station, nid)
                             end)
 
                             if ok then
@@ -614,8 +608,7 @@ end
 --- @param target_portal table 目标传送门
 --- @param operator_is_first boolean|nil 操作者顺序标记
 --- @return table|nil 本地化消息表
-build_connection_message = function(my_enabled, was_connected, now_connected, select_portal, target_portal,
-                                    operator_is_first)
+build_connection_message = function(my_enabled, was_connected, now_connected, select_portal, target_portal, operator_is_first)
     local first_portal = select_portal
     local second_portal = target_portal
     if operator_is_first == false then
@@ -707,8 +700,7 @@ function LTN.on_portal_mode_changed(portal_data, old_mode)
     end
 
     if RiftRail.DEBUG_MODE_ENABLED then
-        ltn_log("[ModeChanged] 已同步传送门模式切换: " ..
-            portal_data.name .. " (old=" .. tostring(old_mode) .. " new=" .. portal_data.mode .. ")")
+        ltn_log("[ModeChanged] 已同步传送门模式切换: " .. portal_data.name .. " (old=" .. tostring(old_mode) .. " new=" .. portal_data.mode .. ")")
     end
 end
 
@@ -768,8 +760,7 @@ function LTN.update_connection(select_portal, target_portal, connect, player, my
 
     -- 发送消息提示
     if not silent then
-        local msg = build_connection_message(my_enabled, was_connected, now_connected, select_portal, target_portal,
-            operator_is_first)
+        local msg = build_connection_message(my_enabled, was_connected, now_connected, select_portal, target_portal, operator_is_first)
         send_connection_message(msg, player, silent)
     end
 
@@ -856,12 +847,10 @@ local function find_best_route_station(from_surface_idx, to_surface_idx, start_p
                     end
 
                     -- 计算起点到入口的距离（同一地表，坐标系一致）
-                    local entry_dist_sq = (start_pos.x - route_data.position.x) ^ 2 +
-                        (start_pos.y - route_data.position.y) ^ 2
+                    local entry_dist_sq = (start_pos.x - route_data.position.x) ^ 2 + (start_pos.y - route_data.position.y) ^ 2
 
                     -- 计算终点到出口的距离（同一地表，坐标系一致）
-                    local exit_dist_sq = (dest_pos.x - route_data.exit_position.x) ^ 2 +
-                        (dest_pos.y - route_data.exit_position.y) ^ 2
+                    local exit_dist_sq = (dest_pos.x - route_data.exit_position.x) ^ 2 + (dest_pos.y - route_data.exit_position.y) ^ 2
 
                     -- 总距离 = 入口距离 + 出口距离
                     local total_dist_sq = entry_dist_sq + exit_dist_sq
@@ -904,8 +893,8 @@ local function insert_portal_sequence(train, station_name, exit_id, insert_index
             condition = {
                 first_signal = { type = "virtual", name = "riftrail-go-to-id" },
                 comparator = "=",
-                constant = exit_id
-            }
+                constant = exit_id,
+            },
         })
     end
 
@@ -937,8 +926,43 @@ local function insert_portal_sequence(train, station_name, exit_id, insert_index
     end
 end
 
--- 处理单条交付任务
--- 结合查表 + 三段式路径规划的处理函数
+--- 【调度器辅助函数】
+--- 尝试为一次跨地表行程插入传送门路由。
+--- 设计原则：这是一个独立的、可重用的逻辑块，封装了"判断-寻路-插站"的完整流程。
+---
+--- @param train LuaTrain 火车实体
+--- @param from_surface_idx number 起点地表索引
+--- @param to_surface_idx number 终点地表索引
+--- @param from_pos table 起点坐标 {x, y}（用于计算距离）
+--- @param to_pos table 终点坐标 {x, y}（用于计算距离）
+--- @param insert_index number 时刻表插入位置
+--- @param log_context string 日志上下文（例如 "取货", "送货", "返程"）
+local function try_insert_cross_surface_route(train, from_surface_idx, to_surface_idx, from_pos, to_pos, insert_index, log_context)
+    -- Step 1: 检查是否需要跨地表
+    if from_surface_idx == to_surface_idx then
+        return -- 在同一地表，无需操作
+    end
+
+    -- Step 2: 寻找最佳传送门路径
+    local station_name, exit_id = find_best_route_station(from_surface_idx, to_surface_idx, from_pos, to_pos)
+
+    -- Step 3: 如果找到路径，则插入到时刻表
+    if station_name then
+        insert_portal_sequence(train, station_name, exit_id, insert_index)
+        if RiftRail.DEBUG_MODE_ENABLED then
+            ltn_log("插入" .. log_context .. "路由: 地表 " .. from_surface_idx .. " -> " .. to_surface_idx)
+        end
+    else
+        -- 错误/警告处理：未能找到可用路径
+        ltn_log("[警告] 未能为 " .. log_context .. " 找到可用传送路径 (" .. from_surface_idx .. " -> " .. to_surface_idx .. ")")
+    end
+end
+
+-- 处理单条交付任务（重构后）
+-- 现在的职责：
+--   1. 获取所有必要的实体和索引 (train, loco, provider, requester, p_index, r_index)
+--   2. 为 A, B, C 三个阶段准备好参数
+--   3. 调用三次辅助函数，完成时刻表修改
 local function process_single_delivery(train_id, deliveries, stops)
     local d = deliveries and deliveries[train_id]
     if not (d and d.train and d.train.valid) then
@@ -946,7 +970,6 @@ local function process_single_delivery(train_id, deliveries, stops)
     end
 
     local train = d.train
-    -- 获取主要车头用于定位地表
     local loco = train.locomotives and train.locomotives.front_movers and train.locomotives.front_movers[1]
     if not (loco and loco.valid) then
         return
@@ -954,65 +977,44 @@ local function process_single_delivery(train_id, deliveries, stops)
 
     local from_stop_data = d.from_id and stops[d.from_id]
     local to_stop_data = d.to_id and stops[d.to_id]
-
     local from_entity = from_stop_data and from_stop_data.entity
     local to_entity = to_stop_data and to_stop_data.entity
-
     if not (from_entity and from_entity.valid and to_entity and to_entity.valid) then
         return
     end
 
-    -- 1. 获取 LTN 关键索引 (Provider 和 Requester)
+    -- 获取 LTN 时刻表中的 Provider 和 Requester 索引
     local p_index, _, p_type = remote.call("logistic-train-network", "get_next_logistic_stop", train)
     local r_index, r_type
 
     if p_type == "provider" then
-        -- 正常情况：Next 是 Provider，再下一个是 Requester
         r_index, _, r_type = remote.call("logistic-train-network", "get_next_logistic_stop", train, p_index + 1)
     else
-        -- 异常情况：第一站不是 Provider (可能是 Depot?)，尝试找 Requester
         r_index, _, r_type = remote.call("logistic-train-network", "get_next_logistic_stop", train)
         if r_type ~= "requester" then
-            r_index, _, r_type = remote.call("logistic-train-network", "get_next_logistic_stop", train,
-                (r_index or 0) + 1)
+            r_index, _, r_type = remote.call("logistic-train-network", "get_next_logistic_stop", train, (r_index or 0) + 1)
         end
     end
 
-    -- 2. 执行三段式插入 (倒序执行，防止索引偏移)
-    -- [阶段 C] Requester -> Loco Surface
-    if r_index and to_entity.surface.index ~= loco.surface.index then
-        local station, exit_id = find_best_route_station(to_entity.surface.index, loco.surface.index, to_entity.position,
-            loco.position)
-        if station then
-            insert_portal_sequence(train, station, exit_id, r_index + 1)
-            if RiftRail.DEBUG_MODE_ENABLED then
-                ltn_log("插入回程路由: " .. to_entity.surface.name .. " -> " .. loco.surface.name)
-            end
-        end
+    -- 检查索引是否有效
+    if not r_index then
+        ltn_log("[警告] 未能找到 Requester 站点索引，跳过调度修改。")
+        return
     end
 
-    -- [阶段 B] Provider -> Requester
-    if r_index and from_entity.surface.index ~= to_entity.surface.index then
-        local station, exit_id = find_best_route_station(from_entity.surface.index, to_entity.surface.index,
-            from_entity.position, to_entity.position)
-        if station then
-            insert_portal_sequence(train, station, exit_id, r_index)
-            if RiftRail.DEBUG_MODE_ENABLED then
-                ltn_log("插入送货路由: " .. from_entity.surface.name .. " -> " .. to_entity.surface.name)
-            end
-        end
-    end
+    -- 执行三段式插入 (倒序执行，防止索引偏移)
 
-    -- [阶段 A] Loco -> Provider
-    if p_index and loco.surface.index ~= from_entity.surface.index then
-        local station, exit_id = find_best_route_station(loco.surface.index, from_entity.surface.index, loco.position,
-            from_entity.position)
-        if station then
-            insert_portal_sequence(train, station, exit_id, p_index)
-            if RiftRail.DEBUG_MODE_ENABLED then
-                ltn_log("插入取货路由: " .. loco.surface.name .. " -> " .. from_entity.surface.name)
-            end
-        end
+    -- [阶段 C] Requester -> Loco's Original Surface (返程)
+    try_insert_cross_surface_route(train, to_entity.surface.index, loco.surface.index, to_entity.position, loco.position, r_index + 1, "返程")
+
+    -- [阶段 B] Provider -> Requester (送货)
+    try_insert_cross_surface_route(train, from_entity.surface.index, to_entity.surface.index, from_entity.position, to_entity.position, r_index, "送货")
+
+    -- [阶段 A] Loco -> Provider (取货)
+    if p_index then
+        try_insert_cross_surface_route(train, loco.surface.index, from_entity.surface.index, loco.position, from_entity.position, p_index, "取货")
+    else
+        ltn_log("[警告] 未能找到 Provider 站点索引，跳过取货路由插入。")
     end
 end
 
@@ -1113,8 +1115,7 @@ function LTN.purge_legacy_connections()
         local disconnect_count = 0
         for i = 1, #stations do
             for j = i + 1, #stations do
-                local ok = pcall(remote.call, "logistic-train-network", "disconnect_surfaces",
-                    stations[i], stations[j])
+                local ok = pcall(remote.call, "logistic-train-network", "disconnect_surfaces", stations[i], stations[j])
                 if ok then
                     disconnect_count = disconnect_count + 1
                 end
