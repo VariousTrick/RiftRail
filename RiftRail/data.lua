@@ -6,8 +6,8 @@
 local sprite_left = {
     filename = "__RiftRail__/graphics/sprite_horiz_atlas_placer.png", -- 指向新图集
     priority = "high",
-    width = 1344, -- 单个贴图的宽度
-    height = 528, -- 单个贴图的高度
+    width = 1344,                                                     -- 单个贴图的宽度
+    height = 528,                                                     -- 单个贴图的高度
     frame_count = 1,
     direction_count = 1,
     shift = { 0, 0 },
@@ -34,8 +34,8 @@ local sprite_right = {
 local sprite_down = {
     filename = "__RiftRail__/graphics/sprite_vert_atlas_placer.png", -- 指向新图集
     priority = "high",
-    width = 528, -- 单个贴图的宽度
-    height = 1344, -- 单个贴图的高度
+    width = 528,                                                     -- 单个贴图的宽度
+    height = 1344,                                                   -- 单个贴图的高度
     frame_count = 1,
     direction_count = 1,
     shift = { 0, 0 },
@@ -77,7 +77,7 @@ local blank_sprite = {
 local entity_sprite = {
     filename = "__RiftRail__/graphics/entity.png",
     priority = "high",
-    width = 256, -- 4格
+    width = 256,  -- 4格
     height = 768, -- 12格
     frame_count = 1,
     direction_count = 1,
@@ -325,12 +325,12 @@ data:extend({
     },
 
     -- 3. 内部组件占位符
-    { type = "train-stop", name = "rift-rail-station" },
-    { type = "rail-signal", name = "rift-rail-signal" },
+    { type = "train-stop",           name = "rift-rail-station" },
+    { type = "rail-signal",          name = "rift-rail-signal" },
     { type = "legacy-straight-rail", name = "rift-rail-internal-rail" },
-    { type = "container", name = "rift-rail-core" }, -- [修改] 改为容器(箱子)，以便利用原生的 GUI 锚定机制
-    { type = "simple-entity", name = "rift-rail-collider" },
-    { type = "simple-entity", name = "rift-rail-blocker" }, -- 物理堵头
+    { type = "container",            name = "rift-rail-core" }, -- [修改] 改为容器(箱子)，以便利用原生的 GUI 锚定机制
+    { type = "simple-entity",        name = "rift-rail-collider" },
+    { type = "simple-entity",        name = "rift-rail-blocker" }, -- 物理堵头
 
     {
         type = "locomotive",
@@ -368,6 +368,16 @@ data:extend({
         -- 隐形贴图
         pictures = { rotated = blank_sprite },
         vertical_selection_shift = -0.5,
+    },
+
+    -- 虚拟信号：go_to_id
+    {
+        type = "virtual-signal",
+        name = "riftrail-go-to-id",
+        icon = "__RiftRail__/graphics/icon/go_to_id.png",
+        icon_size = 64,
+        subgroup = "virtual-signal",
+        order = "z[riftrail-go-to-id]",
     },
 })
 
@@ -412,7 +422,8 @@ internal_signal.selectable_in_game = false
 local internal_rail = data.raw["legacy-straight-rail"]["rift-rail-internal-rail"]
 
 -- [保留] 关键逻辑：自动寻找正确的原版铁轨原型
-local source_rail = data.raw["legacy-straight-rail"]["legacy-straight-rail"] or data.raw["legacy-straight-rail"]["straight-rail"]
+local source_rail = data.raw["legacy-straight-rail"]["legacy-straight-rail"] or
+data.raw["legacy-straight-rail"]["straight-rail"]
 
 -- [修改] 手动复制属性，但刻意跳过 "pictures"
 -- 这样我们继承了铁轨的所有物理属性，但没继承它的外观
@@ -553,7 +564,8 @@ gui_core.minable = nil
 
 -- 原代码：gui_core.flags = { "hide-alt-info", "not-repairable", "not-blueprintable", "not-on-map", "not-rotatable" }
 -- 修改后：增加 "not-deconstructable" 防止机器人试图拆它
-gui_core.flags = { "hide-alt-info", "not-repairable", "not-blueprintable", "not-on-map", "not-rotatable", "not-deconstructable" }
+gui_core.flags = { "hide-alt-info", "not-repairable", "not-blueprintable", "not-on-map", "not-rotatable",
+    "not-deconstructable" }
 -- <<<<< [修改结束] <<<<
 gui_core.hidden = true
 gui_core.collision_mask = { layers = {} } -- 无碰撞

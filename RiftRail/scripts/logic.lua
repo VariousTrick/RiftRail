@@ -44,7 +44,37 @@ local function refresh_all_guis()
     end
 end
 
+-- ============================================================================
+-- 辅助函数：检查连接数并在归零时自动关闭物流开关
+-- ============================================================================
+local function check_and_reset_logistics(portaldata)
+    if not portaldata then
+        return
+    end
+
+    local connection_count = 0
+    if portaldata.mode == "entry" and portaldata.target_ids then
+        for _ in pairs(portaldata.target_ids) do
+            connection_count = connection_count + 1
+        end
+    elseif portaldata.mode == "exit" and portaldata.source_ids then
+        for _ in pairs(portaldata.source_ids) do
+            connection_count = connection_count + 1
+        end
+    end
+
+    -- 如果连接数已清零，则强制关闭开关
+    if connection_count == 0 then
+        portaldata.cybersyn_enabled = false
+        portaldata.ltn_enabled = false
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_debug("[Logic] Portal " .. portaldata.id .. " 连接数为零，已关闭 Cybersyn 和 LTN 开关")
+        end
+    end
+end
+-- ============================================================================
 -- 辅助函数：构建包含图标的富文本显示名称
+-- ============================================================================
 local function build_display_name(portaldata)
     local richtext = ""
     if portaldata and portaldata.icon and portaldata.icon.type and portaldata.icon.name then
@@ -56,7 +86,9 @@ local function build_display_name(portaldata)
     return richtext
 end
 
+-- ============================================================================
 -- 辅助函数：根据当前模式强制刷新车站限制 (防止引擎自动同步或未初始化)
+-- ============================================================================
 function Logic.refresh_station_limit(portaldata)
     if not (portaldata and portaldata.children) then
         return
@@ -134,7 +166,6 @@ local function update_collider_state(portaldata)
     end
 end
 
--- scripts/logic.lua
 -- ============================================================================
 -- 1. 更新名称
 -- ============================================================================
@@ -198,7 +229,7 @@ function Logic.update_name(player_index, portal_id, new_string)
 end
 
 -- ============================================================================
--- 2. 模式切换 (核心修改)
+-- 2. 模式切换 (重构：适配多对一，移除双向同步，增加自动清理)
 -- ============================================================================
 function Logic.set_mode(player_index, portal_id, mode, skip_sync)
     local player = nil
@@ -211,64 +242,83 @@ function Logic.set_mode(player_index, portal_id, mode, skip_sync)
         return
     end
 
-    -- 记录旧模式，用于 LTN 同步
     local old_mode = my_data.mode
-
     if old_mode == mode then
         return
     end
 
+    -- [关键步骤] 切换模式前，必须清理旧的连接关系
+    -- 防止“带病上岗”导致数据拓扑错误
+    -- [多对多改造] 检查 target_ids 表，而不再是 paired_to_id
+    if old_mode == "entry" and my_data.target_ids and next(my_data.target_ids) then
+        -- [多对多改造] 遍历所有目标，并逐个通知它们断开连接
+        for target_id, _ in pairs(my_data.target_ids) do
+            local target = State.get_portaldata_by_id(target_id)
+            if target and target.source_ids then
+                target.source_ids[my_data.id] = nil
+            end
+        end
+
+        -- [新增] 检查刚刚被断开的目标
+        check_and_reset_logistics(target)
+        -- [多对多改造] 清空整个目标列表
+        my_data.target_ids = {}
+
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_debug("[Logic] 模式切换清理: Entry " .. my_data.id .. " 断开连接")
+        end
+    elseif old_mode == "exit" and my_data.source_ids then
+        -- 如果之前是出口，通知所有来源断开连接
+        for src_id, _ in pairs(my_data.source_ids) do
+            local src_data = State.get_portaldata_by_id(src_id)
+            if src_data then
+                src_data.paired_to_id = nil
+                -- 顺便把来源重置为中立，或者保持原样?
+                -- 建议保持原样或重置为中立。为了安全，重置为中立比较好。
+                -- 这里直接修改数据，不调用 set_mode 以免递归
+                src_data.mode = "neutral"
+                -- 注意：这里简单处理了，实际上可能需要触发源端的GUI刷新
+            end
+            -- [新增] 检查刚刚被断开的来源
+            check_and_reset_logistics(src_data)
+        end
+        my_data.source_ids = {}
+        -- [新增] 清理互斥锁
+        my_data.locking_entry_id = nil
+
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_debug("[Logic] 模式切换清理: Exit " .. my_data.id .. " 清空所有来源")
+        end
+    end
+
+    -- 应用新模式
     my_data.mode = mode
 
-    -- 在模式改变后，通知 LTN 模块更新路由表
+    -- LTN 回调
     if LTN and LTN.on_portal_mode_changed then
         LTN.on_portal_mode_changed(my_data, old_mode)
     end
 
-    -- 立即更新物理碰撞器状态
+    -- 更新物理碰撞器
     update_collider_state(my_data)
 
-    -- 使用统一函数刷新车站限制
+    -- 刷新车站限制
     Logic.refresh_station_limit(my_data)
 
     -- 消息提示
     if player then
-        if mode == "entry" then
-            player.print({ "gui.rift-rail-mode-entry" })
-        end
-        if mode == "exit" then
-            player.print({ "gui.rift-rail-mode-exit" })
-        end
-        if mode == "neutral" then
-            player.print({ "gui.rift-rail-mode-neutral" })
-        end
+        local msg_key = "gui.rift-rail-mode-" .. mode
+        player.print({ msg_key })
     end
 
-    -- 智能同步配对对象
-    if not skip_sync and my_data.paired_to_id then
-        local partner = State.get_portaldata_by_id(my_data.paired_to_id)
-        if partner then
-            local partner_mode = "neutral"
-            if mode == "entry" then
-                partner_mode = "exit"
-            end
-            if mode == "exit" then
-                partner_mode = "entry"
-            end
-
-            Logic.set_mode(nil, partner.id, partner_mode, true)
-
-            if player then
-                player.print({ "messages.rift-rail-mode-synced", partner_mode })
-            end
-        end
-    end
+    -- [重要修改] 移除了旧版的 "skip_sync" 和自动设置 partner 模式的逻辑
+    -- 在多对一结构中，不再允许自动修改配对对象的模式
 
     refresh_all_guis()
 end
 
 -- ============================================================================
--- 3. 配对逻辑
+-- 3. 配对逻辑 (重构：单向连接 Entry -> Exit)
 -- ============================================================================
 function Logic.pair_portals(player_index, source_id, target_id)
     local player = game.get_player(player_index)
@@ -279,75 +329,121 @@ function Logic.pair_portals(player_index, source_id, target_id)
         return
     end
 
-    if source.paired_to_id then
-        player.print({ "messages.rift-rail-error-self-already-paired" })
-        return
+    -- [多对多改造] 智能方向修正
+    -- 如果发起者(source)是出口，或者目标(target)是入口，则交换以统一为 "Entry -> Exit"
+    if source.mode == "exit" or (target.mode == "entry" and source.mode ~= "entry") then
+        -- 交换数据对象
+        local temp_data = source
+        source = target
+        target = temp_data
+
+        -- 交换 ID (target_id 稍后会被用到)
+        local temp_id = source_id
+        source_id = target_id
+        target_id = temp_id
     end
-    if target.paired_to_id then
-        player.print({ "messages.rift-rail-error-target-already-paired" })
+
+    -- 1. 验证源：经过交换后，source 必须是 入口 或 中立
+    if source.mode == "exit" then
+        -- 如果到了这里 source 还是 exit，说明是 Exit -> Exit，报错
+        player.print({ "messages.rift-rail-error-source-is-exit" })
         return
     end
 
-    source.paired_to_id = target_id
-    target.paired_to_id = source_id
+    -- 2. 验证目标：经过交换后，target 必须是 出口 或 中立
+    if target.mode == "entry" then
+        -- 如果到了这里 target 是 entry，说明是 Entry -> Entry，报错
+        player.print({ "messages.rift-rail-error-target-is-entry" })
+        return
+    end
 
-    -- 使用富文本显示，支持图标（玩家个人消息，保留本地化）
+    -- 3. 执行连接 (不对称结构)
+    -- 源指向目标
+    -- [多对多改造] 初始化 target_ids 表（如果不存在）
+    if not source.target_ids then
+        source.target_ids = {}
+    end
+    -- [多对多改造] 将目标 ID 加入列表 (缓存实体ID)
+    source.target_ids[target_id] = {
+        custom_id = target_id,
+        unit_number = target.shell.unit_number
+    }
+
+    -- 目标记录源 (多对一支持)
+    if not target.source_ids then
+        target.source_ids = {}
+    end
+    target.source_ids[source_id] = {
+        custom_id = source_id,
+        unit_number = source.shell.unit_number
+    }
+    -- 注意：目标 (Exit) 的 paired_to_id 保持为 nil，因为它不再指向单一对象
+
+    -- 4. 智能调整模式
+    -- 如果源是中立，自动切为入口
+    if source.mode == "neutral" then
+        Logic.set_mode(player_index, source_id, "entry", true)
+    end
+
+    -- 如果目标是中立，自动切为出口
+    if target.mode == "neutral" then
+        Logic.set_mode(player_index, target_id, "exit", true)
+    end
+
+    -- 5. 反馈消息
     local source_display = build_display_name(source)
     local target_display = build_display_name(target)
     player.print({ "messages.rift-rail-pair-success", source_display, target_display })
 
-    -- 智能初始化状态
-    if source.mode == "entry" then
-        Logic.set_mode(player_index, target_id, "exit", true)
-    elseif source.mode == "exit" then
-        Logic.set_mode(player_index, target_id, "entry", true)
-    elseif target.mode == "entry" then
-        Logic.set_mode(player_index, source_id, "exit", true)
-    elseif target.mode == "exit" then
-        Logic.set_mode(player_index, source_id, "entry", true)
+    if RiftRail.DEBUG_MODE_ENABLED then
+        log_debug("[Logic] 建立连接: Entry " .. source.id .. " -> Exit " .. target.id)
     end
 
     refresh_all_guis()
 end
 
 -- ============================================================================
--- 4. 解绑逻辑
+-- 4. 解绑逻辑 (v2.0 - 代理到新函数)
 -- ============================================================================
+-- 这个函数现在主要由 GUI 的“踢出”按钮调用，并且只处理“入口”
 function Logic.unpair_portals(player_index, portal_id)
-    local player = game.get_player(player_index)
-    local source = State.get_portaldata_by_id(portal_id)
-    if not source or not source.paired_to_id then
+    local player = nil
+    if player_index then
+        player = game.get_player(player_index)
+    end
+    local portal = State.get_portaldata_by_id(portal_id)
+
+    if not portal then
         return
     end
 
-    local target = State.get_portaldata_by_id(source.paired_to_id)
-    local target_name = target and target.name or "Unknown"
-
-    source.paired_to_id = nil
-    Logic.set_mode(nil, source.id, "neutral", true)
-
-    if target then
-        target.paired_to_id = nil
-        Logic.set_mode(nil, target.id, "neutral", true)
+    -- [多对多改造] 将所有逻辑代理到 unpair_portals_specific
+    if portal.mode == "entry" and portal.target_ids then
+        -- 遍历所有目标并逐个断开
+        for target_id, _ in pairs(portal.target_ids) do
+            Logic.unpair_portals_specific(player_index, portal.id, target_id)
+        end
+    elseif portal.mode == "exit" and portal.source_ids then
+        -- 遍历所有来源并逐个断开
+        for source_id, _ in pairs(portal.source_ids) do
+            Logic.unpair_portals_specific(player_index, source_id, portal.id)
+        end
     end
 
-    -- [修改] 使用富文本显示，支持图标（玩家个人消息，保留本地化）
-    local target_display = build_display_name(target)
-    player.print({ "messages.rift-rail-unpair-success", target_display })
-    refresh_all_guis()
+    -- refresh_all_guis() 已经包含在 _specific 函数中，这里无需重复调用
 end
 
 -- ============================================================================
 -- 5. 远程观察
 -- ============================================================================
-function Logic.open_remote_view(player_index, portal_id)
+function Logic.open_remote_view_by_target(player_index, target_id)
     local player = game.get_player(player_index)
-    local my_data = State.get_portaldata_by_id(portal_id)
-    if not (player and my_data and my_data.paired_to_id) then
+    if not (player and target_id) then
         return
     end
 
-    local target = State.get_portaldata_by_id(my_data.paired_to_id)
+    -- 直接使用传入的目标ID查找目标建筑
+    local target = State.get_portaldata_by_id(target_id)
     if target and target.shell and target.shell.valid then
         player.opened = nil
         player.set_controller({
@@ -360,7 +456,7 @@ function Logic.open_remote_view(player_index, portal_id)
 end
 
 -- ============================================================================
--- 6. Cybersyn 开关控制 (接入真实逻辑)
+-- 6. Cybersyn 开关控制 (v4.0 - 彻底解耦，仅通知)
 -- ============================================================================
 function Logic.set_cybersyn_enabled(player_index, portal_id, enabled)
     local player = game.get_player(player_index)
@@ -370,48 +466,39 @@ function Logic.set_cybersyn_enabled(player_index, portal_id, enabled)
         return
     end
 
-    -- 智能代理逻辑：如果是出口，尝试操作其配对的入口
-    if my_data.mode == "exit" then
-        if my_data.paired_to_id then
-            local entry_partner = State.get_portaldata_by_id(my_data.paired_to_id)
-            if entry_partner and entry_partner.mode == "entry" then
-                -- 递归调用自己，但目标换成入口
-                Logic.set_cybersyn_enabled(player_index, entry_partner.id, enabled)
-                -- 同步当前 GUI 状态（如果入口开启成功，出口也显示开启）
-                my_data.cybersyn_enabled = entry_partner.cybersyn_enabled
-                return
+    -- 1. 只修改自己的开关状态
+    my_data.cybersyn_enabled = enabled
+
+    -- 2. 收集所有与自己有连接关系的伙伴
+    local partners = {}
+    if my_data.target_ids then
+        for target_id, _ in pairs(my_data.target_ids) do
+            table.insert(partners, State.get_portaldata_by_id(target_id))
+        end
+    end
+    if my_data.source_ids then
+        for source_id, _ in pairs(my_data.source_ids) do
+            table.insert(partners, State.get_portaldata_by_id(source_id))
+        end
+    end
+
+    -- 3. 遍历所有伙伴，通知兼容模块去重新评估连接状态
+    for _, partner_data in pairs(partners) do
+        if partner_data and CybersynSE and CybersynSE.update_connection then
+            -- 根据自己是源还是目标，正确传递参数
+            if my_data.mode == "entry" then
+                CybersynSE.update_connection(my_data, partner_data, nil, player, false, enabled, true)
+            else -- exit or neutral
+                CybersynSE.update_connection(partner_data, my_data, nil, player, false, enabled, false)
             end
         end
-        -- 如果找不到配对入口，或者配对的不是入口，报错并回弹
-        player.print({ "messages.rift-rail-error-cybersyn-on-exit" })
-        return
     end
 
-    -- 获取配对对象
-    local partner = nil
-    if my_data.paired_to_id then
-        partner = State.get_portaldata_by_id(my_data.paired_to_id)
-    end
-
-    if not partner then
-        player.print({ "messages.rift-rail-error-cybersyn-unpaired" }) -- 需要配对才能开
-        return
-    end
-
-    -- [修改] 调用兼容模块执行实际操作
-    if CybersynSE then
-        CybersynSE.update_connection(my_data, partner, enabled, player)
-        -- 注意：update_connection 内部成功后会更新 my_data.cybersyn_enabled
-    else
-        my_data.cybersyn_enabled = enabled --保底逻辑
-    end
-
-    -- 刷新界面
     refresh_all_guis()
 end
 
 -- ============================================================================
--- 7. LTN 开关控制
+-- 7. LTN 开关控制 (独立状态模式，类似 Cybersyn)
 -- ==========================================================================
 function Logic.set_ltn_enabled(player_index, portal_id, enabled)
     local player = game.get_player(player_index)
@@ -420,19 +507,35 @@ function Logic.set_ltn_enabled(player_index, portal_id, enabled)
         return
     end
 
-    local partner = nil
-    if my_data.paired_to_id then
-        partner = State.get_portaldata_by_id(my_data.paired_to_id)
+    -- 1. 只修改自己的开关状态
+    my_data.ltn_enabled = enabled
+
+    -- 2. 收集所有与自己有连接关系的伙伴
+    local partners = {}
+    if my_data.target_ids then
+        for target_id, _ in pairs(my_data.target_ids) do
+            table.insert(partners, State.get_portaldata_by_id(target_id))
+        end
     end
-    if not partner then
-        player.print({ "messages.rift-rail-error-ltn-unpaired" })
-        return
+    if my_data.source_ids then
+        for source_id, _ in pairs(my_data.source_ids) do
+            table.insert(partners, State.get_portaldata_by_id(source_id))
+        end
     end
 
-    if LTN then
-        LTN.update_connection(my_data, partner, enabled, player)
-    else
-        my_data.ltn_enabled = enabled
+    -- 3. 遍历所有伙伴，通知兼容模块去重新评估连接状态
+    for _, partner_data in pairs(partners) do
+        if partner_data and LTN and LTN.update_connection then
+            -- 根据自己是源还是目标，正确传递参数
+            -- update_connection 内部会根据双方的 ltn_enabled 状态决定是否注册
+            if my_data.mode == "entry" then
+                local should_connect = my_data.ltn_enabled and partner_data.ltn_enabled
+                LTN.update_connection(my_data, partner_data, should_connect, player, enabled, nil, true)
+            else -- exit
+                local should_connect = partner_data.ltn_enabled and my_data.ltn_enabled
+                LTN.update_connection(partner_data, my_data, should_connect, player, enabled, nil, false)
+            end
+        end
     end
 
     refresh_all_guis()
@@ -489,6 +592,98 @@ function Logic.teleport_player(player_index, portal_id)
             player.print({ "messages.rift-rail-error-self-invalid" })
         end
     end
+end
+
+-- ============================================================================
+-- 9. 一键断开所有来源 (新增功能)
+-- ============================================================================
+function Logic.unpair_all_from_exit(player_index, portal_id)
+    local player = game.get_player(player_index)
+    local portal = State.get_portaldata_by_id(portal_id)
+    if not (player and portal and portal.mode == "exit") then
+        return
+    end
+
+    if portal.source_ids and next(portal.source_ids) then
+        local count = 0
+        -- 创建一个源ID的临时副本进行遍历，因为 unpair_portals 会修改原始表
+        local source_ids_copy = {}
+        for id, _ in pairs(portal.source_ids) do
+            table.insert(source_ids_copy, id)
+        end
+
+        for _, src_id in ipairs(source_ids_copy) do
+            -- 调用现有的单体解绑逻辑，它会处理所有清理工作
+            Logic.unpair_portals(player_index, src_id)
+            count = count + 1
+        end
+
+        player.print({ "messages.rift-rail-unpair-all-success", count })
+    end
+end
+
+-- ============================================================================
+-- 10.[多对多新增] 精准解绑逻辑 (断开指定的一对连接)
+-- ============================================================================
+function Logic.unpair_portals_specific(player_index, source_id, target_id)
+    local player = nil
+    if player_index then
+        player = game.get_player(player_index)
+    end
+
+    local source = State.get_portaldata_by_id(source_id)
+    local target = State.get_portaldata_by_id(target_id)
+
+    if not (source and target) then
+        return
+    end
+
+    -- 1. 清理源头 (Entry) 的记录
+    if source.target_ids then
+        source.target_ids[target_id] = nil
+    end
+
+    -- 2. 清理目标 (Exit) 的记录
+    if target.source_ids then
+        target.source_ids[source_id] = nil
+    end
+
+    -- [新增] 检查双方的连接数，如果归零则自动关闭开关
+    check_and_reset_logistics(source)
+    check_and_reset_logistics(target)
+
+    -- [新增] 在断开连接关系后，强制通知兼容模块清理连接
+    if CybersynSE and CybersynSE.update_connection then
+        -- 强制发送 "false" 指令来清理（最后一个参数 nil 表示非用户操作）
+        if source.mode == "entry" then
+            CybersynSE.update_connection(source, target, false, player, false, nil)
+        else
+            CybersynSE.update_connection(target, source, false, player, false, nil)
+        end
+    end
+
+    -- [新增] LTN 清理逻辑（与 Cybersyn 对等）
+    if LTN and LTN.update_connection then
+        -- 强制发送 "false" 指令来清理（最后一个参数 nil 表示非用户操作）
+        if source.mode == "entry" then
+            LTN.update_connection(source, target, false, player, false, nil)
+        else
+            LTN.update_connection(target, source, false, player, false, nil)
+        end
+    end
+
+    -- 3. 反馈消息
+    if player then
+        -- 复用现有的本地化字符串，提示已断开与某某的连接
+        local target_display = build_display_name(target)
+        player.print({ "messages.rift-rail-unpair-success", target_display })
+    end
+
+    if RiftRail.DEBUG_MODE_ENABLED then
+        log_debug("[Logic] 精准断开: " .. source_id .. " -x- " .. target_id)
+    end
+
+    refresh_all_guis()
 end
 
 return Logic
