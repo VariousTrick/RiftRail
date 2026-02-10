@@ -133,22 +133,32 @@ end
 -- ============================================================================
 
 -- 向 Cybersyn 注册一个“电梯”
+--- 【合并策略】读取现有记录，补充新的地表映射，保留之前的补丁信息
 local function register_fake_elevator(portaldata, station)
-    -- 构造 SE 风格的数据结构
-    -- Cybersyn 需要查 se_elevators[unit_number]
-    local fake_data = {
-        elevator = portaldata.shell,
-        stop = station,
-        surface_id = portaldata.surface.index,
-        stop_id = station.unit_number,
-        elevator_id = portaldata.shell.unit_number,
-        -- 下面这些是为了防止 Cybersyn 读取时报错
-        ground = { stop = station },
-        orbit = { stop = station },
-        cs_enabled = true,
-        network_masks = nil,
-        [portaldata.surface.index] = { stop = station },
-    }
+    -- Step 1: 尝试读取现有的伪装数据
+    local fake_data = remote.call("cybersyn", "read_global", "se_elevators", station.unit_number)
+
+    -- Step 2: 如果不存在，创建新的
+    if not fake_data then
+        fake_data = {
+            elevator = portaldata.shell,
+            stop = station,
+            surface_id = portaldata.surface.index,
+            stop_id = station.unit_number,
+            elevator_id = portaldata.shell.unit_number,
+            -- 下面这些是为了防止 Cybersyn 读取时报错
+            ground = { stop = station },
+            orbit = { stop = station },
+            cs_enabled = true,
+            network_masks = nil,
+        }
+    end
+
+    -- Step 3: 确保传送门自身的地表映射存在（更新或添加）
+    -- 这样既能保留之前补丁的其他地表信息，又能确保当前地表的映射是最新的
+    fake_data[portaldata.surface.index] = { stop = station }
+
+    -- Step 4: 写回 Cybersyn
     remote.call("cybersyn", "write_global", fake_data, "se_elevators", station.unit_number)
 end
 
@@ -283,9 +293,7 @@ local function leave_pool(portaldata, target_portal)
         if portaldata.target_ids and portaldata.cybersyn_enabled then
             for target_id, _ in pairs(portaldata.target_ids) do
                 local other_exit = State.get_portaldata_by_id(target_id)
-                if other_exit and
-                    other_exit.surface.index == surface_index_2 and
-                    other_exit.cybersyn_enabled then
+                if other_exit and other_exit.surface.index == surface_index_2 and other_exit.cybersyn_enabled then
                     still_has_connection = true
                     break
                 end
@@ -310,8 +318,7 @@ local function leave_pool(portaldata, target_portal)
                 end
                 -- 2. 移出池子
                 my_pool[uid] = nil
-                log_cs("[Pool] " ..
-                    portaldata.name .. " 离开池子: " .. s1 .. " -> " .. surface_index_2 .. " (失去所有到该地表的Cybersyn连接)")
+                log_cs("[Pool] " .. portaldata.name .. " 离开池子: " .. s1 .. " -> " .. surface_index_2 .. " (失去所有到该地表的Cybersyn连接)")
             end
         else
             log_cs("[Pool] " .. portaldata.name .. " 保留在池子中: 仍有其他启用Cybersyn的出口到地表 " .. surface_index_2)
@@ -373,8 +380,7 @@ end
 -- @param is_migration 是否为迁移模式
 -- @param my_enabled 当前操作建筑的新状态（用于区分开启/关闭操作）
 -- @param operator_is_first 是否由第一个参数触发（用于消息排序）
-function CybersynSE.update_connection(portaldata, target_portal, connect, player, is_migration, my_enabled,
-                                      operator_is_first)
+function CybersynSE.update_connection(portaldata, target_portal, connect, player, is_migration, my_enabled, operator_is_first)
     if not portaldata or not target_portal then
         return
     end
@@ -422,13 +428,9 @@ function CybersynSE.update_connection(portaldata, target_portal, connect, player
     end
 
     local name1 = first_portal.name or "Portal"
-    local gps1 = "[gps=" ..
-        first_portal.shell.position.x ..
-        "," .. first_portal.shell.position.y .. "," .. first_portal.shell.surface.name .. "]"
+    local gps1 = "[gps=" .. first_portal.shell.position.x .. "," .. first_portal.shell.position.y .. "," .. first_portal.shell.surface.name .. "]"
     local name2 = second_portal.name or "Portal"
-    local gps2 = "[gps=" ..
-        second_portal.shell.position.x ..
-        "," .. second_portal.shell.position.y .. "," .. second_portal.shell.surface.name .. "]"
+    local gps2 = "[gps=" .. second_portal.shell.position.x .. "," .. second_portal.shell.position.y .. "," .. second_portal.shell.surface.name .. "]"
 
     local msg = nil
 
