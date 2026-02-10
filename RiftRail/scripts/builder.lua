@@ -37,7 +37,7 @@ local MASTER_LAYOUT = {
     -- 信号灯 (入口处 Y=5)
     signals = {
         -- 右侧 (同侧/进入): 必须反转180度，面对驶来的列车
-        { x = 1.5, y = 5, flip = true },
+        { x = 1.5,  y = 5, flip = true },
         -- 左侧 (异侧/离开): 保持同向，面对反向驶来的列车
         { x = -1.5, y = 5, flip = false },
     },
@@ -60,11 +60,11 @@ local MASTER_LAYOUT = {
 local function rotate_point(point, dir)
     local x, y = point.x, point.y
 
-    if dir == 0 then -- North (不转)
+    if dir == 0 then      -- North (不转)
         return { x = x, y = y }
-    elseif dir == 4 then -- East (顺时针90度)
+    elseif dir == 4 then  -- East (顺时针90度)
         return { x = -y, y = x }
-    elseif dir == 8 then -- South (180度)
+    elseif dir == 8 then  -- South (180度)
         return { x = -x, y = -y }
     elseif dir == 12 then -- West (逆时针90度)
         return { x = y, y = -x }
@@ -238,7 +238,8 @@ function Builder.on_built(event)
             local clean_str = string.gsub(snatched_str, "%[item=rift%-rail%-placer%]", "")
 
             -- 2. 解析：提取自定义图标和名字
-            local prefix, icon_type, icon_name, separator, plain_name = string.match(clean_str, "^(%s*)%[([%w%-]+)=([%w%-]+)%](%s*)(.*)")
+            local prefix, icon_type, icon_name, separator, plain_name = string.match(clean_str,
+                "^(%s*)%[([%w%-]+)=([%w%-]+)%](%s*)(.*)")
 
             if icon_type and icon_name then
                 recovered_icon = { type = icon_type, name = icon_name }
@@ -267,7 +268,7 @@ function Builder.on_built(event)
     -- 4. 创建实体车站
     -- 捕获返回的车站实体，以便设置初始属性
     local station_ent = create_child("rift-rail-station", st_offset, direction, { backer_name = final_backer_name })
-    
+
     -- 如果蓝图/恢复时是出口模式，初始化为禁止驶入
     if recovered_mode == "exit" and station_ent and station_ent.valid then
         station_ent.trains_limit = 0
@@ -310,9 +311,13 @@ function Builder.on_built(event)
 
     if station_entity and core_entity then
         -- 连接红色信号线
-        core_entity.get_wire_connector(defines.wire_connector_id.circuit_red, true).connect_to(station_entity.get_wire_connector(defines.wire_connector_id.circuit_red, true), false, defines.wire_origin.script)
+        core_entity.get_wire_connector(defines.wire_connector_id.circuit_red, true).connect_to(
+        station_entity.get_wire_connector(defines.wire_connector_id.circuit_red, true), false, defines.wire_origin
+        .script)
         -- 连接绿色信号线
-        core_entity.get_wire_connector(defines.wire_connector_id.circuit_green, true).connect_to(station_entity.get_wire_connector(defines.wire_connector_id.circuit_green, true), false, defines.wire_origin.script)
+        core_entity.get_wire_connector(defines.wire_connector_id.circuit_green, true).connect_to(
+        station_entity.get_wire_connector(defines.wire_connector_id.circuit_green, true), false,
+            defines.wire_origin.script)
         if RiftRail.DEBUG_MODE_ENABLED then
             log_debug("[Builder] 车站和核心的红绿信号线已连接")
         end
@@ -378,7 +383,7 @@ end
 -- ============================================================================
 -- 拆除函数 (最终修复版，整合精准抢救与清理逻辑)
 -- ============================================================================
-function Builder.on_destroy(event)
+function Builder.on_destroy(event, player_index)
     local entity = event.entity
     if not (entity and entity.valid) then
         return
@@ -408,7 +413,7 @@ function Builder.on_destroy(event)
         local shells = surface.find_entities_filtered({
             name = "rift-rail-entity",
             position = entity.position, -- 核心和外壳在同一中心点
-            radius = 0.5, -- 极小范围，杜绝误伤
+            radius = 0.5,               -- 极小范围，杜绝误伤
         })
         if shells and shells[1] then
             shell_entity_ref = shells[1]
@@ -466,7 +471,7 @@ function Builder.on_destroy(event)
         log_debug("[Destroy] Path A: Precise cleanup based on portaldata.")
         local data = storage.rift_rails[target_unit_number]
 
-        if data.paired_to_id then
+        --[[ if data.paired_to_id then
             -- 【性能优化】使用 State.get_portaldata_by_id (它现在很快)
             local partner = State.get_portaldata_by_id(data.paired_to_id)
             if partner then
@@ -478,6 +483,16 @@ function Builder.on_destroy(event)
                     partner.leadertrain.destroy()
                     partner.leadertrain = nil
                 end
+            end
+        end ]]
+        -- [多对多改造] 拆除时，必须对每一个连接都执行“精准解绑”
+        if data.mode == "entry" and data.target_ids then
+            for target_id, _ in pairs(data.target_ids) do
+                Logic.unpair_portals_specific(player_index, data.id, target_id)
+            end
+        elseif data.mode == "exit" and data.source_ids then
+            for source_id, _ in pairs(data.source_ids) do
+                Logic.unpair_portals_specific(player_index, source_id, data.id)
             end
         end
 

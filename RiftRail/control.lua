@@ -39,6 +39,7 @@ local Schedule = require("scripts.schedule")
 local Util = require("scripts.util")
 local Teleport = require("scripts.teleport")
 local LTN = require("scripts.ltn_compat")
+local Migrations = require("scripts.migrations")
 
 -- 给 Builder 注入 CybersynSE (用于拆除清理)
 if Builder.init then
@@ -102,6 +103,16 @@ if GUI.init then
     GUI.init({ State = State, log_debug = log_debug })
 end
 
+-- 初始化 Migrations 模块
+if Migrations.init then
+    Migrations.init({
+        State = State,
+        log_debug = log_debug,
+        CybersynSE = CybersynSE,
+        LTN = LTN,
+    })
+end
+
 -- ============================================================================
 -- 5. 事件注册
 -- ============================================================================
@@ -144,7 +155,7 @@ local function on_mined_handler(event)
         end
     end
     -- 2. 再执行原来的销毁逻辑
-    Builder.on_destroy(event)
+    Builder.on_destroy(event, event.player_index)
 end
 
 -- 1. 原生拆除 (玩家): 单独注册 + 过滤器
@@ -259,6 +270,11 @@ script.on_event(defines.events.on_entity_renamed, function(event)
     -- 强制刷新列车限制，修正引擎因改名可能产生的自动同步错误
     Logic.refresh_station_limit(portaldata)
 
+    -- 更新 LTN 路由表中的车站名缓存
+    if portaldata.ltn_enabled and LTN.update_station_name_in_routes then
+        LTN.update_station_name_in_routes(portaldata.unit_number, final_backer_name)
+    end
+
     if portaldata.shell and portaldata.shell.valid then
         for _, player in pairs(game.connected_players) do
             local frame = player.gui.screen.rift_rail_main_frame
@@ -291,6 +307,7 @@ script.on_event(defines.events.on_gui_click, GUI.handle_click)
 script.on_event(defines.events.on_gui_switch_state_changed, GUI.handle_switch_state_changed)
 script.on_event(defines.events.on_gui_checked_state_changed, GUI.handle_checked_state_changed)
 script.on_event(defines.events.on_gui_confirmed, GUI.handle_confirmed)
+script.on_event(defines.events.on_gui_selection_state_changed, GUI.handle_selection_state_changed)
 
 -- 当玩家按 E 或 ESC 关闭窗口时触发
 script.on_event(defines.events.on_gui_closed, GUI.handle_close)
@@ -727,116 +744,8 @@ script.on_configuration_changed(function(event)
         storage.rift_rail_ltn_routing_table = {}
     end
 
-    -- [迁移任务 1] 为旧存档构建 id_map 缓存 (v0.1 -> v0.2)
-    if storage.rift_rails and next(storage.rift_rails) ~= nil and next(storage.rift_rail_id_map) == nil then
-        log_debug("[Migration] 检测到旧存档，正在构建 id_map 缓存...")
-        for unit_number, portaldata in pairs(storage.rift_rails) do
-            storage.rift_rail_id_map[portaldata.id] = unit_number
-        end
-    end
-
-    -- [迁移任务 2] 为旧建筑的 children 列表补充相对坐标 (v0.2 -> v0.3)
-    if storage.rift_rails then
-        for _, portaldata in pairs(storage.rift_rails) do
-            -- 判断是否为需要修复的旧数据：检查第一个 child 是否是实体对象，而不是 table
-            if portaldata.children and #portaldata.children > 0 and portaldata.children[1].valid then
-                log_debug("[Migration] 正在修复建筑 ID " .. portaldata.id .. " 的 children 列表...")
-                local new_children = {}
-                if portaldata.shell and portaldata.shell.valid then
-                    local center_pos = portaldata.shell.position
-                    for _, child_entity in pairs(portaldata.children) do
-                        if child_entity and child_entity.valid then
-                            table.insert(new_children, {
-                                entity = child_entity,
-                                relative_pos = {
-                                    x = child_entity.position.x - center_pos.x,
-                                    y = child_entity.position.y - center_pos.y,
-                                },
-                            })
-                        end
-                    end
-                    portaldata.children = new_children
-                end
-            end
-        end
-    end
-
-    -- [迁移任务 3] 键名重构 (v0.3 -> v0.4)
-    -- 将旧的键名 carriage_ahead/behind 迁移到新的 exit_car/entry_car
-    if storage.rift_rails then
-        log_debug("[Migration] 开始执行存储键名迁移 (carriage -> car)...")
-        for _, portaldata in pairs(storage.rift_rails) do
-            -- 迁移 carriage_ahead -> exit_car
-            -- 检查：如果旧键存在，且新键不存在 (防止重复迁移)
-            if portaldata.carriage_ahead and not portaldata.exit_car then
-                portaldata.exit_car = portaldata.carriage_ahead
-                portaldata.carriage_ahead = nil -- [关键] 删除旧键，完成迁移
-            end
-
-            -- 迁移 carriage_behind -> entry_car
-            if portaldata.carriage_behind and not portaldata.entry_car then
-                portaldata.entry_car = portaldata.carriage_behind
-                portaldata.carriage_behind = nil -- [关键] 删除旧键
-            end
-        end
-    end
-
-    -- [迁移任务 4] GC优化相关的活跃列表 (v0.4 -> v0.5)
-    if not storage.active_teleporter_list then
-        storage.active_teleporter_list = {}
-        if storage.active_teleporters then
-            for _, portaldata in pairs(storage.active_teleporters) do
-                table.insert(storage.active_teleporter_list, portaldata)
-            end
-            table.sort(storage.active_teleporter_list, function(a, b)
-                return a.unit_number < b.unit_number
-            end)
-        end
-    end
-
-    -- [迁移任务 5] 为新的 LTN 路由表系统填充数据
-    -- 检查一个标志位，确保这个迁移只运行一次
-    if not storage.rift_rail_ltn_table_migrated then
-        log_debug("[Migration] 正在为 LTN 路由表系统填充数据...")
-        if LTN.rebuild_routing_table_from_storage then
-            LTN.rebuild_routing_table_from_storage()
-        end
-        -- 设置标志位，防止下次更新时重复运行
-        storage.rift_rail_ltn_table_migrated = true
-    end
-    -- [迁移任务 X] v0.8.0 Cybersyn 架构重构
-    if storage.rift_rails and remote.interfaces["cybersyn"] then
-        log_debug("[Migration] v0.8.0 Cybersyn 架构重构...")
-
-        -- 1. 无条件清理所有旧版连接数据
-        if CybersynSE.purge_legacy_connections then
-            CybersynSE.purge_legacy_connections()
-        end
-
-        -- 2. 仅在 SE 环境下，执行重建 (Rebuild)
-        if script.active_mods["space-exploration"] then
-            local migration_performed = false
-            for _, portal in pairs(storage.rift_rails) do
-                if portal.shell and portal.shell.valid and portal.cybersyn_enabled and portal.paired_to_id then
-                    local partner = State.get_portaldata_by_id(portal.paired_to_id)
-                    if partner and partner.shell and partner.shell.valid then
-                        -- 静默重建
-                        CybersynSE.update_connection(portal, partner, true, nil, true)
-                        migration_performed = true
-                    end
-                end
-            end
-            if migration_performed then
-                game.print({ "messages.rift-rail-migration-v080-success" })
-            end
-        else
-            -- 3. 如果没有 SE，强制关闭所有 Cybersyn 开关（防止状态残留）
-            for _, portal in pairs(storage.rift_rails) do
-                portal.cybersyn_enabled = false
-            end
-            game.print({ "messages.rift-rail-migration-v080-warning" })
-        end
-    end
+    -- 2. 执行所有迁移任务
+    Migrations.run_all()
 end)
 
 -- on_load: 只在加载存档时运行
@@ -880,10 +789,19 @@ remote.add_interface("RiftRail", {
         Logic.teleport_player(player_index, portal_id)
     end,
 
-    open_remote_view = function(player_index, portal_id)
-        Logic.open_remote_view(player_index, portal_id)
+    open_remote_view_by_target = function(player_index, target_id)
+        Logic.open_remote_view_by_target(player_index, target_id)
     end,
 
+    -- 用于出口端批量断开所有连接的入口
+    unpair_all_from_exit = function(player_index, portal_id)
+        Logic.unpair_all_from_exit(player_index, portal_id)
+    end,
+
+    -- [多对多新增] 精准解绑接口
+    unpair_portals_specific = function(player_index, source_id, target_id)
+        Logic.unpair_portals_specific(player_index, source_id, target_id)
+    end,
     -- ============================================================================
     -- [调试专用接口]
     -- ============================================================================

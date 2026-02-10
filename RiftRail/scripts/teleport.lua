@@ -173,7 +173,7 @@ local function get_real_station_name(portaldata)
     return portaldata.name
 end
 -- =================================================================================
--- 【重构】精准记录查看具体车厢的玩家（映射表模式）
+-- 精准记录查看具体车厢的玩家（映射表模式）
 -- =================================================================================
 -- 参数：train (LuaTrain 对象)
 -- 返回：Map<UnitNumber, Player[]>  { [车厢ID] = {玩家A, 玩家B} }
@@ -207,7 +207,7 @@ local function collect_gui_watchers(train)
     return map
 end
 -- =================================================================================
--- 【重构】精准恢复 GUI 到指定车厢实体
+-- 精准恢复 GUI 到指定车厢实体
 -- =================================================================================
 -- 参数：watchers (玩家对象列表), entity (新生成的车厢实体)
 local function reopen_car_gui(watchers, entity)
@@ -378,8 +378,8 @@ local function calculate_arrival_orientation(entry_shell_dir, exit_geo_dir, curr
 
     if RiftRail.DEBUG_MODE_ENABLED then
         log_tp("方向计算: 车厢=" ..
-        string.format("%.2f", current_ori) ..
-        ", 入口=" .. entry_shell_ori .. ", 判定=" .. (is_nose_in and "顺向(NoseIn)" or "逆向(TailIn)"))
+            string.format("%.2f", current_ori) ..
+            ", 入口=" .. entry_shell_ori .. ", 判定=" .. (is_nose_in and "顺向(NoseIn)" or "逆向(TailIn)"))
     end
 
     -- 3. 计算出口基准朝向
@@ -417,35 +417,177 @@ local function ensure_geometry_cache(portaldata)
     end
     return geo
 end
+
+-- =================================================================================
+-- [多对多] 辅助函数：从列车时刻表中读取目标ID信号 (riftrail-go-to-id)
+-- =================================================================================
+local function get_circuit_go_to_id(train)
+    if not (train and train.valid and train.schedule) then
+        return nil
+    end
+    local current_sched = train.schedule
+    local records = current_sched.records
+    if not records then
+        return nil
+    end
+
+    -- 读取当前站点的等待条件
+    local current_record = records[current_sched.current]
+    if current_record and current_record.wait_conditions then
+        for _, cond in pairs(current_record.wait_conditions) do
+            -- 读取 riftrail-go-to-id 信号的值
+            -- LTN兼容模块或玩家手动设置都会使用这个信号
+            if cond.type == "circuit" and cond.condition then
+                local signal = cond.condition.first_signal
+                if signal and signal.name == "riftrail-go-to-id" then
+                    return cond.condition.constant -- 返回目标传送门的自定义ID
+                end
+            end
+        end
+    end
+    return nil
+end
+-- =================================================================================
+-- 【多对多改造】目标选择器 (v4.0 - 统一使用 riftrail-go-to-id 信号)
+-- =================================================================================
+-- 优先级 1: go-to-id 信号 (无论来自LTN还是玩家手动设置)
+-- 优先级 2: 默认返回第一个可用出口 (兜底)
+local function select_target_exit(entry_portaldata)
+    -- [防御性检查 1] 确保入口数据存在
+    if not entry_portaldata then
+        return nil
+    end
+
+    -- 如果已缓存出口，优先使用
+    if entry_portaldata.selected_exit_id then
+        local cached_portal = State.get_portaldata_by_id(entry_portaldata.selected_exit_id)
+        if cached_portal and cached_portal.shell and cached_portal.shell.valid then
+            return cached_portal
+        end
+    end
+
+    -- [防御性检查 2] 确保 target_ids 是一个有效的表
+    local targets = entry_portaldata.target_ids
+    if type(targets) ~= "table" then
+        return nil
+    end
+
+    -- [防御性检查 3] 确保表不为空 (使用 next 前再次确认)
+    local first_id, _ = next(targets)
+    if not first_id then
+        return nil -- 列表是空的
+    end
+
+    -- [极速通道] 检查是否只有一个目标
+    -- 此时 first_id 必定存在，我们检查是否有第二个
+    if not next(targets, first_id) then
+        local target_portal = State.get_portaldata_by_id(first_id)
+        if target_portal and target_portal.shell and target_portal.shell.valid then
+            return target_portal
+        else
+            return nil
+        end
+    end
+
+    -- A. 获取列车对象
+    local train = nil
+    if entry_portaldata.waiting_car and entry_portaldata.waiting_car.valid then
+        train = entry_portaldata.waiting_car.train
+    elseif entry_portaldata.entry_car and entry_portaldata.entry_car.valid then
+        train = entry_portaldata.entry_car.train
+    end
+
+    if train then
+        -- B. [优先级 1] riftrail-go-to-id 信号 (无论来自LTN还是玩家)
+        local target_id = get_circuit_go_to_id(train)
+        if target_id and targets[target_id] then
+            local target_portal = State.get_portaldata_by_id(target_id)
+            if target_portal and target_portal.shell and target_portal.shell.valid then
+                if RiftRail.DEBUG_MODE_ENABLED and entry_portaldata.waiting_car then
+                    log_tp("智能路由: 识别到信号 riftrail-go-to-id = " .. target_id .. "，精准导向出口。")
+                end
+                return target_portal
+            end
+        end
+    end
+
+    -- C. [优先级 2] 兜底逻辑
+    -- first_id 在上面已经获取了，直接尝试使用
+    local target_portal = State.get_portaldata_by_id(first_id)
+    if target_portal and target_portal.shell and target_portal.shell.valid then
+        return target_portal
+    end
+
+    -- 如果第一个无效，遍历剩下的找一个有效的
+    for target_id, _ in pairs(targets) do
+        if target_id ~= first_id then
+            target_portal = State.get_portaldata_by_id(target_id)
+            if target_portal and target_portal.shell and target_portal.shell.valid then
+                if entry_portaldata.waiting_car then
+                    if RiftRail.DEBUG_MODE_ENABLED then
+                        log_tp("智能路由: 未识别到特定目标，使用兜底出口 ID " .. target_id .. "。")
+                    end
+                end
+                return target_portal
+            end
+        end
+    end
+
+    return nil
+end
 -- =================================================================================
 -- 【业务逻辑】尝试启动传送流程
 -- =================================================================================
--- 参数：entry_portaldata (入口数据), car (触发的车厢实体)
--- 返回：bool (是否成功启动)
-local function try_start_teleport(entry_portaldata, car)
-    -- 1. 模式检查
-    if entry_portaldata.mode ~= "entry" then
-        return false
-    end
 
-    -- 2. 配对检查
-    if not entry_portaldata.paired_to_id then
-        game.print({ "messages.rift-rail-error-unpaired-or-collider" })
-        return false
-    end
+-- 传送会话初始化
+local function initialize_teleport_session(entry_portal, exit_portal)
+    -- 1. 抢占互斥锁
+    exit_portal.locking_entry_id = entry_portal.unit_number
 
-    -- 3. 启动逻辑
+    -- 缓存出口，后续车厢不再重新选择
+    entry_portal.selected_exit_id = exit_portal.id
+
+    -- 2. 迁移车厢引用
+    entry_portal.entry_car = entry_portal.waiting_car
+    entry_portal.waiting_car = nil
+
+    -- 3. 激活传送状态
+    entry_portal.is_teleporting = true
+
+    -- [已删除] 原先在这里的快照保存和事件触发逻辑已移除
+    -- 它们将由 process_transfer_step 在实际传送发生时正确处理
+
     if RiftRail.DEBUG_MODE_ENABLED then
-        log_tp("触发传送: 入口ID=" .. entry_portaldata.id .. ", 车厢=" .. car.name)
+        log_tp("会话启动: 入口 " .. entry_portal.id .. " 锁定出口 " .. exit_portal.id)
+    end
+end
+
+-- 排队逻辑处理器
+local function process_waiting_logic(portaldata)
+    -- 车厢无效 -> 清理并退出
+    if not (portaldata.waiting_car and portaldata.waiting_car.valid) then
+        portaldata.waiting_car = nil
+        return
     end
 
-    entry_portaldata.entry_car = car
-    entry_portaldata.is_teleporting = true
+    -- 出口数据丢失 -> 清理并退出
+    -- [多对多改造] 使用目标选择器来寻找一个可用的出口
+    local exit_portal = select_target_exit(portaldata)
+    if not exit_portal then
+        portaldata.waiting_car = nil
+        return
+    end
 
-    -- 启动时不再预计算出口缓存，交由 process_transfer_step 处理
-    -- 也不再设置 collider_needs_rebuild
-    return true
+    -- 互斥锁繁忙 -> 退出 (等待下一帧)
+    -- 规则: 锁不为空 且 锁不是我
+    if exit_portal.locking_entry_id ~= nil and exit_portal.locking_entry_id ~= portaldata.unit_number then
+        return
+    end
+
+    -- 通过所有检查 -> 执行初始化
+    initialize_teleport_session(portaldata, exit_portal)
 end
+
 -- =================================================================================
 -- 新增辅助函数 (代码提纯)
 -- =================================================================================
@@ -548,7 +690,8 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
     if final_train and final_train.valid then
         if RiftRail.DEBUG_MODE_ENABLED then
             log_tp("【销毁后】准备恢复: actual_index=" ..
-            tostring(actual_index_before_cleanup) .. ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index))
+                tostring(actual_index_before_cleanup) ..
+                ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index))
         end
         -- 使用统一函数恢复状态 (参数 true 代表同时恢复速度)
         restore_train_state(final_train, exit_portaldata, true, actual_index_before_cleanup)
@@ -563,7 +706,7 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         if SE_TELEPORT_FINISHED_EVENT_ID and exit_portaldata.old_train_id then
             if RiftRail.DEBUG_MODE_ENABLED then
                 log_tp("SE兼容触发 on_train_teleport_finished 事件: new_train_id = " ..
-                tostring(final_train.id) .. ", old_train_id = " .. tostring(exit_portaldata.old_train_id))
+                    tostring(final_train.id) .. ", old_train_id = " .. tostring(exit_portaldata.old_train_id))
             end
             script.raise_event(SE_TELEPORT_FINISHED_EVENT_ID, {
                 train = final_train,
@@ -580,9 +723,16 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         end
     end
 
+    -- 释放互斥锁
+    -- 告诉出口：我传完了，下一个可以进来了
+    if exit_portaldata then
+        exit_portaldata.locking_entry_id = nil
+    end
+
     -- 5. 重置状态变量
     entry_portaldata.entry_car = nil
     entry_portaldata.exit_car = nil
+    entry_portaldata.selected_exit_id = nil
     exit_portaldata.entry_car = nil
     exit_portaldata.exit_car = nil
     exit_portaldata.old_train_id = nil
@@ -757,24 +907,6 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         return
     end
 
-    --[[     -- =========================================================================
-    -- 强制连接逻辑：防止高速传送断裂
-    -- =========================================================================
-    -- 获取上一节传送过去的车厢 (也就是 A)
-    local prev_car = entry_portaldata.exit_car
-
-    -- 只有当上一节车存在时，才需要连接 (第一节车不需要连谁)
-    if prev_car and prev_car.valid then
-        -- 盲连策略：让新车厢 (B) 向前后两个方向尝试抓取
-        -- 只要抓到了 prev_car，引擎会自动合并列车
-        local connected_front = new_car.connect_rolling_stock(defines.rail_direction.front)
-        local connected_back = new_car.connect_rolling_stock(defines.rail_direction.back)
-
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_tp("强制连接: 新车(ID" .. new_car.unit_number .. ") -> 前车(ID" .. prev_car.unit_number .. ") | 前向结果:" .. tostring(connected_front) .. " 后向结果:" .. tostring(connected_back))
-        end
-    end ]]
-
     -- 转移时刻表与保存索引
     if not entry_portaldata.exit_car then
         -- 1. 获取带图标的真实站名 (解决比对失败问题)
@@ -863,9 +995,9 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
             local target_index = index_before_spawn or exit_portaldata.saved_schedule_index
             if RiftRail.DEBUG_MODE_ENABLED then
                 log_tp("【创建后】准备恢复: index_before_spawn=" ..
-                tostring(index_before_spawn) ..
-                ", saved_index=" ..
-                tostring(exit_portaldata.saved_schedule_index) .. ", 使用target=" .. tostring(target_index))
+                    tostring(index_before_spawn) ..
+                    ", saved_index=" ..
+                    tostring(exit_portaldata.saved_schedule_index) .. ", 使用target=" .. tostring(target_index))
             end
             restore_train_state(merged_train, exit_portaldata, false, target_index)
         end
@@ -942,18 +1074,30 @@ function Teleport.on_collider_died(event)
 
     -- 3. 根据是否有车，决定下一步任务
     if car then
-        -- 情况 A: 有车 -> 尝试启动传送流程
-        local success = try_start_teleport(portaldata, car)
-
-        -- 如果启动失败 (例如未配对)，则降级为只重建碰撞器
-        if not success then
+        -- 情况 A: 有车 -> 尝试排队挂号
+        -- [验证 1] 必须是入口模式
+        if portaldata.mode == "entry" then
+            -- [验证 2] 必须已配对
+            -- [多对多改造] 检查 target_ids 表是否存在且不为空
+            if portaldata.target_ids and next(portaldata.target_ids) then
+                -- [核心修改] 不再立即传送，而是挂入等待队列
+                portaldata.waiting_car = car
+                if RiftRail.DEBUG_MODE_ENABLED then
+                    log_tp("排队挂号: 入口 " .. portaldata.id .. " 等待传送车厢 " .. car.unit_number)
+                end
+            else
+                game.print({ "messages.rift-rail-error-unpaired-or-collider" })
+                portaldata.collider_needs_rebuild = true
+            end
+        else
+            -- 模式不对，直接重建
             portaldata.collider_needs_rebuild = true
         end
     else
         -- 情况 B: 无车 (被虫子咬了等) -> 只需标记重建
         portaldata.collider_needs_rebuild = true
     end
-    -- 4. 入队 (无论是重建还是传送，都需要 tick 驱动)
+    -- 4. 入队 (无论是重建、传送还是排队，都需要 tick 驱动)
     add_to_active(portaldata)
 end
 
@@ -962,10 +1106,8 @@ end
 -- =================================================================================
 
 function Teleport.sync_momentum(portaldata)
-    if not portaldata.paired_to_id then
-        return
-    end
-    local exit_portaldata = State.get_portaldata_by_id(portaldata.paired_to_id)
+    -- [多对多改造] 使用目标选择器
+    local exit_portaldata = select_target_exit(portaldata)
     if not (exit_portaldata and exit_portaldata.shell and exit_portaldata.shell.valid) then
         return
     end
@@ -1090,7 +1232,8 @@ local function process_teleport_sequence(portaldata, tick)
 
     if portaldata.entry_car then
         -- 还有车厢，继续传送
-        local exit_portaldata = State.get_portaldata_by_id(portaldata.paired_to_id)
+        -- [多对多改造] 使用目标选择器
+        local exit_portaldata = select_target_exit(portaldata)
         Teleport.process_transfer_step(portaldata, exit_portaldata)
     else
         -- 没有后续车厢，传送结束
@@ -1105,43 +1248,45 @@ end
 -- =================================================================================
 
 function Teleport.on_tick(event)
-    -- [优化] 直接遍历有序列表
     local list = storage.active_teleporter_list or {}
 
     for i = #list, 1, -1 do
         local portaldata = list[i]
 
-        -- [保护] 确保数据有效
-        if portaldata and portaldata.shell and portaldata.shell.valid then
-            -- 任务 A: 重建碰撞器
+        -- 顶层判断：数据无效直接清理
+        if not (portaldata and portaldata.shell and portaldata.shell.valid) then
+            if portaldata and portaldata.unit_number then
+                storage.active_teleporters[portaldata.unit_number] = nil
+            end
+            table.remove(list, i)
+        else
+            -- === 任务调度区 (无嵌套结构) ===
+
+            -- 1. 重建碰撞器任务
             if portaldata.collider_needs_rebuild then
                 process_rebuild_collider(portaldata)
             end
 
-            -- 任务 B: 传送逻辑
+            -- 2. 传送任务
             if portaldata.is_teleporting then
-                -- 1. 执行序列步进 (含频率控制)
                 process_teleport_sequence(portaldata, event.tick)
-
-                -- 2. 持续动力控制 (每 tick 都要执行，保持吸附力)
-                -- 只有当状态依然是 teleporting 时才执行 (防止刚刚 sequence 结束了)
+                -- 动力同步需持续进行 (再次检查状态防止序列刚结束)
                 if portaldata.is_teleporting then
                     Teleport.sync_momentum(portaldata)
                 end
             end
 
-            -- 出队检查
-            if not portaldata.is_teleporting and not portaldata.collider_needs_rebuild then
-                -- 从活跃列表移除
+            -- 3. 排队任务 (仅当未传送时)
+            if not portaldata.is_teleporting and portaldata.waiting_car then
+                process_waiting_logic(portaldata)
+            end
+
+            -- 4. 垃圾回收 (GC)
+            -- 如果所有任务都空闲，移出活跃列表
+            if not portaldata.is_teleporting and not portaldata.waiting_car and not portaldata.collider_needs_rebuild then
                 storage.active_teleporters[portaldata.unit_number] = nil
                 table.remove(list, i)
             end
-        else
-            -- 结构无效，直接清理
-            if portaldata and portaldata.unit_number then
-                storage.active_teleporters[portaldata.unit_number] = nil
-            end
-            table.remove(list, i)
         end
     end
 end

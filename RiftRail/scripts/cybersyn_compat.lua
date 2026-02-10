@@ -86,38 +86,46 @@ function CybersynSE.init(dependencies)
 end
 
 -- 【迁移函数】清理旧版(Entry-Exit)连接
+-- 【迁移函数】暴力清理旧版连接
+-- 策略：不依赖 Rift Rail 内部的配对数据（因为可能已迁移），而是遍历所有传送门，
+-- 尝试清理所有可能的两两组合。这能确保 100% 清除所有残留的脏数据。
 function CybersynSE.purge_legacy_connections()
     if not (remote.interfaces["cybersyn"] and storage.rift_rails) then
         return
     end
-    log_cs("[Migration] 开始清理旧版 Entry-Exit 连接...")
+    log_cs("[Migration] 开始执行暴力清理 (Brute Force Purge)...")
+
+    -- 1. 收集所有现存的有效车站实体
+    local all_stations = {}
     for _, portal in pairs(storage.rift_rails) do
-        if portal.paired_to_id then
-            local partner = State.get_portaldata_by_id(portal.paired_to_id)
+        local station = get_station(portal)
+        if station and station.valid then
+            table.insert(all_stations, station)
 
-            -- 必须获取内部车站实体来执行清理
-            local station1 = get_station(portal)
-            local station2 = get_station(partner)
-
-            if station1 and station1.valid and station2 and station2.valid then
-                local s1_idx = station1.surface.index
-                local s2_idx = station2.surface.index
-
-                local k_surf = sorted_pair_key(s1_idx, s2_idx)
-
-                -- 使用车站的 unit_number 来计算 Key
-                local k_ent = sorted_pair_key(station1.unit_number, station2.unit_number)
-
-                -- 1. 清理地表连接
-                remote.call("cybersyn", "write_global", nil, "connected_surfaces", k_surf, k_ent)
-
-                -- 2. 清理伪装的 SE 电梯数据
-                remote.call("cybersyn", "write_global", nil, "se_elevators", station1.unit_number)
-                remote.call("cybersyn", "write_global", nil, "se_elevators", station2.unit_number)
-            end
+            -- 第一步：无条件清除 se_elevators (单体数据)
+            remote.call("cybersyn", "write_global", nil, "se_elevators", station.unit_number)
         end
     end
-    log_cs("[Migration] 旧版连接清理完成。")
+
+    -- 2. 暴力遍历所有两两组合，清除 connected_surfaces (连接数据)
+    -- 这是一个 O(N^2) 操作，但 N 通常很小（几十到几百），在迁移阶段完全可以接受
+    for i = 1, #all_stations do
+        for j = i + 1, #all_stations do
+            local s1 = all_stations[i]
+            local s2 = all_stations[j]
+
+            -- 模拟旧版 Key 生成逻辑
+            local s1_idx = s1.surface.index
+            local s2_idx = s2.surface.index
+            local k_surf = sorted_pair_key(s1_idx, s2_idx)
+            local k_ent = sorted_pair_key(s1.unit_number, s2.unit_number)
+
+            -- 发送删除指令 (如果不存在则忽略，如果存在则删除)
+            remote.call("cybersyn", "write_global", nil, "connected_surfaces", k_surf, k_ent)
+        end
+    end
+
+    log_cs("[Migration] 暴力清理完成，所有潜在旧连接已移除。")
 end
 
 -- ============================================================================
@@ -125,22 +133,32 @@ end
 -- ============================================================================
 
 -- 向 Cybersyn 注册一个“电梯”
+--- 【合并策略】读取现有记录，补充新的地表映射，保留之前的补丁信息
 local function register_fake_elevator(portaldata, station)
-    -- 构造 SE 风格的数据结构
-    -- Cybersyn 需要查 se_elevators[unit_number]
-    local fake_data = {
-        elevator = portaldata.shell,
-        stop = station,
-        surface_id = portaldata.surface.index,
-        stop_id = station.unit_number,
-        elevator_id = portaldata.shell.unit_number,
-        -- 下面这些是为了防止 Cybersyn 读取时报错
-        ground = { stop = station },
-        orbit = { stop = station },
-        cs_enabled = true,
-        network_masks = nil,
-        [portaldata.surface.index] = { stop = station },
-    }
+    -- Step 1: 尝试读取现有的伪装数据
+    local fake_data = remote.call("cybersyn", "read_global", "se_elevators", station.unit_number)
+
+    -- Step 2: 如果不存在，创建新的
+    if not fake_data then
+        fake_data = {
+            elevator = portaldata.shell,
+            stop = station,
+            surface_id = portaldata.surface.index,
+            stop_id = station.unit_number,
+            elevator_id = portaldata.shell.unit_number,
+            -- 下面这些是为了防止 Cybersyn 读取时报错
+            ground = { stop = station },
+            orbit = { stop = station },
+            cs_enabled = true,
+            network_masks = nil,
+        }
+    end
+
+    -- Step 3: 确保传送门自身的地表映射存在（更新或添加）
+    -- 这样既能保留之前补丁的其他地表信息，又能确保当前地表的映射是最新的
+    fake_data[portaldata.surface.index] = { stop = station }
+
+    -- Step 4: 写回 Cybersyn
     remote.call("cybersyn", "write_global", fake_data, "se_elevators", station.unit_number)
 end
 
@@ -270,22 +288,40 @@ local function leave_pool(portaldata, target_portal)
 
     -- 定义一个内部清理函数，用来清理特定方向的连接
     local function clean_specific_pool(surface_index_2)
-        local my_pool = get_pool(s1, surface_index_2)
-        if my_pool[uid] then
-            -- 1. 扫描回程池，断开连接
-            local partner_pool = get_pool(surface_index_2, s1)
-            for _, partner_station in pairs(partner_pool) do
-                -- station 即使无效了，只要不为 nil，传给 remove 接口也是安全的(会尝试用ID删)
-                if partner_station and partner_station.valid and station then
-                    -- 无论 station 是否 valid，只要它曾经注册过，我们就尝试注销
-                    -- 注意：如果 station 彻底没了，这里可能注销失败，但我们在迁移脚本里有兜底
-                    if station.valid then
-                        unlink_stations(station, partner_station)
-                    end
+        -- [关键] 检查该 entry 是否还有其他启用了 Cybersyn 的出口通往目标地表
+        local still_has_connection = false
+        if portaldata.target_ids and portaldata.cybersyn_enabled then
+            for target_id, _ in pairs(portaldata.target_ids) do
+                local other_exit = State.get_portaldata_by_id(target_id)
+                if other_exit and other_exit.surface.index == surface_index_2 and other_exit.cybersyn_enabled then
+                    still_has_connection = true
+                    break
                 end
             end
-            -- 2. 移出池子
-            my_pool[uid] = nil
+        end
+
+        -- 只有当完全失去对该地表的 Cybersyn 连接能力时，才移出池子并断开连接
+        if not still_has_connection then
+            local my_pool = get_pool(s1, surface_index_2)
+            if my_pool[uid] then
+                -- 1. 扫描回程池，断开连接
+                local partner_pool = get_pool(surface_index_2, s1)
+                for _, partner_station in pairs(partner_pool) do
+                    -- station 即使无效了，只要不为 nil，传给 remove 接口也是安全的(会尝试用ID删)
+                    if partner_station and partner_station.valid and station then
+                        -- 无论 station 是否 valid，只要它曾经注册过，我们就尝试注销
+                        -- 注意：如果 station 彻底没了，这里可能注销失败，但我们在迁移脚本里有兜底
+                        if station.valid then
+                            unlink_stations(station, partner_station)
+                        end
+                    end
+                end
+                -- 2. 移出池子
+                my_pool[uid] = nil
+                log_cs("[Pool] " .. portaldata.name .. " 离开池子: " .. s1 .. " -> " .. surface_index_2 .. " (失去所有到该地表的Cybersyn连接)")
+            end
+        else
+            log_cs("[Pool] " .. portaldata.name .. " 保留在池子中: 仍有其他启用Cybersyn的出口到地表 " .. surface_index_2)
         end
     end
 
@@ -303,9 +339,33 @@ local function leave_pool(portaldata, target_portal)
         end
     end
 
-    -- 3. 最后统一销毁伪装身份 (这步不需要知道对方是谁)
-    unregister_fake_elevator(uid)
-    log_cs("[Pool] 退池: " .. portaldata.name)
+    -- 3. [修复] 检查是否还在其他池子中
+    local still_in_use = false
+    if storage.rr_cybersyn_pools and storage.rr_cybersyn_pools[s1] then
+        for _, pool in pairs(storage.rr_cybersyn_pools[s1]) do
+            -- 注意：池子的 Key 是 Shell ID (uid)，这是内部逻辑，没问题
+            if pool[uid] then
+                still_in_use = true
+                break
+            end
+        end
+    end
+
+    -- 只有当没有任何连接时，才彻底注销身份证
+    if not still_in_use then
+        -- [关键修正] 注销时必须使用 Station ID，而不是 Shell ID (uid)
+        -- 我们尝试使用前面获取的 station 对象
+        if station and station.valid then
+            unregister_fake_elevator(station.unit_number)
+            log_cs("[Pool] 退池(彻底销毁): " .. portaldata.name .. " ID:" .. station.unit_number)
+        else
+            -- 如果 station 实体已经无效了（比如被拆了），我们无法获取 ID，
+            -- 但这种情况下 Cybersyn 可能已经通过 valid 检查自动清理了，或者我们在 purge 中处理了。
+            log_cs("[Pool] 退池警告: 无法获取有效车站实体，跳过注销。")
+        end
+    else
+        log_cs("[Pool] 退池(保留身份): " .. portaldata.name .. " 仍有其他连接")
+    end
 end
 
 -- ============================================================================
@@ -313,77 +373,105 @@ end
 -- ============================================================================
 
 -- 更新连接状态
-function CybersynSE.update_connection(portaldata, target_portal, connect, player, is_migration)
-    -- 如果是断开连接(connect=false)，允许 target_portal 为空
-    if not portaldata then
+-- @param portaldata 当前操作的传送门
+-- @param target_portal 对方传送门
+-- @param connect 连接状态（双方都开启时为 true）
+-- @param player 操作的玩家
+-- @param is_migration 是否为迁移模式
+-- @param my_enabled 当前操作建筑的新状态（用于区分开启/关闭操作）
+-- @param operator_is_first 是否由第一个参数触发（用于消息排序）
+function CybersynSE.update_connection(portaldata, target_portal, connect, player, is_migration, my_enabled, operator_is_first)
+    if not portaldata or not target_portal then
         return
     end
-    if connect and not target_portal then
+
+    local station1 = get_station(portaldata)
+    local station2 = get_station(target_portal)
+    if not (station1 and station1.valid and station2 and station2.valid) then
         return
-    end -- 连接时必须有对象
+    end
 
-    -- 只有“入口”且“已配对”且“开关开启”才有资格入池
-    local should_be_in_pool = connect and (portaldata.mode == "entry") and portaldata.paired_to_id
-
-    if should_be_in_pool then
-        local count = join_pool(portaldata, target_portal)
-        portaldata.cybersyn_enabled = true
-        target_portal.cybersyn_enabled = true -- 仅做标记同步
-
-        -- 混合通知逻辑
-        if not is_migration then
-            local gps = "[gps=" ..
-                portaldata.shell.position.x ..
-                "," .. portaldata.shell.position.y .. "," .. portaldata.shell.surface.name .. "]"
-            local msg
-            if count > 0 then
-                msg = { "messages.rift-rail-info-cybersyn-link-established", portaldata.name, gps, count }
-            else
-                msg = { "messages.rift-rail-info-cybersyn-waiting-partner", portaldata.name, gps }
-            end
-
-            if player then
-                -- 场景 A: 玩家点击开关 -> 私聊反馈
-                local setting = settings.get_player_settings(player)["rift-rail-show-logistics-notifications"]
-                if setting and setting.value then
-                    player.print(msg)
-                end
-            else
-                -- 场景 B: 脚本/逻辑触发 -> 全服广播
-                for _, p in pairs(game.connected_players) do
-                    local setting = settings.get_player_settings(p)["rift-rail-show-logistics-notifications"]
-                    if setting and setting.value then
-                        p.print(msg)
-                    end
-                end
-            end
+    -- 1. [关键] 检查操作“之前”的真实连接状态
+    -- 我们通过检查“海关池”来确定上一刻是否真的双向连通
+    local was_connected = false
+    if storage.rr_cybersyn_pools then
+        local s1, s2 = portaldata.surface.index, target_portal.surface.index
+        local u1, u2 = portaldata.unit_number, target_portal.unit_number
+        local pool1 = storage.rr_cybersyn_pools[s1] and storage.rr_cybersyn_pools[s1][s2]
+        local pool2 = storage.rr_cybersyn_pools[s2] and storage.rr_cybersyn_pools[s2][s1]
+        if pool1 and pool1[u1] and pool2 and pool2[u2] then
+            was_connected = true
         end
+    end
+
+    -- 2. 计算操作“之后”期望的连接状态
+    local should_connect_now = portaldata.cybersyn_enabled and target_portal.cybersyn_enabled
+
+    -- 3. 执行核心的入池/退池逻辑
+    if should_connect_now then
+        join_pool(portaldata, target_portal)
     else
         leave_pool(portaldata, target_portal)
-        if not connect then
-            portaldata.cybersyn_enabled = false
-        end
-        -- 混合通知逻辑 (断开)
-        if not is_migration then
-            local gps = "[gps=" ..
-                portaldata.shell.position.x ..
-                "," .. portaldata.shell.position.y .. "," .. portaldata.shell.surface.name .. "]"
-            local msg = { "messages.rift-rail-info-cybersyn-disconnected", portaldata.name, gps }
+    end
 
-            if player then
-                -- 场景 A: 玩家点击开关 -> 私聊反馈
-                local setting = settings.get_player_settings(player)["rift-rail-show-logistics-notifications"]
-                if setting and setting.value then
-                    player.print(msg)
-                end
-            else
-                -- 场景 B: 拆除/虫咬/脚本 -> 全服广播
-                for _, p in pairs(game.connected_players) do
-                    local setting = settings.get_player_settings(p)["rift-rail-show-logistics-notifications"]
-                    if setting and setting.value then
-                        p.print(msg)
-                    end
-                end
+    -- 迁移模式下不发送任何通知
+    if is_migration then
+        return
+    end
+
+    -- 4. 准备消息参数 (根据操作者顺序调整)
+    local first_portal = portaldata
+    local second_portal = target_portal
+    if operator_is_first == false then
+        first_portal = target_portal
+        second_portal = portaldata
+    end
+
+    local name1 = first_portal.name or "Portal"
+    local gps1 = "[gps=" .. first_portal.shell.position.x .. "," .. first_portal.shell.position.y .. "," .. first_portal.shell.surface.name .. "]"
+    local name2 = second_portal.name or "Portal"
+    local gps2 = "[gps=" .. second_portal.shell.position.x .. "," .. second_portal.shell.position.y .. "," .. second_portal.shell.surface.name .. "]"
+
+    local msg = nil
+
+    -- 5. 根据操作类型和连接状态，决定消息内容
+    if my_enabled then
+        -- 用户正在开启开关
+        if should_connect_now then
+            -- 双方都开启了 → 连接建立
+            msg = { "messages.rift-rail-info-cybersyn-connected", name1, gps1, name2, gps2 }
+        else
+            -- 只有自己开启，对方关闭 → 等待伙伴
+            msg = { "messages.rift-rail-info-cybersyn-waiting-partner", name1, gps1, name2, gps2 }
+        end
+    else
+        -- 用户正在关闭开关，或者非用户操作（断开连接/销毁等）
+        if was_connected then
+            -- 之前是连接着的 → 已断开
+            msg = { "messages.rift-rail-info-cybersyn-disconnected", name1, gps1, name2, gps2 }
+        else
+            -- 之前就是孤立的 → 已关闭（包括拆除、关闭开关等所有情况）
+            msg = { "messages.rift-rail-info-cybersyn-disabled", name1, gps1 }
+        end
+    end
+
+    if not msg then
+        return
+    end
+
+    -- 6. 发送消息
+    if player then
+        -- 场景 A: 玩家点击开关 -> 私聊反馈
+        local setting = settings.get_player_settings(player)["rift-rail-show-logistics-notifications"]
+        if setting and setting.value then
+            player.print(msg)
+        end
+    else
+        -- 场景 B: 拆除/虫咬/脚本 -> 全服广播
+        for _, p in pairs(game.connected_players) do
+            local setting = settings.get_player_settings(p)["rift-rail-show-logistics-notifications"]
+            if setting and setting.value then
+                p.print(msg)
             end
         end
     end
@@ -392,23 +480,29 @@ end
 -- 传送门被销毁
 function CybersynSE.on_portal_destroyed(portaldata)
     if portaldata and portaldata.cybersyn_enabled then
-        CybersynSE.update_connection(portaldata, nil, false, nil, false)
+        CybersynSE.update_connection(portaldata, nil, false, nil, false, nil)
     end
 end
 
 -- 传送门克隆 (起飞/降落)
 function CybersynSE.on_portal_cloned(old_data, new_data, is_landing)
     -- 1. 旧的退池
-    if old_data.cybersyn_enabled then
-        local partner = State.get_portaldata_by_id(old_data.paired_to_id)
-        leave_pool(old_data, partner)
+    -- [多对多改造] 遍历旧数据的 target_ids
+    if old_data.cybersyn_enabled and old_data.target_ids then
+        for target_id, _ in pairs(old_data.target_ids) do
+            local partner = State.get_portaldata_by_id(target_id)
+            leave_pool(old_data, partner)
+        end
     end
 
     -- 2. 新的入池 (非降落状态)
-    if new_data.cybersyn_enabled and not is_landing then
-        local partner = State.get_portaldata_by_id(new_data.paired_to_id)
-        if partner then
-            join_pool(new_data, partner)
+    -- [多对多改造] 遍历新数据的 target_ids
+    if new_data.cybersyn_enabled and not is_landing and new_data.target_ids then
+        for target_id, _ in pairs(new_data.target_ids) do
+            local partner = State.get_portaldata_by_id(target_id)
+            if partner then
+                join_pool(new_data, partner)
+            end
         end
     end
 end
