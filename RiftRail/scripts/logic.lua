@@ -9,6 +9,23 @@ local LTN = nil
 
 local log_debug = function() end
 
+-- ============================================================================
+-- 配置与辅助函数
+-- ============================================================================
+local MAX_CONNECTIONS = 5 -- 在这里设置最大连接数上限
+
+-- 计算一个表中的键值对数量 (比 # 更安全，因其能处理非连续索引)
+local function count_connections(id_table)
+    if not id_table then
+        return 0
+    end
+    local count = 0
+    for _ in pairs(id_table) do
+        count = count + 1
+    end
+    return count
+end
+
 function Logic.init(deps)
     State = deps.State
     GUI = deps.GUI
@@ -341,6 +358,22 @@ function Logic.pair_portals(player_index, source_id, target_id)
         local temp_id = source_id
         source_id = target_id
         target_id = temp_id
+    end
+
+    -- 检查源的连接数是否达到上限
+    if count_connections(source.target_ids) >= MAX_CONNECTIONS then
+        -- 直接告诉玩家是哪个传送门满了
+        local source_display_name = build_display_name(source)
+        player.print({ "messages.rift-rail-error-limit-reached", source_display_name, MAX_CONNECTIONS })
+        return -- 中断执行
+    end
+
+    -- 检查目标的连接数是否达到上限
+    if count_connections(target.source_ids) >= MAX_CONNECTIONS then
+        -- 直接告诉玩家是哪个传送门满了
+        local target_display_name = build_display_name(target)
+        player.print({ "messages.rift-rail-error-limit-reached", target_display_name, MAX_CONNECTIONS })
+        return -- 中断执行
     end
 
     -- 1. 验证源：经过交换后，source 必须是 入口 或 中立
