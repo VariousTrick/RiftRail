@@ -1,6 +1,6 @@
 ---------------------------------------------------------------------------------------------------
-Version: 0.10.0
-Date: 2026-02-01
+Version: 0.10.1
+Date: 2026-02-11
   Major Changes:
     - **Architecture Overhaul: One-to-Many Support**:
       - Completely refactored the connection logic. An Entry portal can now connect to **multiple** Exit portals simultaneously.
