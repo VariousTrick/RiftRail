@@ -30,7 +30,6 @@ function Logic.init(deps)
     State = deps.State
     GUI = deps.GUI
     log_debug = deps.log_debug
-    CybersynSE = deps.CybersynSE
     LTN = deps.LTN
 end
 
@@ -437,7 +436,7 @@ function Logic.pair_portals(player_index, source_id, target_id)
     -- [多对多改造] 将目标 ID 加入列表 (缓存实体ID)
     source.target_ids[target_id] = {
         custom_id = target_id,
-        unit_number = target.shell.unit_number
+        unit_number = target.shell.unit_number,
     }
 
     -- 目标记录源 (多对一支持)
@@ -446,7 +445,7 @@ function Logic.pair_portals(player_index, source_id, target_id)
     end
     target.source_ids[source_id] = {
         custom_id = source_id,
-        unit_number = source.shell.unit_number
+        unit_number = source.shell.unit_number,
     }
     -- 注意：目标 (Exit) 的 paired_to_id 保持为 nil，因为它不再指向单一对象
 
@@ -524,48 +523,6 @@ function Logic.open_remote_view_by_target(player_index, target_id)
             zoom = player.zoom,
         })
     end
-end
-
--- ============================================================================
--- 6. Cybersyn 开关控制 (v4.0 - 彻底解耦，仅通知)
--- ============================================================================
-function Logic.set_cybersyn_enabled(player_index, portal_id, enabled)
-    local player = game.get_player(player_index)
-    local my_data = State.get_portaldata_by_id(portal_id)
-
-    if not (player and my_data) then
-        return
-    end
-
-    -- 1. 只修改自己的开关状态
-    my_data.cybersyn_enabled = enabled
-
-    -- 2. 收集所有与自己有连接关系的伙伴
-    local partners = {}
-    if my_data.target_ids then
-        for target_id, _ in pairs(my_data.target_ids) do
-            table.insert(partners, State.get_portaldata_by_id(target_id))
-        end
-    end
-    if my_data.source_ids then
-        for source_id, _ in pairs(my_data.source_ids) do
-            table.insert(partners, State.get_portaldata_by_id(source_id))
-        end
-    end
-
-    -- 3. 遍历所有伙伴，通知兼容模块去重新评估连接状态
-    for _, partner_data in pairs(partners) do
-        if partner_data and CybersynSE and CybersynSE.update_connection then
-            -- 根据自己是源还是目标，正确传递参数
-            if my_data.mode == "entry" then
-                CybersynSE.update_connection(my_data, partner_data, nil, player, false, enabled, true)
-            else -- exit or neutral
-                CybersynSE.update_connection(partner_data, my_data, nil, player, false, enabled, false)
-            end
-        end
-    end
-
-    refresh_all_guis()
 end
 
 -- ============================================================================
@@ -722,16 +679,6 @@ function Logic.unpair_portals_specific(player_index, source_id, target_id)
     -- [新增] 检查双方的连接数，如果归零则自动关闭开关
     check_and_reset_logistics(source)
     check_and_reset_logistics(target)
-
-    -- [新增] 在断开连接关系后，强制通知兼容模块清理连接
-    if CybersynSE and CybersynSE.update_connection then
-        -- 强制发送 "false" 指令来清理（最后一个参数 nil 表示非用户操作）
-        if source.mode == "entry" then
-            CybersynSE.update_connection(source, target, false, player, false, nil)
-        else
-            CybersynSE.update_connection(target, source, false, player, false, nil)
-        end
-    end
 
     -- [新增] LTN 清理逻辑（与 Cybersyn 对等）
     if LTN and LTN.update_connection then
