@@ -346,34 +346,72 @@ function Logic.pair_portals(player_index, source_id, target_id)
         return
     end
 
-    -- [多对多改造] 智能方向修正
-    -- 如果发起者(source)是出口，或者目标(target)是入口，则交换以统一为 "Entry -> Exit"
-    if source.mode == "exit" or (target.mode == "entry" and source.mode ~= "entry") then
-        -- 交换数据对象
-        local temp_data = source
-        source = target
-        target = temp_data
+    -- 严格身份判定 (Strict Role Assignment)
+    local final_source = source
+    local final_target = target
 
-        -- 交换 ID (target_id 稍后会被用到)
-        local temp_id = source_id
-        source_id = target_id
-        target_id = temp_id
+    -- 情况 1: 双方都是中立 (默认发起者为入口，目标为出口)
+    if source.mode == "neutral" and target.mode == "neutral" then
+        final_source = source
+        final_target = target
+
+        -- 情况 2: 只有一方是中立 (中立者必须服从已定型的一方)
+    elseif source.mode == "neutral" or target.mode == "neutral" then
+        local fixed = (source.mode ~= "neutral") and source or target
+        local neutral = (source.mode == "neutral") and source or target
+
+        if fixed.mode == "entry" then
+            -- 大哥是入口，那他必须是 Source，中立者是 Target (变出口)
+            final_source = fixed
+            final_target = neutral
+        elseif fixed.mode == "exit" then
+            -- 大哥是出口，那他必须是 Target，中立者是 Source (变入口)
+            final_source = neutral
+            final_target = fixed
+        end
+
+        -- 情况 3: 双方都有身份 (必须是一入一出)
+    else
+        if source.mode == "entry" and target.mode == "exit" then
+            final_source = source
+            final_target = target
+        elseif source.mode == "exit" and target.mode == "entry" then
+            -- 纠正方向：入口 -> 出口
+            final_source = target
+            final_target = source
+        else
+            -- 剩下的情况就是：入口配入口，或者出口配出口 -> 报错
+            player.print({ "messages.rift-rail-error-same-mode" })
+            return
+        end
     end
 
-    -- 检查源的连接数是否达到上限
+    -- 应用判定结果
+    source = final_source
+    target = final_target
+    source_id = source.id
+    target_id = target.id
+
+    -- 配对上限检查
+    -- 此时 source 一定是入口，target 一定是出口，身份已确立，检查是准确的
+    -- 检查是否重复配对
+    if source.target_ids and source.target_ids[target_id] then
+        player.print({ "messages.rift-rail-error-already-paired" })
+        return
+    end
+
+    -- 检查入口(Source)是否满了
     if count_connections(source.target_ids) >= MAX_CONNECTIONS then
-        -- 直接告诉玩家是哪个传送门满了
-        local source_display_name = build_display_name(source)
-        player.print({ "messages.rift-rail-error-limit-reached", source_display_name, MAX_CONNECTIONS })
-        return -- 中断执行
+        local name = build_display_name(source)
+        player.print({ "messages.rift-rail-error-limit-reached", name, MAX_CONNECTIONS })
+        return
     end
 
-    -- 检查目标的连接数是否达到上限
+    -- 检查出口(Target)是否满了
     if count_connections(target.source_ids) >= MAX_CONNECTIONS then
-        -- 直接告诉玩家是哪个传送门满了
-        local target_display_name = build_display_name(target)
-        player.print({ "messages.rift-rail-error-limit-reached", target_display_name, MAX_CONNECTIONS })
-        return -- 中断执行
+        local name = build_display_name(target)
+        player.print({ "messages.rift-rail-error-limit-reached", name, MAX_CONNECTIONS })
+        return
     end
 
     -- 1. 验证源：经过交换后，source 必须是 入口 或 中立
