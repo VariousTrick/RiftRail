@@ -49,15 +49,9 @@
 - 详细的模组设置选项
 
 ### 视频演示
+[Video_1770210011730_1.webm](https://github.com/user-attachments/assets/f6bd4dc5-bff9-452e-bbf8-8727c49f74a1)
 
-<div align="center">
 
-<video width="640" height="360" controls>
-  <source src="https://github.com/VariousTrick/RiftRail/releases/download/video/_20251216_182942.webm" type="video/webm">
-  您的浏览器不支持视频播放
-</video>
-
-</div>
 
 ### 安装
 
@@ -160,14 +154,7 @@ It enables players to teleport trains between different surfaces, with perfect s
 
 ### Video Demo
 
-<div align="center">
-
-<video width="640" height="360" controls>
-  <source src="https://github.com/VariousTrick/RiftRail/releases/download/video/_20251216_182942.webm" type="video/webm">
-  Your browser does not support video playback
-</video>
-
-</div>
+[Video_1770210011730_1.webm](https://github.com/user-attachments/assets/f6bd4dc5-bff9-452e-bbf8-8727c49f74a1)
 
 ### Installation
 
