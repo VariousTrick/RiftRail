@@ -5,8 +5,7 @@
 -- add print msg tp the game when the mod is loaded
 script.on_event(defines.events.on_player_joined_game, function(event)
     local player = game.get_player(event.player_index)
-    player.print(
-        { "messages.rift-rail-welcome" })
+    player.print({ "messages.rift-rail-welcome" })
 end)
 
 -- ============================================================================
@@ -31,7 +30,7 @@ end
 -- 3. 加载模块
 local flib_util = require("util") -- 引入官方库，命名为 flib_util 避免和自己的 Util 冲突
 local Builder = require("scripts.builder")
-local CybersynSE = require("scripts.cybersyn_compat")
+
 local GUI = require("scripts.gui")
 local State = require("scripts.state")
 local Logic = require("scripts.logic")
@@ -47,15 +46,6 @@ if Builder.init then
         log_debug = log_debug,
         State = State,
         Logic = Logic,
-        CybersynSE = CybersynSE,
-    })
-end
-
--- 初始化 Cybersyn 模块
-if CybersynSE.init then
-    CybersynSE.init({
-        State = State,
-        log_debug = log_debug,
     })
 end
 
@@ -82,8 +72,6 @@ if Teleport.init then
         Util = Util,
         Schedule = Schedule,
         log_debug = log_debug,
-        -- [新增] 注入兼容模块，用于生命周期钩子调用
-        CybersynCompat = CybersynSE,
         LtnCompat = LTN,
     })
 end
@@ -94,7 +82,6 @@ if Logic.init then
         State = State,
         GUI = GUI,
         log_debug = log_debug,
-        CybersynSE = CybersynSE,
         LTN = LTN,
     })
 end
@@ -108,7 +95,6 @@ if Migrations.init then
     Migrations.init({
         State = State,
         log_debug = log_debug,
-        CybersynSE = CybersynSE,
         LTN = LTN,
     })
 end
@@ -146,15 +132,6 @@ script.on_event({
 -- B. 拆除/挖掘事件 (拆分优化版 - 修正 API 限制)
 -- 定义处理函数 (保持不变)
 local function on_mined_handler(event)
-    -- 1. 先通知 Cybersyn 清理连接
-    local entity = event.entity
-    if entity and entity.valid then
-        local portaldata = State.get_portaldata(entity)
-        if portaldata then
-            CybersynSE.on_portal_destroyed(portaldata)
-        end
-    end
-    -- 2. 再执行原来的销毁逻辑
     Builder.on_destroy(event, event.player_index)
 end
 
@@ -180,10 +157,6 @@ script.on_event(defines.events.on_entity_died, function(event)
         Teleport.on_collider_died(event)
     elseif entity.name == "rift-rail-entity" then
         -- 情况2: 建筑主体死亡 -> 触发拆除逻辑
-        local portaldata = State.get_portaldata(entity)
-        if portaldata then
-            CybersynSE.on_portal_destroyed(portaldata)
-        end
         Builder.on_destroy(event)
     end
     -- 对于其他任何实体（火车、虫子、树）的死亡，我们一概不管
@@ -322,17 +295,6 @@ script.on_event(defines.events.on_entity_cloned, function(event)
         return
     end
 
-    -- 分支 A: Cybersyn 控制器
-    if new_entity.name == "cybersyn-combinator" then
-        if script.active_mods["zzzzz"] then
-            return
-        end
-        if string.find(new_entity.surface.name, "spaceship") then
-            script.raise_event(defines.events.script_raised_built, { entity = new_entity })
-        end
-        return
-    end
-
     -- 分支 B: RiftRail 主体
     if new_entity.name ~= "rift-rail-entity" then
         return
@@ -392,7 +354,7 @@ script.on_event(defines.events.on_entity_cloned, function(event)
                 else
                     if RiftRail.DEBUG_MODE_ENABLED then
                         log_debug("RiftRail Clone Error: 在位置 " ..
-                            serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
+                        serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
                     end
                 end
             end
@@ -407,15 +369,6 @@ script.on_event(defines.events.on_entity_cloned, function(event)
     if storage.rift_rail_id_map then
         storage.rift_rail_id_map[new_data.id] = new_unit_number
     end
-
-    -- 5. Cybersyn 迁移
-    local is_landing = false
-    local old_is_space = string.find(old_entity.surface.name, "spaceship")
-    local new_is_space = string.find(new_entity.surface.name, "spaceship")
-    if old_is_space and not new_is_space then
-        is_landing = true
-    end
-    CybersynSE.on_portal_cloned(old_data, new_data, is_landing)
 
     -- 6. 删除旧数据
     storage.rift_rails[old_unit_number] = nil
@@ -676,17 +629,7 @@ script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
 
         if storage.rift_rails then
             for _, portaldata in pairs(storage.rift_rails) do
-                -- A. 清理 Cybersyn 连接
-                -- 只要标记为 enabled，或者为了保险起见，我们都尝试调用销毁逻辑
-                -- on_portal_destroyed 内部会处理断开连接或紧急清理自身 ID
-                if portaldata.cybersyn_enabled and CybersynSE.on_portal_destroyed then
-                    CybersynSE.on_portal_destroyed(portaldata)
-                    -- 强制把内存状态设为 false，虽然数据马上要被删了，但保持一致性
-                    portaldata.cybersyn_enabled = false
-                    count_cs = count_cs + 1
-                end
-
-                -- B. 清理 LTN 连接
+                -- 清理 LTN 连接
                 if portaldata.ltn_enabled and LTN.on_portal_destroyed then
                     LTN.on_portal_destroyed(portaldata)
                     portaldata.ltn_enabled = false
@@ -708,9 +651,9 @@ script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
         settings.global["rift-rail-uninstall-cleanup"] = { value = false }
 
         -- 4. 反馈结果
-        game.print({ "messages.rift-rail-uninstall-complete", count_cs, count_ltn })
+        game.print({ "messages.rift-rail-uninstall-complete", count_ltn })
         if RiftRail.DEBUG_MODE_ENABLED then
-            log_debug("卸载清理完成: Cybersyn=" .. count_cs .. ", LTN=" .. count_ltn)
+            log_debug("卸载清理完成: LTN=" .. count_ltn)
         end
 
         -- 监听调试模式的变更
@@ -751,9 +694,6 @@ end)
 -- on_load: 只在加载存档时运行
 -- 使用独立的 script.on_load 函数，它不依赖 defines 表
 script.on_load(function(event)
-    if Teleport.init_se_events then
-        Teleport.init_se_events()
-    end
     register_ltn_events()
 end)
 -- ============================================================================
@@ -776,9 +716,9 @@ remote.add_interface("RiftRail", {
         Logic.set_mode(player_index, portal_id, mode)
     end,
 
-    set_cybersyn_enabled = function(player_index, portal_id, enabled)
+    --[[     set_cybersyn_enabled = function(player_index, portal_id, enabled)
         Logic.set_cybersyn_enabled(player_index, portal_id, enabled)
-    end,
+    end, ]]
 
     set_ltn_enabled = function(player_index, portal_id, enabled)
         Logic.set_ltn_enabled(player_index, portal_id, enabled)
@@ -850,7 +790,7 @@ remote.add_interface("RiftRail", {
                     return "Error: 'get_by_id' requires a custom ID parameter."
                 end
                 return State.get_portaldata_by_id(search_param) or
-                    "Error: Struct with custom ID " .. tostring(search_param) .. " not found."
+                "Error: Struct with custom ID " .. tostring(search_param) .. " not found."
             elseif portaldata_key == "get_by_unit" then
                 if not search_param then
                     return "Error: 'get_by_unit' requires a unit_number parameter."

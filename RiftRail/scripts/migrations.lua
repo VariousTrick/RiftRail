@@ -144,40 +144,6 @@ end
 -- ============================================================================
 -- 目的：清理旧版连接数据，为 SE 环境重建 Cybersyn 连接
 -- 触发条件：storage.rift_rails 存在 且 Cybersyn 模组已安装
-function Migrations.cybersyn_v080_refactor()
-    if storage.rift_rails and remote.interfaces["cybersyn"] then
-        log_debug("[Migration] v0.8.0 Cybersyn 架构重构...")
-
-        -- 1. 无条件清理所有旧版连接数据
-        if CybersynSE.purge_legacy_connections then
-            CybersynSE.purge_legacy_connections()
-        end
-
-        -- 2. 仅在 SE 环境下，执行重建 (Rebuild)
-        if script.active_mods["space-exploration"] then
-            local migration_performed = false
-            for _, portal in pairs(storage.rift_rails) do
-                if portal.shell and portal.shell.valid and portal.cybersyn_enabled and portal.paired_to_id then
-                    local partner = State.get_portaldata_by_id(portal.paired_to_id)
-                    if partner and partner.shell and partner.shell.valid then
-                        -- 静默重建
-                        CybersynSE.update_connection(portal, partner, true, nil, true)
-                        migration_performed = true
-                    end
-                end
-            end
-            if migration_performed then
-                game.print({ "messages.rift-rail-migration-v080-success" })
-            end
-        else
-            -- 3. 如果没有 SE，强制关闭所有 Cybersyn 开关（防止状态残留）
-            for _, portal in pairs(storage.rift_rails) do
-                portal.cybersyn_enabled = false
-            end
-            game.print({ "messages.rift-rail-migration-v080-warning" })
-        end
-    end
-end
 
 -- ============================================================================
 -- [迁移任务 8] v0.9.0-v0.10.1 多对多架构统一迁移
@@ -218,10 +184,10 @@ function Migrations.unified_multi_pairing()
                         -- 直接创建带缓存的完整结构（整合 v0.10.1）
                         portal.source_ids[portal.paired_to_id] = {
                             custom_id = portal.paired_to_id,
-                            unit_number = source.shell.unit_number
+                            unit_number = source.shell.unit_number,
                         }
                         log_debug("[Migration] 转换出口 ID " ..
-                            portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> source_ids (带缓存)")
+                        portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> source_ids (带缓存)")
                     end
 
                     -- [关键] 清空出口的配对指针，标志着它正式转为多对一被动模式
@@ -236,7 +202,7 @@ function Migrations.unified_multi_pairing()
                         if source and source.shell and source.shell.valid then
                             portal.source_ids[source_id] = {
                                 custom_id = source_id,
-                                unit_number = source.shell.unit_number
+                                unit_number = source.shell.unit_number,
                             }
                             log_debug("[Migration] 出口 ID " .. portal.id .. " 升级 source_ids[" .. source_id .. "] 为缓存结构")
                         end
@@ -262,10 +228,10 @@ function Migrations.unified_multi_pairing()
                         -- 直接创建带缓存的完整结构（整合 v0.10.1）
                         portal.target_ids[portal.paired_to_id] = {
                             custom_id = portal.paired_to_id,
-                            unit_number = target.shell.unit_number
+                            unit_number = target.shell.unit_number,
                         }
                         log_debug("[Migration] 转换入口 ID " ..
-                            portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> target_ids (带缓存)")
+                        portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> target_ids (带缓存)")
                     end
 
                     -- [关键] 清空旧字段，完成数据结构升级
@@ -280,7 +246,7 @@ function Migrations.unified_multi_pairing()
                         if target and target.shell and target.shell.valid then
                             portal.target_ids[target_id] = {
                                 custom_id = target_id,
-                                unit_number = target.shell.unit_number
+                                unit_number = target.shell.unit_number,
                             }
                             log_debug("[Migration] 入口 ID " .. portal.id .. " 升级 target_ids[" .. target_id .. "] 为缓存结构")
                         end
@@ -306,13 +272,7 @@ function Migrations.logistics_reset()
     if storage.rift_rails then
         log_debug("[Migration] 开始执行物流连接重置 (Purge & Re-evaluate)...")
 
-        -- 1. [Cybersyn] 全局暴力清洗 (核弹洗地)
-        -- 直接清除 Cybersyn 数据库中所有关于 RiftRail 的记录，无视内部状态
-        if CybersynSE and CybersynSE.purge_legacy_connections then
-            CybersynSE.purge_legacy_connections()
-        end
-
-        -- 2. [重建] 遍历现有数据，重新注册合法的连接
+        -- [重建] 遍历现有数据，重新注册合法的连接
         for _, portal in pairs(storage.rift_rails) do
             if portal.mode == "entry" and portal.target_ids then
                 for target_id, _ in pairs(portal.target_ids) do
@@ -326,12 +286,6 @@ function Migrations.logistics_reset()
 
                         -- [重建连接]
                         -- 只有当开关开启，且符合新版"双向握手"规则时，才会真正注册成功
-                        if portal.cybersyn_enabled then
-                            if CybersynSE then
-                                -- 注意：这里不再调用 false，因为上面已经全局清洗过了
-                                CybersynSE.update_connection(portal, partner, true, nil, true)
-                            end
-                        end
                         if portal.ltn_enabled then
                             if LTN then
                                 LTN.update_connection(portal, partner, true, nil, nil, true)
@@ -343,6 +297,84 @@ function Migrations.logistics_reset()
         end
         log_debug("[Migration] 物流连接重置完成。")
     end
+end
+
+-- ============================================================================
+-- [迁移任务 10 - 最终] 永久移除 Cybersyn 数据
+-- ============================================================================
+-- 目的：在彻底移除兼容模块前，最后一次清理所有写入 Cybersyn 的数据。
+-- 触发条件：全局标志位 acks.rift_rail_cybersyn_fully_purged 不存在。
+function Migrations.final_cybersyn_purge()
+    -- 1. 使用全局标志位，确保此函数在每个存档中只运行一次
+    if storage.rift_rail_cybersyn_fully_purged then
+        return
+    end
+
+    -- 2. 检查 Cybersyn 是否存在，如果不存在则无需清理
+    if not (remote.interfaces["cybersyn"] and storage.rift_rails) then
+        -- 即使 Cybersyn 不存在，也设置标志位，避免下次重复检查
+        storage.rift_rail_cybersyn_fully_purged = true
+        return
+    end
+
+    log_debug("[Migration] 开始执行最终的 Cybersyn 数据清理...")
+
+    -- 3. [核心逻辑] 从 cybersyn_compat.lua 复制过来的清理代码
+
+    -- 辅助函数：从 portaldata 中获取车站实体
+    local function get_station(portaldata)
+        if portaldata.children then
+            for _, child_data in pairs(portaldata.children) do
+                local child = child_data.entity
+                if child and child.valid and child.name == "rift-rail-station" then
+                    return child
+                end
+            end
+        end
+        return nil
+    end
+
+    -- 辅助函数：生成用于 Cybersyn 查找的排序键
+    local function sorted_pair_key(a, b)
+        if a < b then
+            return a .. "|" .. b
+        else
+            return b .. "|" .. a
+        end
+    end
+
+    -- 开始清理
+    local all_stations = {}
+    for _, portal in pairs(storage.rift_rails) do
+        local station = get_station(portal)
+        if station and station.valid then
+            table.insert(all_stations, station)
+            -- 第一步：无条件清除 se_elevators (单体伪装数据)
+            remote.call("cybersyn", "write_global", nil, "se_elevators", station.unit_number)
+        end
+    end
+
+    -- 第二步：暴力遍历所有两两组合，清除 connected_surfaces (连接数据)
+    for i = 1, #all_stations do
+        for j = i + 1, #all_stations do
+            local s1 = all_stations[i]
+            local s2 = all_stations[j]
+
+            local s1_idx = s1.surface.index
+            local s2_idx = s2.surface.index
+            local k_surf = sorted_pair_key(s1_idx, s2_idx)
+            local k_ent = sorted_pair_key(s1.unit_number, s2.unit_number)
+
+            -- 发送删除指令
+            remote.call("cybersyn", "write_global", nil, "connected_surfaces", k_surf, k_ent)
+        end
+    end
+
+    log_debug("[Migration] Cybersyn 最终清理完成。")
+    game.print({ "messages.rift-rail-cybersyn-purged-success" })
+
+    -- 4. [关键] 设置标志位，防止此函数再次运行
+    storage.rift_rail_cybersyn_fully_purged = true
 end
 
 -- ============================================================================
@@ -358,11 +390,13 @@ function Migrations.run_all()
     -- 物流系统迁移
     Migrations.purge_ltn_legacy()
     Migrations.build_ltn_routing_table()
-    Migrations.cybersyn_v080_refactor()
 
     -- 多对多架构迁移
     Migrations.unified_multi_pairing()
     Migrations.logistics_reset()
+
+    -- cybersyn兼容移除
+    Migrations.final_cybersyn_purge()
 end
 
 return Migrations
