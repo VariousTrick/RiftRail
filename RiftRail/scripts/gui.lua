@@ -154,11 +154,11 @@ function GUI.build_or_update(player, entity)
     -- 使用 Factorio 的本地化拼接语法 {"", A, B, C}
     -- 这里的 {"entity-name.rift-rail-core"} 会自动读取 locale 文件显示为 "裂隙铁路控制核心"
     local title_caption = {
-        "",                               -- 空字符串开头，表示这是一个拼接列表
-        title_icon,                       -- 图标字符串 "[item=...]"
-        " ",                              -- 空格
+        "", -- 空字符串开头，表示这是一个拼接列表
+        title_icon, -- 图标字符串 "[item=...]"
+        " ", -- 空格
         { "entity-name.rift-rail-core" }, -- 读取 locale 中的中文名
-        " (ID: " .. my_data.id .. ")",    -- 后面拼接 ID
+        " (ID: " .. my_data.id .. ")", -- 后面拼接 ID
     }
 
     log_gui("[RiftRail:GUI] 标题已更新为本地化名称 (ID: " .. my_data.id .. ")")
@@ -209,8 +209,7 @@ function GUI.build_or_update(player, entity)
         allow_none_state = true,
         left_label_caption = { "gui.rift-rail-mode-entry" },
         right_label_caption = { "gui.rift-rail-mode-exit" },
-        tooltip = (switch_state == "left" and { "gui.rift-rail-mode-tooltip-left" }) or
-        (switch_state == "right" and { "gui.rift-rail-mode-tooltip-right" }) or { "gui.rift-rail-mode-tooltip-none" },
+        tooltip = (switch_state == "left" and { "gui.rift-rail-mode-tooltip-left" }) or (switch_state == "right" and { "gui.rift-rail-mode-tooltip-right" }) or { "gui.rift-rail-mode-tooltip-none" },
     })
     mode_switch.style.bottom_margin = 12
 
@@ -261,8 +260,7 @@ function GUI.build_or_update(player, entity)
     local selector_caption_key = nil
     if view_mode == "management" then
         -- 管理模式：显示"已连接的..."
-        selector_caption_key = (my_data.mode == "entry") and "gui.rift-rail-connected-targets-label" or
-        "gui.rift-rail-connected-sources-label"
+        selector_caption_key = (my_data.mode == "entry") and "gui.rift-rail-connected-targets-label" or "gui.rift-rail-connected-sources-label"
     else
         -- 添加模式：显示"添加新连接"
         selector_caption_key = "gui.rift-rail-add-new-connection"
@@ -398,7 +396,7 @@ function GUI.build_or_update(player, entity)
             enabled = (#dropdown_items > 0),
             tooltip = { "gui.rift-rail-tooltip-unpair-selected" }, -- 新增本地化 key
         })
-    else                                                           -- view_mode == "addition"
+    else -- view_mode == "addition"
         btn_flow.add({
             type = "button",
             name = "rift_rail_pair_button",
@@ -519,9 +517,11 @@ function GUI.build_or_update(player, entity)
         if partner and partner.shell and partner.shell.valid then
             inner_flow.add({
                 type = "label",
+                name = "rift_rail_preview_title", -- 【新增】给标题起个名字
                 style = "frame_title",
                 caption = { "gui.rift-rail-preview-title", partner.name, partner.shell.surface.name },
-            }).style.left_padding = 8
+            }).style.left_padding =
+                8
 
             local preview_frame = inner_flow.add({ type = "frame", style = "inside_shallow_frame" })
             preview_frame.style.minimal_width = 280
@@ -531,6 +531,7 @@ function GUI.build_or_update(player, entity)
 
             local cam = preview_frame.add({
                 type = "camera",
+                name = "rift_rail_preview_camera", -- 【新增】给摄像头起个名字
                 position = partner.shell.position,
                 surface_index = partner.shell.surface.index,
                 zoom = 0.2,
@@ -890,7 +891,72 @@ function GUI.handle_selection_state_changed(event)
 
     my_data.last_selected_source_id = new_selected_id
 
-    GUI.build_or_update(player, my_data.shell)
+    -- 【修改】不再重建整个界面，而是尝试只更新预览
+    -- 如果更新失败（比如之前没开预览，现在需要打开），再回退到重建
+    local update_success = GUI.update_camera_preview(player, frame, new_selected_id)
+
+    -- 只有当 update_camera_preview 返回 false (说明没找到摄像头控件) 时，才强制刷新整个界面
+    if not update_success then
+        GUI.build_or_update(player, my_data.shell)
+    end
+end
+
+-- 只刷新摄像头预览区域
+-- player: 玩家对象
+-- frame: 主窗口frame对象
+-- target_id: 目标portal id
+-- partner_data: portal数据（可选，若未传则自动查找）
+-- 只刷新摄像头属性，不销毁重建
+-- 返回 true 表示更新成功，返回 false 表示没找到控件（需要外部重建）
+function GUI.update_camera_preview(player, frame, target_id)
+    if not (frame and frame.valid and target_id) then
+        return false
+    end
+
+    -- 1. 定义递归查找函数（或者放在模块顶部作为通用函数）
+    local function find_element_recursively(element, name)
+        if element.name == name then
+            return element
+        end
+        if element.children then
+            for _, child in pairs(element.children) do
+                local found = find_element_recursively(child, name)
+                if found then
+                    return found
+                end
+            end
+        end
+        return nil
+    end
+
+    -- 2. 查找 标题(Label) 和 摄像头(Camera)
+    local title_label = find_element_recursively(frame, "rift_rail_preview_title")
+    local camera_widget = find_element_recursively(frame, "rift_rail_preview_camera")
+
+    -- 如果找不到控件（说明之前可能没勾选预览），返回 false，让外部去执行完整的 build_or_update
+    if not (title_label and title_label.valid and camera_widget and camera_widget.valid) then
+        return false
+    end
+
+    -- 3. 获取目标数据
+    local partner = State.get_portaldata_by_id(target_id)
+    if not (partner and partner.shell and partner.shell.valid) then
+        -- 目标无效，这里也可以选择隐藏控件，但暂时不做处理
+        return true
+    end
+
+    -- 4. 【核心】直接修改属性（无闪烁切换）
+
+    -- 修改标题文字
+    title_label.caption = { "gui.rift-rail-preview-title", partner.name, partner.shell.surface.name }
+
+    -- 修改摄像头视角 (Factorio 引擎会自动处理跨地表切换)
+    camera_widget.position = partner.shell.position
+    camera_widget.surface_index = partner.shell.surface.index
+    -- 如果需要，也可以重置缩放
+    -- camera_widget.zoom = 0.2
+
+    return true
 end
 
 return GUI
