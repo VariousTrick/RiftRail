@@ -107,7 +107,7 @@ function GUI.build_or_update(player, entity)
     end
     local player_settings = storage.rift_rail_player_settings[player.index]
 
-    -- [新增] 统计当前连接数，用于决定初始视图模式
+    -- 统计当前连接数，用于决定初始视图模式
     local connection_count = 0
     if my_data.mode == "entry" then
         if my_data.target_ids then
@@ -123,7 +123,7 @@ function GUI.build_or_update(player, entity)
         end
     end
 
-    -- [多对多改造] 确定当前视图模式 (管理/添加)
+    -- 确定当前视图模式 (管理/添加)
     -- 总是默认进入 management 模式，用户可以点击"添加"按钮进入 addition 模式
     local view_mode = "management"
     if player.gui.screen.rift_rail_main_frame and player.gui.screen.rift_rail_main_frame.valid and player.gui.screen.rift_rail_main_frame.tags.view_mode then
@@ -174,7 +174,7 @@ function GUI.build_or_update(player, entity)
     frame.auto_center = true
 
     -- 7. [核心] 存储 Unit Number，用于后续逻辑
-    -- [多对多改造] 同时保存 unit_number 和 view_mode
+    -- 同时保存 unit_number 和 view_mode
     frame.tags = { unit_number = my_data.unit_number, view_mode = view_mode }
 
     -- 8. [关键一步] 欺骗引擎：告诉游戏“现在玩家打开的是这个窗口”
@@ -221,8 +221,8 @@ function GUI.build_or_update(player, entity)
     local status_flow = inner_flow.add({ type = "flow", direction = "vertical" })
     status_flow.add({ type = "label", caption = { "gui.rift-rail-status-label" } })
 
-    -- [多对多改造] 重构连接状态显示
-    -- [修改] 使用预计算的 count
+    -- 重构连接状态显示
+    -- 使用预计算的 count
     if my_data.mode == "entry" then
         if connection_count > 0 then
             status_flow.add({
@@ -249,11 +249,7 @@ function GUI.build_or_update(player, entity)
     status_flow.style.bottom_margin = 12
 
     -- 7. 连接控制 (下拉框与按钮)
-    --[[ local selector_caption = { "gui.rift-rail-target-selector" }
-    if my_data.mode == "exit" then
-        selector_caption = { "gui.rift-rail-source-selector" }
-    end ]]
-    -- [多对多改造] 动态标题与“添加”按钮
+    -- 动态标题与“添加”按钮
     local selector_flow = inner_flow.add({ type = "flow", direction = "horizontal" })
     selector_flow.style.vertical_align = "center"
 
@@ -383,7 +379,7 @@ function GUI.build_or_update(player, entity)
     end
     dropdown.style.width = 280
 
-    -- [多对多改造] 动态按钮组
+    -- 动态按钮组
     local btn_flow = inner_flow.add({ type = "flow", direction = "horizontal" })
     btn_flow.style.top_margin = 4
 
@@ -477,14 +473,15 @@ function GUI.build_or_update(player, entity)
     -- 9. 远程预览 (适配 Exit 模式下的来源预览)
     inner_flow.add({ type = "line", direction = "horizontal" })
 
-    -- [多对多改造] 统一预览逻辑：直接使用下拉框选中的目标
+    -- 统一预览逻辑：直接使用下拉框选中的目标
     -- dropdown_ids 和 selected_idx 是我们在上面构建列表时生成的局部变量
     local preview_target_id = nil
     if dropdown_ids and selected_idx and selected_idx > 0 then
         preview_target_id = dropdown_ids[selected_idx]
     end
 
-    if view_mode == "management" and preview_target_id then
+    -- 只要有目标 ID，就允许显示勾选框（无论是管理模式还是添加模式）
+    if preview_target_id then
         inner_flow.add({
             type = "checkbox",
             name = "rift_rail_preview_check",
@@ -512,16 +509,16 @@ function GUI.build_or_update(player, entity)
     end
 
     -- 10. 摄像头预览窗口
-    if view_mode == "management" and preview_target_id and player_settings.show_preview then
+    -- 只要有目标 ID 且 玩家勾选了预览，就显示
+    if preview_target_id and player_settings.show_preview then
         local partner = State.get_portaldata_by_id(preview_target_id)
         if partner and partner.shell and partner.shell.valid then
             inner_flow.add({
                 type = "label",
-                name = "rift_rail_preview_title", -- 【新增】给标题起个名字
+                name = "rift_rail_preview_title",
                 style = "frame_title",
                 caption = { "gui.rift-rail-preview-title", partner.name, partner.shell.surface.name },
-            }).style.left_padding =
-                8
+            }).style.left_padding = 8
 
             local preview_frame = inner_flow.add({ type = "frame", style = "inside_shallow_frame" })
             preview_frame.style.minimal_width = 280
@@ -531,7 +528,7 @@ function GUI.build_or_update(player, entity)
 
             local cam = preview_frame.add({
                 type = "camera",
-                name = "rift_rail_preview_camera", -- 【新增】给摄像头起个名字
+                name = "rift_rail_preview_camera",
                 position = partner.shell.position,
                 surface_index = partner.shell.surface.index,
                 zoom = 0.2,
@@ -567,17 +564,17 @@ function GUI.handle_click(event)
 
     log_gui("[RiftRail:GUI] 点击: " .. el_name .. " (ID: " .. unit_number .. ")")
 
-    -- [多对多改造] 视图模式切换 (修正 tags 写回逻辑)
+    -- 视图模式切换 (修正 tags 写回逻辑)
     if el_name == "rift_rail_enter_add_mode_button" then
         local tags = frame.tags
         tags.view_mode = "addition"
-        frame.tags = tags -- 必须显式写回
+        frame.tags = tags
         GUI.build_or_update(player, my_data.shell)
         return
     elseif el_name == "rift_rail_cancel_add_mode_button" then
         local tags = frame.tags
         tags.view_mode = "management"
-        frame.tags = tags -- 必须显式写回
+        frame.tags = tags
         GUI.build_or_update(player, my_data.shell)
         return
     end
@@ -616,7 +613,7 @@ function GUI.handle_click(event)
 
         -- 解绑 / 断开 (Exit 模式下为踢出指定来源，或 Shift 点击清空)
     elseif el_name == "rift_rail_unpair_button" then
-        -- [多对多改造] “断开”现在总是断开下拉框中选中的那个
+        -- “断开”现在总是断开下拉框中选中的那个
         local function find_dropdown(element)
             if element.type == "drop-down" and element.name == "rift_rail_target_dropdown" then
                 return element
@@ -703,7 +700,7 @@ function GUI.handle_click(event)
 
         -- 远程观察
     elseif el_name == "rift_rail_remote_view_button" then
-        -- [多对多改造] 统一逻辑：目标永远是下拉框当前选中的那个
+        -- 统一逻辑：目标永远是下拉框当前选中的那个
         local function find_dropdown(element)
             if element.type == "drop-down" and element.name == "rift_rail_target_dropdown" then
                 return element
@@ -815,7 +812,7 @@ function GUI.handle_confirmed(event)
 
         -- 模拟点击确认
         local fake_event = {
-            element = { name = "rift_rail_confirm_rename_button" }, -- 简化处理，直接传名字匹配
+            element = { name = "rift_rail_confirm_rename_button" },
             player_index = event.player_index,
         }
         GUI.handle_click(fake_event)
@@ -849,33 +846,6 @@ function GUI.handle_selection_state_changed(event)
         return
     end
 
-    -- 新增“智能判断”逻辑
-    -- 1. 定义一个辅助函数，用于在 GUI 元素中递归查找指定名称的子元素
-    local function find_element_recursively(element, name)
-        if element.name == name then
-            return element
-        end
-        if element.children then
-            for _, child in pairs(element.children) do
-                local found = find_element_recursively(child, name)
-                if found then
-                    return found
-                end
-            end
-        end
-        return nil
-    end
-
-    -- 2. 在当前窗口中查找是否存在“配对”按钮
-    local pair_button = find_element_recursively(frame, "rift_rail_pair_button")
-
-    -- 3. 如果找到了“配对”按钮，说明当前是“配对意图”，应立即停止执行，不做任何事
-    if pair_button then
-        return
-    end
-
-    -- 只有在找不到“配对”按钮时（即“浏览意图”），才执行以下代码
-
     local my_data = State.get_portaldata_by_unit_number(frame.tags.unit_number)
     if not my_data then
         return
@@ -891,7 +861,7 @@ function GUI.handle_selection_state_changed(event)
 
     my_data.last_selected_source_id = new_selected_id
 
-    -- 【修改】不再重建整个界面，而是尝试只更新预览
+    -- 不再重建整个界面，而是尝试只更新预览
     -- 如果更新失败（比如之前没开预览，现在需要打开），再回退到重建
     local update_success = GUI.update_camera_preview(player, frame, new_selected_id)
 
