@@ -503,28 +503,34 @@ local function select_target_exit(entry_portaldata)
         end
     end
 
-    -- B. [优先级 2] 智能空闲寻找 (性能优化版)
-    -- 遍历所有连接的目标，寻找一个 locking_entry_id 为 nil 的 (即未被占用的)
-    -- 这种检查是纯内存访问，极快，不会造成性能负担
-    local fallback_portal = nil
+    -- 2. [优先级 中] 默认出口 (含老存档自动迁移)
+    local def_id = entry_portaldata.default_exit_id
 
-    for target_id, _ in pairs(targets) do
-        local p_data = State.get_portaldata_by_id(target_id)
-        if p_data and p_data.shell and p_data.shell.valid then
-            -- 如果发现一个没被锁定的，直接选它！(实现了简单的负载均衡)
-            if p_data.locking_entry_id == nil then
-                return p_data
-            end
-
-            -- 记录第一个有效的作为兜底，万一大家都被锁了，总得选一个去排队
-            if not fallback_portal then
-                fallback_portal = p_data
-            end
+    -- 验证默认ID是否有效 (存在且还在连接列表中)
+    local default_valid = false
+    if def_id and targets[def_id] then
+        local p = State.get_portaldata_by_id(def_id)
+        if p and p.shell and p.shell.valid then
+            default_valid = true
         end
     end
 
-    -- C. [兜底] 如果都忙，或者没找到空闲的，就去第一个有效的排队
-    return fallback_portal
+    -- [懒加载] 如果默认值无效/不存在，自动提拔列表中的第一个为默认
+    if not default_valid then
+        local first_id, _ = next(targets)
+        if first_id then
+            entry_portaldata.default_exit_id = first_id
+            def_id = first_id
+            default_valid = true
+        end
+    end
+
+    -- 3. 返回默认出口
+    if default_valid then
+        return State.get_portaldata_by_id(def_id)
+    end
+
+    return nil
 end
 -- =================================================================================
 -- 【业务逻辑】尝试启动传送流程
