@@ -154,11 +154,11 @@ local function update_collider_state(portaldata)
 
         -- 计算碰撞器的精确相对坐标
         local relative_pos = { x = 0, y = -2 } -- 基准 (North)
-        if direction == 4 then                 -- East
+        if direction == 4 then -- East
             relative_pos = { x = 2, y = 0 }
-        elseif direction == 8 then             -- South
+        elseif direction == 8 then -- South
             relative_pos = { x = 0, y = 2 }
-        elseif direction == 12 then            -- West
+        elseif direction == 12 then -- West
             relative_pos = { x = -2, y = 0 }
         end
 
@@ -194,8 +194,7 @@ function Logic.update_name(player_index, portal_id, new_string)
 
     -- 1. 解析输入 (显式捕获间隔符 %s* 和剩余文本)
     -- 原正则: "%[([%w%-]+)=([%w%-]+)%]%s*(.*)"
-    local prefix, icon_type, icon_name, separator, plain_name = string.match(new_string,
-        "^(%s*)%[([%w%-]+)=([%w%-]+)%](%s*)(.*)")
+    local prefix, icon_type, icon_name, separator, plain_name = string.match(new_string, "^(%s*)%[([%w%-]+)=([%w%-]+)%](%s*)(.*)")
 
     -- 2. 智能去重与数据更新
     if icon_type and icon_name then
@@ -584,11 +583,11 @@ function Logic.teleport_player(player_index, portal_id)
         local dir = portaldata.shell.direction
         local offset = { x = 0, y = 0 }
 
-        if dir == 0 then      -- North (开口在下) -> 传送到上方
+        if dir == 0 then -- North (开口在下) -> 传送到上方
             offset = { x = 0, y = -8 }
-        elseif dir == 4 then  -- East (开口在左) -> 传送到右方
+        elseif dir == 4 then -- East (开口在左) -> 传送到右方
             offset = { x = 8, y = 0 }
-        elseif dir == 8 then  -- South (开口在上) -> 传送到下方
+        elseif dir == 8 then -- South (开口在上) -> 传送到下方
             offset = { x = 0, y = 8 }
         elseif dir == 12 then -- West (开口在右) -> 传送到左方
             offset = { x = -8, y = 0 }
@@ -623,7 +622,7 @@ function Logic.teleport_player(player_index, portal_id)
 end
 
 -- ============================================================================
--- 9. 一键断开所有来源 (新增功能)
+-- 9. 一键断开所有来源
 -- ============================================================================
 function Logic.unpair_all_from_exit(player_index, portal_id)
     local player = game.get_player(player_index)
@@ -651,7 +650,7 @@ function Logic.unpair_all_from_exit(player_index, portal_id)
 end
 
 -- ============================================================================
--- 10.[多对多新增] 精准解绑逻辑 (断开指定的一对连接)
+-- 10.精准解绑逻辑 (断开指定的一对连接)
 -- ============================================================================
 function Logic.unpair_portals_specific(player_index, source_id, target_id)
     local player = nil
@@ -702,6 +701,32 @@ function Logic.unpair_portals_specific(player_index, source_id, target_id)
     end
 
     refresh_all_guis()
+end
+
+-- ============================================================================
+-- 11. 设置默认出口
+-- ============================================================================
+function Logic.set_default_exit(player_index, entry_unit_number, target_exit_id)
+    local player = game.get_player(player_index)
+    local entry_data = State.get_portaldata_by_unit_number(entry_unit_number)
+
+    if not (player and entry_data) then
+        return
+    end
+
+    -- 验证: 必须是入口，且目标ID必须在已连接列表中
+    if entry_data.mode == "entry" and entry_data.target_ids and entry_data.target_ids[target_exit_id] then
+        entry_data.default_exit_id = target_exit_id
+
+        -- 获取目标名称用于提示
+        local target_data = State.get_portaldata_by_id(target_exit_id)
+        local target_name = target_data and target_data.name or ("ID:" .. target_exit_id)
+
+        player.print({ "", "[img=utility/status_working] ", { "gui.rift-rail-default-set", target_name } })
+
+        -- 刷新界面 (更新星星状态和列表显示)
+        refresh_all_guis()
+    end
 end
 
 return Logic

@@ -215,8 +215,7 @@ script.on_event(defines.events.on_entity_renamed, function(event)
     local raw_name = entity.backer_name or ""
     local clean_str = raw_name:gsub("%[item=rift%-rail%-placer%]", "", 1)
 
-    local prefix, icon_type, icon_name, separator, plain_name = string.match(clean_str,
-        "^(%s*)%[([%w%-]+)=([%w%-]+)%](%s*)(.*)")
+    local prefix, icon_type, icon_name, separator, plain_name = string.match(clean_str, "^(%s*)%[([%w%-]+)=([%w%-]+)%](%s*)(.*)")
 
     if icon_type and icon_name then
         if icon_name == "rift-rail-placer" then
@@ -339,7 +338,7 @@ script.on_event(defines.events.on_entity_cloned, function(event)
                 -- 为 'lamp' 使用更大的搜索半径，以应对克隆时的坐标漂移
                 local search_radius = 0.5 -- 默认使用高精度半径
                 if child_name == "rift-rail-lamp" then
-                    search_radius = 1.5   -- 只为灯放宽到 1.5
+                    search_radius = 1.5 -- 只为灯放宽到 1.5
                 end
 
                 local found_clone = new_entity.surface.find_entities_filtered({
@@ -356,8 +355,7 @@ script.on_event(defines.events.on_entity_cloned, function(event)
                     })
                 else
                     if RiftRail.DEBUG_MODE_ENABLED then
-                        log_debug("RiftRail Clone Error: 在位置 " ..
-                            serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
+                        log_debug("RiftRail Clone Error: 在位置 " .. serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
                     end
                 end
             end
@@ -450,18 +448,18 @@ script.on_event(defines.events.on_player_setup_blueprint, function(event)
 
                         -- 纵向保持 6.5 (红绿灯下方)
                         -- 横向从 2.0 改为 3.5 (确保边缘不重叠)
-                        if dir == 0 then      -- North
-                            offset_x = 2      -- 向右更远一点
+                        if dir == 0 then -- North
+                            offset_x = 2 -- 向右更远一点
                             offset_y = 7
-                        elseif dir == 4 then  -- East
+                        elseif dir == 4 then -- East
                             offset_x = -7
-                            offset_y = 2      -- 向下更远一点
-                        elseif dir == 8 then  -- South
-                            offset_x = -2     -- 向左更远一点
+                            offset_y = 2 -- 向下更远一点
+                        elseif dir == 8 then -- South
+                            offset_x = -2 -- 向左更远一点
                             offset_y = -7
                         elseif dir == 12 then -- West
                             offset_x = 7
-                            offset_y = -2     -- 向上更远一点
+                            offset_y = -2 -- 向上更远一点
                         end
 
                         max_entity_number = max_entity_number + 1
@@ -583,9 +581,9 @@ script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
                         if dir == 0 then
                             offset = { x = 0, y = -2 } -- North
                         elseif dir == 4 then
-                            offset = { x = 2, y = 0 }  -- East
+                            offset = { x = 2, y = 0 } -- East
                         elseif dir == 8 then
-                            offset = { x = 0, y = 2 }  -- South
+                            offset = { x = 0, y = 2 } -- South
                         elseif dir == 12 then
                             offset = { x = -2, y = 0 } -- West
                         end
@@ -677,7 +675,7 @@ script.on_init(function()
     if not storage.rift_rail_ltn_routing_table then
         storage.rift_rail_ltn_routing_table = {} -- 初始化 LTN 路由表
     end
-    register_ltn_events()                        -- 注册 LTN 事件（若可用）
+    register_ltn_events() -- 注册 LTN 事件（若可用）
 end)
 
 -- on_configuration_changed: 处理模组更新或配置变更
@@ -719,9 +717,9 @@ remote.add_interface("RiftRail", {
         Logic.set_mode(player_index, portal_id, mode)
     end,
 
-    --[[     set_cybersyn_enabled = function(player_index, portal_id, enabled)
-        Logic.set_cybersyn_enabled(player_index, portal_id, enabled)
-    end, ]]
+    set_default_exit = function(...)
+        Logic.set_default_exit(...)
+    end,
 
     set_ltn_enabled = function(player_index, portal_id, enabled)
         Logic.set_ltn_enabled(player_index, portal_id, enabled)
@@ -792,8 +790,7 @@ remote.add_interface("RiftRail", {
                 if not search_param then
                     return "Error: 'get_by_id' requires a custom ID parameter."
                 end
-                return State.get_portaldata_by_id(search_param) or
-                    "Error: Struct with custom ID " .. tostring(search_param) .. " not found."
+                return State.get_portaldata_by_id(search_param) or "Error: Struct with custom ID " .. tostring(search_param) .. " not found."
             elseif portaldata_key == "get_by_unit" then
                 if not search_param then
                     return "Error: 'get_by_unit' requires a unit_number parameter."
@@ -837,9 +834,7 @@ remote.add_interface("RiftRail", {
                 for unit_number, portaldata in pairs(storage.rift_rails) do
                     total_portaldatas = total_portaldatas + 1
                     if not (portaldata.shell and portaldata.shell.valid) then
-                        table.insert(data_ghosts,
-                            "Struct for unit_number " ..
-                            unit_number .. " (ID: " .. (portaldata.id or "N/A") .. ") has an invalid shell.")
+                        table.insert(data_ghosts, "Struct for unit_number " .. unit_number .. " (ID: " .. (portaldata.id or "N/A") .. ") has an invalid shell.")
                     end
                 end
             end
@@ -862,15 +857,7 @@ remote.add_interface("RiftRail", {
                     total_components = total_components + 1
                     if not State.get_portaldata(entity) then
                         -- [修正] 对 entity.unit_number 进行安全转换，防止 simple-entity (如 collider) 因没有 unit_number 而报错
-                        table.insert(entity_ghosts,
-                            "Entity '" ..
-                            entity.name ..
-                            "' (Unit No: " ..
-                            tostring(entity.unit_number) ..
-                            ") at [gps=" ..
-                            entity.position.x ..
-                            "," ..
-                            entity.position.y .. "," .. entity.surface.name .. "] has no corresponding portaldata data.")
+                        table.insert(entity_ghosts, "Entity '" .. entity.name .. "' (Unit No: " .. tostring(entity.unit_number) .. ") at [gps=" .. entity.position.x .. "," .. entity.position.y .. "," .. entity.surface.name .. "] has no corresponding portaldata data.")
                     end
                 end
             end

@@ -281,7 +281,11 @@ function GUI.build_or_update(player, entity)
         })
     end
 
-    local dropdown = inner_flow.add({ type = "drop-down", name = "rift_rail_target_dropdown" })
+    -- 创建一个水平容器，用于并排显示下拉框和默认按钮
+    local drop_flow = inner_flow.add({ type = "flow", direction = "horizontal" })
+    drop_flow.style.vertical_align = "center"
+
+    local dropdown = drop_flow.add({ type = "drop-down", name = "rift_rail_target_dropdown" })
     local dropdown_items = {}
     local dropdown_ids = {}
     local selected_idx = 0
@@ -289,13 +293,8 @@ function GUI.build_or_update(player, entity)
     local all_portals = State.get_all_portaldatas()
 
     if view_mode == "management" then
-        -- ==================== 管理模式: 显示已连接列表 ====================
-        local connected_ids_map = {}
-        if my_data.mode == "entry" then
-            connected_ids_map = my_data.target_ids or {}
-        elseif my_data.mode == "exit" then
-            connected_ids_map = my_data.source_ids or {}
-        end
+        -- ==================== 管理模式 ====================
+        local connected_ids_map = (my_data.mode == "entry") and (my_data.target_ids or {}) or (my_data.source_ids or {})
 
         local ordered_ids = {}
         for id, _ in pairs(connected_ids_map) do
@@ -306,11 +305,12 @@ function GUI.build_or_update(player, entity)
         for idx, id in ipairs(ordered_ids) do
             local p_data = State.get_portaldata_by_id(id)
             if p_data then
-                -- 构建列表项文本
                 local icon_str = ""
                 if p_data.icon and p_data.icon.name then
                     icon_str = "[" .. p_data.icon.type .. "=" .. p_data.icon.name .. "] "
                 end
+
+                -- 步骤 1: 先创建基础的 item_text
                 local item_text = {
                     "",
                     "[",
@@ -324,6 +324,13 @@ function GUI.build_or_update(player, entity)
                     p_data.surface.name,
                     "]",
                 }
+
+                -- 步骤 2: 如果是默认出口，就用颜色标签包裹刚才创建的 item_text
+                if my_data.mode == "entry" and my_data.default_exit_id == id then
+                    item_text = { "", "[color=0.2, 0.8, 0.2]", item_text, "[/color]" }
+                end
+
+                -- 步骤 3: 将最终版本的 item_text 添加到列表中
                 table.insert(dropdown_items, item_text)
                 table.insert(dropdown_ids, id)
             end
@@ -377,7 +384,23 @@ function GUI.build_or_update(player, entity)
     if selected_idx > 0 then
         dropdown.selected_index = selected_idx
     end
+
+    -- 【修改】默认设置全宽
     dropdown.style.width = 280
+    -- 卫星按钮：设为默认 (仅在管理模式且为入口时显示)
+    if view_mode == "management" and my_data.mode == "entry" then
+        -- 缩窄下拉框宽度，腾出空间给按钮
+        dropdown.style.width = 248 -- 原280减去约32
+
+        drop_flow.add({
+            type = "sprite-button",
+            name = "rift_rail_set_default_button",
+            sprite = "utility/status_working",
+            tooltip = { "gui.rift-rail-tooltip-set-default" },
+            style = "tool_button",
+            enabled = (#dropdown_items > 0),
+        })
+    end
 
     -- 动态按钮组
     local btn_flow = inner_flow.add({ type = "flow", direction = "horizontal" })
@@ -397,7 +420,7 @@ function GUI.build_or_update(player, entity)
             type = "button",
             name = "rift_rail_pair_button",
             caption = { "gui.rift-rail-btn-pair" },
-            --[[ style = "confirm_button", -- 使用绿色确认按钮样式 ]]
+
             enabled = (#dropdown_items > 0),
         })
     end
@@ -692,6 +715,21 @@ function GUI.handle_click(event)
         local textfield = find_textfield(frame)
         if textfield then
             remote.call("RiftRail", "update_portal_name", player.index, my_data.id, textfield.text)
+        end
+
+        -- 设为默认出口
+    elseif el_name == "rift_rail_set_default_button" then
+        -- 1. 查找旁边的下拉菜单 (它是按钮的兄弟元素)
+        -- 结构: Frame -> InnerFlow -> DropFlow -> [Dropdown, Button]
+        local drop_flow = event.element.parent
+        local dropdown = drop_flow["rift_rail_target_dropdown"]
+
+        if dropdown and dropdown.selected_index > 0 and dropdown.tags and dropdown.tags.ids then
+            local target_id = dropdown.tags.ids[dropdown.selected_index]
+            if target_id then
+                -- 调用 Logic 设置默认
+                remote.call("RiftRail", "set_default_exit", player.index, my_data.unit_number, target_id)
+            end
         end
 
         -- 玩家传送
