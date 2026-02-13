@@ -435,7 +435,8 @@ function GUI.build_or_update(player, entity)
     })
 
     -- 远程观察按钮
-    if view_mode == "management" and preview_target_id then
+    -- 【修改】新的显示条件：只要选中的是已连接的伙伴，就显示
+    if preview_target_id and dropdown_is_paired[selected_idx] == true then
         tool_flow.add({
             type = "button",
             name = "rift_rail_remote_view_button",
