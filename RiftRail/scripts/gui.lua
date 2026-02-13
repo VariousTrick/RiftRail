@@ -732,14 +732,26 @@ function GUI.handle_selection_state_changed(event, frame_override)
     local dropdown = event.element
     local selected_index = dropdown.selected_index
 
-    -- 【核心修复】如果选中了分隔符 (它的 is_paired 状态是 nil)，则立刻停止执行
+    -- 【核心修复】如果选中了分隔符 (它的 is_paired 状态是 nil)，则禁用所有相关按钮并立刻停止执行
     local is_paired_map = dropdown.tags.is_paired_map
     if not (is_paired_map and is_paired_map[selected_index] ~= nil) then
-        local action_button = frame.descendants["rift_rail_action_button"] or find_element_recursively(frame, "rift_rail_action_button")
+        -- 查找所有可能需要禁用的按钮
+        local action_button = find_element_recursively(frame, "rift_rail_action_button")
+        local set_default_button = find_element_recursively(frame, "rift_rail_set_default_button")
+        local remote_view_button = find_element_recursively(frame, "rift_rail_remote_view_button")
+
+        -- 统一禁用
         if action_button then
             action_button.enabled = false
         end
-        return -- 提前退出
+        if set_default_button then
+            set_default_button.enabled = false
+        end
+        if remote_view_button then
+            remote_view_button.enabled = false
+        end
+
+        return -- 提前退出，不执行后续逻辑
     end
 
     -- 根据不同调用模式，选择不同的查找方式
