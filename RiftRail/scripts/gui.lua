@@ -310,13 +310,7 @@ function GUI.build_or_update(player, entity)
                     icon_str = "[" .. p_data.icon.type .. "=" .. p_data.icon.name .. "] "
                 end
 
-                -- 默认出口标记逻辑
-                local default_mark = ""
-                if my_data.mode == "entry" and my_data.default_exit_id == id then
-                    -- 使用绿色文本标记默认项
-                    default_mark = " [img=utility/status_working]"
-                end
-
+                -- 步骤 1: 先创建基础的 item_text
                 local item_text = {
                     "",
                     "[",
@@ -329,8 +323,14 @@ function GUI.build_or_update(player, entity)
                     ") [",
                     p_data.surface.name,
                     "]",
-                    default_mark, -- 追加标记
                 }
+
+                -- 步骤 2: 如果是默认出口，就用颜色标签包裹刚才创建的 item_text
+                if my_data.mode == "entry" and my_data.default_exit_id == id then
+                    item_text = { "", "[color=0.2, 0.8, 0.2]", item_text, "[/color]" }
+                end
+
+                -- 步骤 3: 将最终版本的 item_text 添加到列表中
                 table.insert(dropdown_items, item_text)
                 table.insert(dropdown_ids, id)
             end
