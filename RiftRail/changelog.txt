@@ -1,8 +1,32 @@
 ---------------------------------------------------------------------------------------------------
 Version: 0.10.2
-Date: 2026-02-11
-  Changes:
-    - 删除了cybersyn兼容。
+Date: 2026-02-13
+  Major Changes:
+    - GUI Overhaul: Unified Interface & Default Exit Logic:
+      - Removed the confusing dual-mode (Management/Addition) interface. Now, a single, unified dropdown list displays both connected and available portals simultaneously, streamlining the connection process.
+      - Introduced the "Default Exit" feature. Players can now designate a specific connected exit as the default target for any train without specific routing instructions.
+  Features:
+    - Added a "Set as Default" button next to the connection list in the Entry portal's GUI, allowing for easy assignment of the default exit.
+    - The default exit is now highlighted with a distinct color in the dropdown list for clear visual identification.
+  Improvements & Fixes:
+    - The main action button ("Pair"/"Unpair") now dynamically updates based on the selection in the dropdown list, providing clear, context-sensitive actions.
+    - The GUI for Exit portals has been aligned with Entry portals, allowing connection management from either end.
+    - Cleaned up legacy code related to the old dual-mode system, improving code maintainability and stability.
+  Compatibility:
+    - Removed Cybersyn support.
+  【重大变更】:
+    - GUI 革命：统一界面与默认出口逻辑:
+    - 移除了令人困惑的双模式（管理/添加）界面。现在，一个统一的下拉列表会同时显示已连接和可连接的传送门，极大地简化了连接流程。
+    - 引入了“默认出口”功能。玩家现在可以指定一个已连接的出口，作为所有无特殊路由指令的列车的默认传送目标。
+  【新特性】:
+    - 在入口传送门的 GUI 中，连接列表旁新增了“设为默认”按钮，可以轻松指派默认出口。
+    - 在下拉列表中，默认出口会以特殊颜色高亮显示，方便快速识别。
+  【优化与修复】:
+    - 主操作按钮（“配对”/“断开连接”）现在会根据下拉列表中的选择动态更新，提供清晰的、符合上下文的操作。
+    - 出口传送门的 GUI 已与入口对齐，现在可以从任意一端管理连接。
+    - 清理了与旧版双模式相关的残留代码，提升了代码的可维护性和稳定性。
+  【兼容性】:
+    - 移除了对 Cybersyn 的兼容。
 ---------------------------------------------------------------------------------------------------
 Version: 0.10.1
 Date: 2026-02-11
