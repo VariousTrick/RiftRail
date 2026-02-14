@@ -1,13 +1,13 @@
 -- =================================================================================================
--- Rift Rail - data.lua (v0.0.2 竖向修正版)
+-- Rift Rail - data.lua
 -- rift rail only require(...) when adding content
 -- =================================================================================================
 
 if mods["space-age"] then
     require("prototypes.items.satellit")
     require("prototypes.recipes.satellit")
-    require("prototypes.items.rcu")
-    require("prototypes.recipes.rcu")
+    -- require("prototypes.items.rcu")
+    -- require("prototypes.recipes.rcu")
     require("prototypes.technology.satellit")
 end
 
