@@ -1,5 +1,7 @@
 -- Only load compatibility updates if the relevant mods are present and the corresponding setting is enabled
 
+local selected_integration = settings.startup["rift-rail-mod-integration"].value
+
 local has_sa = mods["space-age"]
 local has_se = mods["space-exploration"]
 local has_k2 = mods["Krastorio2"]
@@ -21,4 +23,6 @@ if has_se_k2 then
     require("updates.se-k2") -- add SE + Krastorio2 integration
 end
 
-
+if selected_integration == "easy-mode" then
+    require("updates.easy-mode")
+end

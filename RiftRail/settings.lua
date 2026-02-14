@@ -72,7 +72,7 @@ data:extend({
         name = "rift-rail-mod-integration",
         setting_type = "startup",
         default_value = "none", -- only one value can be active
-        allowed_values = { "none", "base", "space-age", "krastorio2", "space-exploration", "se-k2" },
+        allowed_values = { "easy-mode", "none", "space-age", "krastorio2", "space-exploration", "se-k2" },
         order = "a[riftrail]-a[mod-integration]",
         localised_name = { "mod-setting-name.rift-rail-mod-integration" },
         localised_description = { "mod-setting-description.rift-rail-mod-integration" },
@@ -98,5 +98,5 @@ data:extend({
         order = "c-b",
         localised_name = { "mod-setting-name.rift-rail-ltn-teleported-name" },
         localised_description = { "mod-setting-description.rift-rail-ltn-teleported-name" },
-    }
+    },
 })
