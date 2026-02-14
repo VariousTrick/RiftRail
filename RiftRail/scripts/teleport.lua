@@ -310,6 +310,8 @@ local function spawn_cloned_car(old_entity, surface, position, orientation)
         force = old_entity.force,
         quality = old_entity.quality,
         snap_to_train_stop = false, -- 建议设为 false 以提高位置精确度
+        snap_to_grid = false,
+        create_build_effect_smoke = false,
         raise_built = true,
     })
 
