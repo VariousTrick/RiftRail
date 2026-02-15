@@ -1,4 +1,6 @@
-![GitHub all releases download](https://img.shields.io/github/downloads/VariousTrick/RiftRail/total?style=flat-square&label=Downloads&color=blue)
+
+![Version](https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/VariousTrick/RiftRail/main/RiftRail/info.json&query=$.version&label=Version&color=blue)![Downloads](https://img.shields.io/badge/dynamic/json?url=https://mods.factorio.com/api/mods/RiftRail&query=$.downloads_count&label=Downloads&color=orange)
+
 
 # Rift Rail - 裂隙铁路
 
