@@ -328,7 +328,7 @@ data:extend({
     { type = "train-stop",           name = "rift-rail-station" },
     { type = "rail-signal",          name = "rift-rail-signal" },
     { type = "legacy-straight-rail", name = "rift-rail-internal-rail" },
-    { type = "container",            name = "rift-rail-core" }, -- [修改] 改为容器(箱子)，以便利用原生的 GUI 锚定机制
+    { type = "container",            name = "rift-rail-core" },    -- [修改] 改为容器(箱子)，以便利用原生的 GUI 锚定机制
     { type = "simple-entity",        name = "rift-rail-collider" },
     { type = "simple-entity",        name = "rift-rail-blocker" }, -- 物理堵头
 
@@ -368,6 +368,38 @@ data:extend({
         -- 隐形贴图
         pictures = { rotated = blank_sprite },
         vertical_selection_shift = -0.5,
+    },
+
+    -- ============================================================================
+    -- 传送特效定义 (Spritesheet 最终版)
+    -- ============================================================================
+    {
+        type = "trivial-smoke",
+        name = "rift-rail-teleport-shockwave",
+        flags = { "not-on-map" },
+
+        animation = {
+            filename = "__RiftRail__/graphics/rift-rail-teleport-spritesheet.png",
+            priority = "extra-high",
+            width = 780,
+            height = 780,
+            frame_count = 8,
+            line_length = 8,
+            scale = 0.3,
+            start_scale = 0.01,
+            end_scale = 0.3,
+            blend_mode = "additive",
+        },
+        spread_duration = 5,
+        duration = 150,
+        fade_in_duration = 15,
+        fade_away_duration = 15,
+        affected_by_wind = false,
+        cyclic = true,
+
+        -- 颜色/透明度变化
+        color = { r = 1, g = 1, b = 1, a = 0.8 },
+        end_color = { r = 1, g = 1, b = 1, a = 0 },
     },
 
     -- 虚拟信号：go_to_id
@@ -423,7 +455,7 @@ local internal_rail = data.raw["legacy-straight-rail"]["rift-rail-internal-rail"
 
 -- [保留] 关键逻辑：自动寻找正确的原版铁轨原型
 local source_rail = data.raw["legacy-straight-rail"]["legacy-straight-rail"] or
-data.raw["legacy-straight-rail"]["straight-rail"]
+    data.raw["legacy-straight-rail"]["straight-rail"]
 
 -- [修改] 手动复制属性，但刻意跳过 "pictures"
 -- 这样我们继承了铁轨的所有物理属性，但没继承它的外观
