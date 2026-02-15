@@ -681,7 +681,8 @@ function Logic.unpair_portals_specific(player_index, source_id, target_id)
     check_and_reset_logistics(target)
 
     -- LTN 清理逻辑
-    if LTN and LTN.update_connection then
+    -- script.active_mods 检查，只有在 LTN 模组实际启用时才尝试清理
+    if script.active_mods["LogisticTrainNetwork"] and LTN and LTN.update_connection then
         -- 强制发送 "false" 指令来清理（最后一个参数 nil 表示非用户操作）
         if source.mode == "entry" then
             LTN.update_connection(source, target, false, player, false, nil)
