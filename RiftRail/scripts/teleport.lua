@@ -834,6 +834,44 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     -- 使用克隆工厂一键生成
     local new_car = spawn_cloned_car(car, exit_portaldata.surface, spawn_pos, target_ori)
 
+    if is_first_car then
+        --[[ -- 【新增】播放传送特效
+    -- 检查是否有玩家在附近，避免在无人区创建不必要的视觉效果
+    -- 【修复】使用正确的 API 函数 find_entities_filtered
+    local entry_players_nearby = entry_portaldata.surface.find_entities_filtered({
+        type = "character", -- 查找玩家角色
+        position = car.position,
+        radius = 100,
+        limit = 1, -- 【性能优化】找到一个就够了，立刻停止搜索
+    })
+    local exit_players_nearby = exit_portaldata.surface.find_entities_filtered({
+        type = "character",
+        position = spawn_pos,
+        radius = 100,
+        limit = 1,
+    }) ]]
+
+        -- 在入口创建“吸入”效果
+        -- if #entry_players_nearby > 0 then
+        entry_portaldata.surface.create_trivial_smoke({
+            name = "rift-rail-teleport-shockwave",
+            position = car.position,
+        })
+        -- end
+
+        -- 在出口创建“吐出”效果
+        -- if #exit_players_nearby > 0 then
+        exit_portaldata.surface.create_trivial_smoke({
+            name = "rift-rail-teleport-shockwave",
+            position = spawn_pos,
+        })
+        -- end
+
+        --[[ -- 播放音效 (无论是否看得到)
+    entry_portaldata.surface.play_sound({ path = "sound/train-whistle.ogg", position = car.position, volume = 0.5 }) -- 临时用火车汽笛声代替，你需要找一个音效
+    exit_portaldata.surface.play_sound({ path = "sound/train-whistle.ogg", position = spawn_pos, volume = 0.5 }) ]]
+    end
+
     if not new_car then
         if RiftRail.DEBUG_MODE_ENABLED then
             log_tp("严重错误: 无法在出口创建车厢！")
