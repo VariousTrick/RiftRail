@@ -4,7 +4,6 @@
 local Logic = {}
 local State = nil
 local GUI = nil
-local CybersynSE = nil
 local LTN = nil
 
 local log_debug = function() end
@@ -12,6 +11,8 @@ local log_debug = function() end
 -- ============================================================================
 -- 配置与辅助函数
 -- ============================================================================
+-- WARNING: This value MUST be kept in sync with the one in scripts/gui.lua
+-- 警告：此值必须与 scripts/gui.lua 中的值保持同步
 local MAX_CONNECTIONS = 5 -- 在这里设置最大连接数上限
 
 -- 计算一个表中的键值对数量 (比 # 更安全，因其能处理非连续索引)
@@ -172,7 +173,7 @@ local function update_collider_state(portaldata)
             force = portaldata.shell.force,
         })
 
-        -- [核心修复] 将新创建的碰撞器登记到 children 列表中
+        -- 将新创建的碰撞器登记到 children 列表中
         if new_collider and portaldata.children then
             table.insert(portaldata.children, {
                 entity = new_collider,
@@ -244,7 +245,7 @@ function Logic.update_name(player_index, portal_id, new_string)
 end
 
 -- ============================================================================
--- 2. 模式切换 (重构：适配多对一，移除双向同步，增加自动清理)
+-- 2. 模式切换
 -- ============================================================================
 function Logic.set_mode(player_index, portal_id, mode, skip_sync)
     local player = nil
@@ -264,7 +265,7 @@ function Logic.set_mode(player_index, portal_id, mode, skip_sync)
 
     -- [关键步骤] 切换模式前，必须清理旧的连接关系
     -- 防止“带病上岗”导致数据拓扑错误
-    -- [多对多改造] 检查 target_ids 表，而不再是 paired_to_id
+    -- 检查 target_ids 表，而不再是 paired_to_id
     if old_mode == "entry" and my_data.target_ids and next(my_data.target_ids) then
         -- [多对多改造] 遍历所有目标，并逐个通知它们断开连接
         for target_id, _ in pairs(my_data.target_ids) do
@@ -274,9 +275,9 @@ function Logic.set_mode(player_index, portal_id, mode, skip_sync)
             end
         end
 
-        -- [新增] 检查刚刚被断开的目标
+        -- 检查刚刚被断开的目标
         check_and_reset_logistics(target)
-        -- [多对多改造] 清空整个目标列表
+        -- 清空整个目标列表
         my_data.target_ids = {}
 
         if RiftRail.DEBUG_MODE_ENABLED then
@@ -294,11 +295,11 @@ function Logic.set_mode(player_index, portal_id, mode, skip_sync)
                 src_data.mode = "neutral"
                 -- 注意：这里简单处理了，实际上可能需要触发源端的GUI刷新
             end
-            -- [新增] 检查刚刚被断开的来源
+            -- 检查刚刚被断开的来源
             check_and_reset_logistics(src_data)
         end
         my_data.source_ids = {}
-        -- [新增] 清理互斥锁
+        -- 清理互斥锁
         my_data.locking_entry_id = nil
 
         if RiftRail.DEBUG_MODE_ENABLED then
@@ -428,17 +429,17 @@ function Logic.pair_portals(player_index, source_id, target_id)
 
     -- 3. 执行连接 (不对称结构)
     -- 源指向目标
-    -- [多对多改造] 初始化 target_ids 表（如果不存在）
+    -- 初始化 target_ids 表（如果不存在）
     if not source.target_ids then
         source.target_ids = {}
     end
-    -- [多对多改造] 将目标 ID 加入列表 (缓存实体ID)
+    -- 将目标 ID 加入列表 (缓存实体ID)
     source.target_ids[target_id] = {
         custom_id = target_id,
         unit_number = target.shell.unit_number,
     }
 
-    -- 目标记录源 (多对一支持)
+    -- 目标记录源
     if not target.source_ids then
         target.source_ids = {}
     end
@@ -472,7 +473,7 @@ function Logic.pair_portals(player_index, source_id, target_id)
 end
 
 -- ============================================================================
--- 4. 解绑逻辑 (v2.0 - 代理到新函数)
+-- 4. 解绑逻辑
 -- ============================================================================
 -- 这个函数现在主要由 GUI 的“踢出”按钮调用，并且只处理“入口”
 function Logic.unpair_portals(player_index, portal_id)
@@ -486,7 +487,7 @@ function Logic.unpair_portals(player_index, portal_id)
         return
     end
 
-    -- [多对多改造] 将所有逻辑代理到 unpair_portals_specific
+    -- 将所有逻辑代理到 unpair_portals_specific
     if portal.mode == "entry" and portal.target_ids then
         -- 遍历所有目标并逐个断开
         for target_id, _ in pairs(portal.target_ids) do
@@ -525,7 +526,7 @@ function Logic.open_remote_view_by_target(player_index, target_id)
 end
 
 -- ============================================================================
--- 7. LTN 开关控制 (独立状态模式，类似 Cybersyn)
+-- 7. LTN 开关控制
 -- ==========================================================================
 function Logic.set_ltn_enabled(player_index, portal_id, enabled)
     local player = game.get_player(player_index)
@@ -675,12 +676,13 @@ function Logic.unpair_portals_specific(player_index, source_id, target_id)
         target.source_ids[source_id] = nil
     end
 
-    -- [新增] 检查双方的连接数，如果归零则自动关闭开关
+    -- 检查双方的连接数，如果归零则自动关闭开关
     check_and_reset_logistics(source)
     check_and_reset_logistics(target)
 
-    -- [新增] LTN 清理逻辑（与 Cybersyn 对等）
-    if LTN and LTN.update_connection then
+    -- LTN 清理逻辑
+    -- script.active_mods 检查，只有在 LTN 模组实际启用时才尝试清理
+    if script.active_mods["LogisticTrainNetwork"] and LTN and LTN.update_connection then
         -- 强制发送 "false" 指令来清理（最后一个参数 nil 表示非用户操作）
         if source.mode == "entry" then
             LTN.update_connection(source, target, false, player, false, nil)
