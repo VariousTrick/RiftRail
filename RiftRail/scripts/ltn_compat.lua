@@ -739,6 +739,11 @@ end
 --- @param silent boolean|nil 静默模式
 --- @param operator_is_first boolean|nil 操作者顺序标记
 function LTN.update_connection(select_portal, target_portal, connect, player, my_enabled, silent, operator_is_first)
+    -- 门卫拦截：如果双方都没开启 LTN，说明此事与 LTN 无关，直接退出
+    if not select_portal.ltn_enabled and not (target_portal and target_portal.ltn_enabled) then
+        return
+    end
+
     silent = silent or false
 
     if not is_ltn_active() and not silent then

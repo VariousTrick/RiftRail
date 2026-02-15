@@ -18,6 +18,10 @@ local function log_gui(message)
     end
 end
 
+-- WARNING: This value MUST be kept in sync with the one in scripts/logic.lua
+-- 警告：此值必须与 scripts/logic.lua 中的值保持同步
+local MAX_CONNECTIONS = 5
+
 function GUI.init(dependencies)
     State = dependencies.State
     log_debug = dependencies.log_debug
@@ -303,29 +307,48 @@ function GUI.build_or_update(player, entity)
         end
     end
 
-    -- 2. 添加分隔符
-    if #ordered_ids > 0 then
-        table.insert(dropdown_items, "──────────")
-        table.insert(dropdown_ids, nil)
-        table.insert(dropdown_is_paired, nil)
-    end
+    -- 【新逻辑】只有当自己还没满员时，才显示“未连接”列表
+    local current_connection_count = #ordered_ids
+    if current_connection_count < MAX_CONNECTIONS then
+        -- 2. 添加分隔符 (仅当列表不为空时)
+        if #ordered_ids > 0 then
+            table.insert(dropdown_items, "──────────")
+            table.insert(dropdown_ids, 0) -- 【修复】使用 0 占位，保证索引对齐
+            table.insert(dropdown_is_paired, "separator") -- 【修复】使用字符串占位
+        end
 
-    -- 3. 添加未连接的伙伴 (统一逻辑)
-    local existing_connections = connected_map
-    for _, p_data in pairs(all_portals) do
-        if p_data.id ~= my_data.id and not existing_connections[p_data.id] then
-            -- 入口可以连接到 (出口 或 中立)
-            local can_connect = (my_data.mode == "entry" and p_data.mode ~= "entry")
-                -- 出口可以连接到 (入口 或 中立)
-                or (my_data.mode == "exit" and p_data.mode ~= "exit")
-                -- 中立可以连接到任何
-                or (my_data.mode == "neutral")
+        -- 3. 添加未连接的伙伴 (统一逻辑)
+        local existing_connections = connected_map
+        for _, p_data in pairs(all_portals) do
+            if p_data.id ~= my_data.id and not existing_connections[p_data.id] then
+                -- 入口可以连接到 (出口 或 中立)
+                local can_connect = (my_data.mode == "entry" and p_data.mode ~= "entry")
+                    -- 出口可以连接到 (入口 或 中立)
+                    or (my_data.mode == "exit" and p_data.mode ~= "exit")
+                    -- 中立可以连接到任何
+                    or (my_data.mode == "neutral")
 
-            if can_connect then
-                local icon_str = (p_data.icon and p_data.icon.name) and ("[" .. p_data.icon.type .. "=" .. p_data.icon.name .. "] ") or ""
-                table.insert(dropdown_items, { "", icon_str, p_data.name, " (ID:", p_data.id, ") [", p_data.surface.name, "]" })
-                table.insert(dropdown_ids, p_data.id)
-                table.insert(dropdown_is_paired, false)
+                if can_connect then
+                    -- 额外检查目标是否已满员
+                    local target_connection_count = 0
+                    if p_data.mode == "entry" and p_data.target_ids then
+                        for _ in pairs(p_data.target_ids) do
+                            target_connection_count = target_connection_count + 1
+                        end
+                    elseif p_data.mode == "exit" and p_data.source_ids then
+                        for _ in pairs(p_data.source_ids) do
+                            target_connection_count = target_connection_count + 1
+                        end
+                    end
+
+                    if target_connection_count < MAX_CONNECTIONS then
+                        -- 只有当目标也没满员时，才把它加到列表里
+                        local icon_str = (p_data.icon and p_data.icon.name) and ("[" .. p_data.icon.type .. "=" .. p_data.icon.name .. "] ") or ""
+                        table.insert(dropdown_items, { "", icon_str, p_data.name, " (ID:", p_data.id, ") [", p_data.surface.name, "]" })
+                        table.insert(dropdown_ids, p_data.id)
+                        table.insert(dropdown_is_paired, false)
+                    end
+                end
             end
         end
     end
@@ -518,12 +541,14 @@ function GUI.handle_click(event)
         local selected_index = dropdown.selected_index
         local is_paired_map = dropdown.tags.is_paired_map
         local target_id = dropdown.tags.ids[selected_index]
+        local status = is_paired_map[selected_index]
 
-        if not target_id then
+        -- 【修复】检查占位符
+        if not target_id or target_id == 0 or status == "separator" then
             return
-        end -- 点击了分隔符
+        end
 
-        if is_paired_map[selected_index] == true then
+        if status == true then
             -- 【断开连接】
             if my_data.mode == "entry" then
                 -- 入口断开出口: source=自己, target=选中项
@@ -733,9 +758,12 @@ function GUI.handle_selection_state_changed(event, frame_override)
     local dropdown = event.element
     local selected_index = dropdown.selected_index
 
-    -- 【核心修复】如果选中了分隔符 (它的 is_paired 状态是 nil)，则禁用所有相关按钮并立刻停止执行
+    -- 【核心修复】如果选中了分隔符，则禁用所有相关按钮并立刻停止执行
     local is_paired_map = dropdown.tags.is_paired_map
-    if not (is_paired_map and is_paired_map[selected_index] ~= nil) then
+    local status = is_paired_map and is_paired_map[selected_index]
+
+    -- 检查状态是否有效 (既不是 nil 也不是占位符)
+    if status == nil or status == "separator" then
         -- 查找所有可能需要禁用的按钮
         local action_button = find_element_recursively(frame, "rift_rail_action_button")
         local set_default_button = find_element_recursively(frame, "rift_rail_set_default_button")
