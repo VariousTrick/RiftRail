@@ -8,22 +8,49 @@
 
 这意味着，任何直接引用旧列车实体（`LuaEntity`）的变量或数据表，在传送后都会失效。
 
-## 如何追踪传送后的列车 (重要！)
 
-为了在特定场景下最大化性能，Rift Rail 会根据传送门的角度，采用两种不同的方式创建新列车。这导致它会触发两种不同的事件。
+## 事件监听建议与自定义事件说明
 
-**为了确保100%兼容，您的模组必须同时监听以下两个事件：**
+Rift Rail 在不同传送实现下会分别触发 Factorio 的 `on_built_entity` 和 `on_entity_cloned` 标准事件：
 
-1.  `defines.events.on_built_entity`
-    *   当传送需要复杂转向时，Rift Rail 会使用 `create_entity` 方法，这会触发此标准建造事件。
+- 这两类事件会为每一节新生成的车厢单独触发，适合需要逐节处理列车数据的场景。
 
-2.  `defines.events.on_entity_cloned`
-    *   当传送是简单的“掉头返回”（入口与出口朝向相反）时，Rift Rail 会使用高性能的 `clone` 方法，这会触发此克隆事件。
+此外，Rift Rail 还会在整列列车传送的“开始”和“结束”节点，额外触发自定义事件（通过 remote.call 获取事件ID），事件参数包含整车的关键信息，适合需要整体把控传送流程或跨模组交互的场景。
 
-### 推荐的事件处理方式
+### 监听方式建议
 
-最稳妥的方法是创建一个统一的处理函数，然后让两个事件都去调用它。
+- 需要逐节车厢详细数据 → 监听标准事件（on_built_entity/on_entity_cloned）
+- 需要整体传送信息或跨模组交互 → 监听 Rift Rail 自定义事件
+- 也可以两者同时监听，获得最完整的兼容性和信息
 
-通过同时监听这两个事件，您的模组可以可靠地捕获所有由 Rift Rail 传送的列车，并与之进行交互。
+### 如何获取 Rift Rail 自定义事件ID
+
+通过 remote.call 获取事件ID：
+
+```lua
+-- 获取“列车开始传送”事件ID
+remote.call("RiftRail", "get_train_departing_event")
+
+-- 获取“列车传送完成”事件ID
+remote.call("RiftRail", "get_train_arrived_event")
+```
+
+拿到事件ID后，用 script.on_event 监听即可。
+
+### 自定义事件参数说明
+
+事件参数为 table，常见字段如下：
+
+- `train`：LuaTrain，传送中的列车对象
+- `train_id`：number，列车ID
+- `source_teleporter` / `destination_teleporter`：LuaEntity，入口/出口传送门
+- `source_surface` / `destination_surface`：LuaSurface，入口/出口地表
+- `source_surface_index` / `destination_surface_index`：number，地表索引
+- `tick`：number，事件发生时刻
+- `old_train_id`：number，仅到达事件有，表示原始列车ID
+
+### 说明
+
+Rift Rail 的自定义事件只会在整列列车传送的关键节点触发一次，参数包含整车的关键信息。标准事件则会为每节车厢单独触发。开发者可根据自身需求选择监听方式，两者可同时使用。
 
 如有任何问题，欢迎在我们的模组页面上提出。
