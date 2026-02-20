@@ -1,4 +1,13 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.10.6
+Date: 2026-02-16
+  Major Changes:
+    - Performance Optimization: For specific teleportation scenarios (when entry and exit portals are oriented in opposite directions), the teleportation logic now utilizes the game engine's high-performance `clone` API to duplicate trains. This significantly reduces the UPS (Updates Per Second) impact in these common use cases, especially when handling long trains.
+    - Developer Note (Important): Due to the introduction of the `clone` API, teleportation now triggers two different sets of events depending on the method used. Mod authors seeking compatibility with Rift Rail should refer to our updated `API.md` documentation.
+  【主要变更】:
+    - 性能优化：针对特定的传送场景（当入口和出口传送门朝向相反时），传送逻辑现在会使用游戏引擎更高性能的 clone API 来复制列车。这将在这些常见的使用场景中显著降低对游戏 UPS 的影响，尤其是在处理长列车时。
+    - 开发者注意 (重要)：由于引入了 clone API，传送现在会根据情况触发两种不同的事件。希望与 Rift Rail 兼容的模组作者，请务必参考我们新增的 API.md 文档。
+---------------------------------------------------------------------------------------------------
 Version: 0.10.5
 Date: 2026-02-15
   bugfixes:
