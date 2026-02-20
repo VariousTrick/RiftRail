@@ -288,6 +288,58 @@ local function calculate_speed_sign(train, select_portal)
     -- 异常情况 (无法获取铁轨端点)，返回默认正向
     return 1
 end
+
+-- =================================================================================
+-- 【克隆工厂 - 快速通道】使用 clone API，仅在朝向相同时调用
+-- =================================================================================
+-- 参数：
+--   old_entity: 原车厢实体
+--   surface:    目标地表
+--   position:   目标坐标
+-- 返回：新创建的车厢实体 (失败返回 nil)
+local function spawn_cloned_car_fast(old_entity, surface, position)
+    if not (old_entity and old_entity.valid) then
+        return nil
+    end
+
+    -- 1. 使用 clone API 直接复制实体
+    -- 这个API会自动处理库存、装备网格、颜色、生命值、过滤器等所有数据
+    local new_entity = old_entity.clone({
+        surface = surface,
+        position = position,
+        force = old_entity.force,
+        snap_to_grid = false,
+        create_build_effect_smoke = false,
+    })
+
+    if not new_entity then
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_tp("克隆工厂(快速): clone() API 调用失败 " .. old_entity.name)
+        end
+        return nil
+    end
+
+    -- 2. 【关键】clone 不会转移司机，必须手动处理
+    local driver = old_entity.get_driver()
+    if driver then
+        old_entity.set_driver(nil) -- 先从旧车下车
+
+        if driver.object_name == "LuaPlayer" then
+            new_entity.set_driver(driver)
+        elseif driver.valid and driver.teleport then
+            driver.teleport(new_entity.position, new_entity.surface)
+            new_entity.set_driver(driver)
+        end
+    end
+
+    -- =========================================================================
+    -- 【新增】手动触发 on_built_entity 事件以提高兼容性
+    -- =========================================================================
+    -- script.raise_event(defines.events.on_built_entity, { created_entity = new_entity })
+
+    return new_entity
+end
+
 -- =================================================================================
 -- 【克隆工厂】生成替身车厢并转移所有属性
 -- =================================================================================
@@ -831,8 +883,21 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     -- 必须先保存旧车ID用于查表
     local old_car_id = car.unit_number
 
-    -- 使用克隆工厂一键生成
-    local new_car = spawn_cloned_car(car, exit_portaldata.surface, spawn_pos, target_ori)
+    -- =========================================================================
+    -- 【动态克隆决策】根据入口和出口的朝向决定使用哪种生成方式
+    -- =========================================================================
+    local new_car = nil
+    -- 仅当入口和出口朝向相反时，才使用 clone，因为此时期望的火车世界朝向不变
+    if (entry_portaldata.shell.direction + 8) % 16 == exit_portaldata.shell.direction then
+        -- 朝向相反，使用高性能的 clone API
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_tp("优化: 朝向相反，使用 clone() 快速传送。")
+        end
+        new_car = spawn_cloned_car_fast(car, exit_portaldata.surface, spawn_pos)
+    else
+        -- 【常规路径】其他所有情况（包括朝向相同），都需要重新计算朝向
+        new_car = spawn_cloned_car(car, exit_portaldata.surface, spawn_pos, target_ori)
+    end
 
     if not new_car then
         if RiftRail.DEBUG_MODE_ENABLED then
