@@ -45,6 +45,11 @@ local Util = require("scripts.util")
 local Teleport = require("scripts.teleport")
 local LTN = require("scripts.ltn_compat")
 local Migrations = require("scripts.migrations")
+-- 仅当玩家安装并启用了 informatron 模组时，才加载并注册说明书接口
+if script.active_mods["informatron"] then
+    local InformatronSetup = require("scripts.informatron")
+    InformatronSetup.setup_interface()
+end
 
 -- 给 Builder 注入 CybersynSE (用于拆除清理)
 if Builder.init then
