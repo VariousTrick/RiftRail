@@ -11,10 +11,13 @@ script.on_event(defines.events.on_player_joined_game, function(event)
     end
 end)
 
--- ============================================================================
--- 1. 统一的日志与状态中心
--- ============================================================================
+-- ==========================================================================
+-- Rift Rail 自定义事件ID注册（供外部模组监听）
+-- ==========================================================================
 RiftRail = {} -- 创建一个全局可访问的表
+RiftRail.Events = RiftRail.Events or {}
+RiftRail.Events.TrainDeparting = script.generate_event_name()
+RiftRail.Events.TrainArrived = script.generate_event_name()
 
 -- 将调试开关挂载到全局表上
 RiftRail.DEBUG_MODE_ENABLED = settings.global["rift-rail-debug-mode"].value
@@ -76,6 +79,7 @@ if Teleport.init then
         Schedule = Schedule,
         log_debug = log_debug,
         LtnCompat = LTN,
+        Events = RiftRail.Events,
     })
 end
 
@@ -698,9 +702,16 @@ script.on_load(function(event)
     register_ltn_events()
 end)
 -- ============================================================================
--- 7. 远程接口
+-- 7. Remote Interface (供外部模组调用)
 -- ============================================================================
 remote.add_interface("RiftRail", {
+    -- 暴露自定义事件ID，供外部模组 remote.call 获取
+    get_train_departing_event = function()
+        return RiftRail.Events.TrainDeparting
+    end,
+    get_train_arrived_event = function()
+        return RiftRail.Events.TrainArrived
+    end,
     update_portal_name = function(player_index, portal_id, new_name)
         Logic.update_name(player_index, portal_id, new_name)
     end,

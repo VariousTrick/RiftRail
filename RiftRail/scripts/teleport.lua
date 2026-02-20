@@ -4,6 +4,61 @@
 -- 包含：堵车检测、内容转移、引导车机制、Cybersyn/SE/LTN 兼容
 
 local Teleport = {}
+-- =================================================================================
+-- 【事件广播模块】 - 集中处理自定义API事件的触发
+-- =================================================================================
+local Events = nil
+-- 负责触发“出发”事件
+local function raise_departing_event(entry_portaldata, train_to_depart)
+    if not (entry_portaldata and entry_portaldata.shell and train_to_depart and train_to_depart.valid) then
+        return
+    end
+
+    local shell = entry_portaldata.shell
+    local surface = entry_portaldata.surface
+
+    -- 通过依赖注入的 Events 获取事件ID
+    if not Events or not Events.TrainDeparting then
+        return
+    end
+    script.raise_event(Events.TrainDeparting, {
+        train = train_to_depart,
+        train_id = train_to_depart.id,
+        source_teleporter = shell,
+        source_teleporter_id = shell.unit_number,
+        source_surface = surface,
+        source_surface_index = surface.index,
+    })
+end
+
+-- 负责触发“抵达”事件
+local function raise_arrived_event(entry_portaldata, exit_portaldata, final_train)
+    if not (entry_portaldata and exit_portaldata and exit_portaldata.shell and final_train and final_train.valid) then
+        return
+    end
+
+    local exit_shell = exit_portaldata.shell
+    local exit_surface = exit_portaldata.surface
+    local entry_surface = entry_portaldata.surface
+
+    -- 通过依赖注入的 Events 获取事件ID
+    if not Events or not Events.TrainArrived then
+        return
+    end
+    script.raise_event(Events.TrainArrived, {
+        train = final_train,
+        train_id = final_train.id,
+        old_train_id = exit_portaldata.old_train_id,
+
+        source_surface = entry_surface,
+        source_surface_index = entry_surface.index,
+
+        destination_teleporter = exit_shell,
+        destination_teleporter_id = exit_shell.unit_number,
+        destination_surface = exit_surface,
+        destination_surface_index = exit_surface.index,
+    })
+end
 
 -- =================================================================================
 -- 依赖与日志系统
@@ -26,6 +81,10 @@ function Teleport.init(deps)
     end
     -- 接收兼容模块
     LtnCompat = deps.LtnCompat
+    -- 接收事件ID表
+    if deps.Events then
+        Events = deps.Events
+    end
 end
 
 -- 3. 定义本模块专属的、带 if 判断的日志包装器
@@ -611,6 +670,9 @@ local function initialize_teleport_session(entry_portal, exit_portal)
     if RiftRail.DEBUG_MODE_ENABLED then
         log_tp("会话启动: 入口 " .. entry_portal.id .. " 锁定出口 " .. exit_portal.id)
     end
+
+    -- 触发“出发”事件
+    raise_departing_event(entry_portal, entry_portal.entry_car.train)
 end
 
 -- 排队逻辑处理器
@@ -722,6 +784,9 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         end
         -- 使用统一函数恢复状态 (参数 true 代表同时恢复速度)
         restore_train_state(final_train, exit_portaldata, true, actual_index_before_cleanup)
+
+        -- 触发“抵达”事件
+        raise_arrived_event(entry_portaldata, exit_portaldata, final_train)
 
         -- 清理残留的 GUI 映射表（如果有）
         if entry_portaldata.gui_map then
