@@ -142,8 +142,7 @@ data:extend({
                     rendering.draw_line{
                         color = {r=0, g=1, b=1, a=0.5}, width = 2,
                         from = entry, to = exit_top, surface = surface,
-                        time_to_live = 60 -- 激光线持续 1 秒
-                                            time_to_live = 60 -- [EN] Laser line lasts 1s
+                        time_to_live = 60 -- 激光线持续 1 秒,Laser line lasts 1s
                     }
                     if remote.interfaces["RiftRail_Tips"] then
                         remote.call("RiftRail_Tips", "pair_portals_by_unit", player.index, entry.unit_number, exit_top.unit_number)
@@ -163,7 +162,7 @@ data:extend({
                         time_to_live = 60 -- 激光线持续 1 秒
                     }
                     if remote.interfaces["RiftRail_Tips"] then
-                        remote.call("RiftRail_Tips", "pair_portals_by_unit", player.index, entry.unit_number, exit_top.unit_number)
+                        remote.call("RiftRail_Tips", "pair_portals_by_unit", player.index, entry.unit_number, exit_bottom.unit_number)
                     end
                 end
             },
