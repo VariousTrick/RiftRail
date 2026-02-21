@@ -1,4 +1,20 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.11.0
+Date: 2026-02-22
+  Major Changes:
+    - Architecture Refactor: Implemented a cleaner and more modular file structure (contributed by Ldmf). This improves code maintainability and paves the way for future feature expansions.
+    - Documentation: Added comprehensive support for the "Informatron" mod. Players can now access detailed RiftRail documentation and guides directly within the game.
+  Features:
+    - Added Tips and Tricks: Integrated Factorio's native "Tips and Tricks" system to help new players understand core mechanics like portal pairing, routing, and LTN integration.
+  Changes:
+    - Added satellite to the Space Age environment recipes.
+  主要变更:
+    - 架构重构：采用了由 Ldmf 提供的更清晰、更模块化的文件结构。这提高了代码的可维护性，并为未来的功能扩展奠定了基础。
+    - 文档支持：添加了对“信息系统 (Informatron)”模组的全面支持。玩家现在可以直接在游戏内查阅 RiftRail 的详细文档和指南。
+  新特性:
+    - 新增游戏内提示：集成了原版游戏的“提示与技巧”系统，帮助新玩家快速掌握传送门配对、路由逻辑以及 LTN 兼容等核心机制。
+    - SA环境下的配方添加了卫星。
+---------------------------------------------------------------------------------------------------
 Version: 0.10.6
 Date: 2026-02-16
   Major Changes:
