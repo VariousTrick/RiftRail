@@ -759,10 +759,49 @@ remote.add_interface("RiftRail", {
     unpair_portals_specific = function(player_index, source_id, target_id)
         Logic.unpair_portals_specific(player_index, source_id, target_id)
     end,
-    -- ============================================================================
-    -- [调试专用接口]
-    -- ============================================================================
-    --[[
+})
+
+remote.add_interface("RiftRail_Tips", {
+
+    pair_portals = function(player_index, source_id, target_id)
+        Logic.pair_portals(player_index, source_id, target_id)
+    end,
+
+    -- 专门为沙盒演示（或外部强制调用）开的建造后门
+    force_build = function(placer_entity)
+        -- 1. 基本的安全防线
+        if not (placer_entity and placer_entity.valid) then
+            return
+        end
+
+        -- 2. 伪造 event 包装盒
+        -- 因为你的 Builder.on_built 只认 event.entity，我们投其所好
+        local fake_event = {
+            entity = placer_entity,
+            -- 如果你以后修改代码，需要用到时间戳，这里也可以加一句 tick = game.tick
+        }
+
+        -- 3. 直接把伪造好的数据塞进核心处理函数！
+        Builder.on_built(fake_event)
+    end,
+
+    -- 专供沙盒测试的配对接口（支持传入 unit_number）
+    pair_portals_by_unit = function(player_index, source_unit, target_unit)
+        -- 1. 先用 unit_number 查出真实的 portaldata
+        local source_data = State.get_portaldata_by_unit_number(source_unit)
+        local target_data = State.get_portaldata_by_unit_number(target_unit)
+
+        -- 2. 如果查到了，提取出真正的 custom_id 交给核心逻辑去配对
+        if source_data and target_data then
+            Logic.pair_portals(player_index, source_data.id, target_data.id)
+        end
+    end,
+})
+
+-- ============================================================================
+-- [调试专用接口]
+-- ============================================================================
+--[[
         [使用方法] (在控制台 ~ 中输入)
 
         1. 查询总数:
@@ -786,113 +825,112 @@ remote.add_interface("RiftRail", {
         7. 查询活跃列表长度:
         /c game.print(remote.call("RiftRail", "debug_storage", "active_count"))
     ]]
-    debug_storage = function(key, param, player_index)
-        -- 内部辅助函数，用于获取 portaldata (保持不变)
-        local function get_portaldata(portaldata_key, search_param)
-            if portaldata_key == "selected" then
-                if not player_index then
-                    return "Error: 'selected' requires player context."
-                end
-                local player = game.get_player(player_index)
-                if not (player and player.valid) then
-                    return "Error: Invalid player."
-                end
-                local selected = player.selected
-                if not (selected and selected.valid) then
-                    return "Error: No entity selected. Hover mouse over a Rift Rail building."
-                end
-                return State.get_portaldata(selected) or "Error: Selected entity is not a Rift Rail portal."
-            elseif portaldata_key == "get_by_id" then
-                if not search_param then
-                    return "Error: 'get_by_id' requires a custom ID parameter."
-                end
-                return State.get_portaldata_by_id(search_param) or "Error: Struct with custom ID " .. tostring(search_param) .. " not found."
-            elseif portaldata_key == "get_by_unit" then
-                if not search_param then
-                    return "Error: 'get_by_unit' requires a unit_number parameter."
-                end
-                if storage.rift_rails and storage.rift_rails[search_param] then
-                    return storage.rift_rails[search_param]
-                else
-                    return "Error: Struct with unit_number " .. tostring(search_param) .. " not found."
-                end
+debug_storage = function(key, param, player_index)
+    -- 内部辅助函数，用于获取 portaldata (保持不变)
+    local function get_portaldata(portaldata_key, search_param)
+        if portaldata_key == "selected" then
+            if not player_index then
+                return "Error: 'selected' requires player context."
             end
-            return nil
-        end
-
-        if key == "count" then
-            local count = 0
-            if storage.rift_rails then
-                for _ in pairs(storage.rift_rails) do
-                    count = count + 1
-                end
+            local player = game.get_player(player_index)
+            if not (player and player.valid) then
+                return "Error: Invalid player."
             end
-            return "Total Rift Rails in storage: " .. count
-        elseif key == "active_count" then
-            -- [新增] 查询活跃列表长度
-            return storage.active_teleporter_list and #storage.active_teleporter_list or 0
-        elseif key == "size" then
-            if storage.rift_rails then
-                local data_string = serpent.block(storage.rift_rails)
-                local size_kb = string.len(data_string) / 1024
-                return "RiftRail storage size: " .. string.format("%.2f KB", size_kb)
+            local selected = player.selected
+            if not (selected and selected.valid) then
+                return "Error: No entity selected. Hover mouse over a Rift Rail building."
+            end
+            return State.get_portaldata(selected) or "Error: Selected entity is not a Rift Rail portal."
+        elseif portaldata_key == "get_by_id" then
+            if not search_param then
+                return "Error: 'get_by_id' requires a custom ID parameter."
+            end
+            return State.get_portaldata_by_id(search_param) or "Error: Struct with custom ID " .. tostring(search_param) .. " not found."
+        elseif portaldata_key == "get_by_unit" then
+            if not search_param then
+                return "Error: 'get_by_unit' requires a unit_number parameter."
+            end
+            if storage.rift_rails and storage.rift_rails[search_param] then
+                return storage.rift_rails[search_param]
             else
-                return "storage.rift_rails not found!"
+                return "Error: Struct with unit_number " .. tostring(search_param) .. " not found."
             end
-        elseif key == "find_ghosts" then
-            local report = {}
-            local data_ghosts = {}
-            local entity_ghosts = {}
-            local total_portaldatas = 0
-
-            -- 1. 查找"数据幽灵" (数据存在，实体已消失)
-            if storage.rift_rails then
-                for unit_number, portaldata in pairs(storage.rift_rails) do
-                    total_portaldatas = total_portaldatas + 1
-                    if not (portaldata.shell and portaldata.shell.valid) then
-                        table.insert(data_ghosts, "Struct for unit_number " .. unit_number .. " (ID: " .. (portaldata.id or "N/A") .. ") has an invalid shell.")
-                    end
-                end
-            end
-            report["Data Ghosts (Data exists, Entity gone)"] = data_ghosts
-
-            -- 2. 查找"实体幽灵" (实体存在，数据已消失)
-            local component_names = {
-                "rift-rail-entity",
-                "rift-rail-core",
-                "rift-rail-station",
-                "rift-rail-signal",
-                "rift-rail-internal-rail",
-                "rift-rail-collider",
-                "rift-rail-blocker",
-                "rift-rail-lamp",
-            }
-            local total_components = 0
-            for _, surface in pairs(game.surfaces) do
-                for _, entity in pairs(surface.find_entities_filtered({ name = component_names })) do
-                    total_components = total_components + 1
-                    if not State.get_portaldata(entity) then
-                        -- [修正] 对 entity.unit_number 进行安全转换，防止 simple-entity (如 collider) 因没有 unit_number 而报错
-                        table.insert(entity_ghosts, "Entity '" .. entity.name .. "' (Unit No: " .. tostring(entity.unit_number) .. ") at [gps=" .. entity.position.x .. "," .. entity.position.y .. "," .. entity.surface.name .. "] has no corresponding portaldata data.")
-                    end
-                end
-            end
-            report["Entity Ghosts (Entity exists, Data gone)"] = entity_ghosts
-
-            -- 3. 总结
-            report["Summary"] = {
-                ["Total portaldatas in storage"] = total_portaldatas,
-                ["Total Rift Rail components in world"] = total_components, -- 修正了描述
-                ["Data ghosts found"] = #data_ghosts,
-                ["Entity ghosts found"] = #entity_ghosts,
-            }
-
-            return report
-        elseif key == "selected" or key == "get_by_id" or key == "get_by_unit" then
-            return get_portaldata(key, param)
         end
+        return nil
+    end
 
-        -- 更新可用键列表
-        return "Unknown debug key. Available: 'count', 'size', 'find_ghosts', 'selected', 'get_by_id', 'get_by_unit'."
-    end,
-})
+    if key == "count" then
+        local count = 0
+        if storage.rift_rails then
+            for _ in pairs(storage.rift_rails) do
+                count = count + 1
+            end
+        end
+        return "Total Rift Rails in storage: " .. count
+    elseif key == "active_count" then
+        -- [新增] 查询活跃列表长度
+        return storage.active_teleporter_list and #storage.active_teleporter_list or 0
+    elseif key == "size" then
+        if storage.rift_rails then
+            local data_string = serpent.block(storage.rift_rails)
+            local size_kb = string.len(data_string) / 1024
+            return "RiftRail storage size: " .. string.format("%.2f KB", size_kb)
+        else
+            return "storage.rift_rails not found!"
+        end
+    elseif key == "find_ghosts" then
+        local report = {}
+        local data_ghosts = {}
+        local entity_ghosts = {}
+        local total_portaldatas = 0
+
+        -- 1. 查找"数据幽灵" (数据存在，实体已消失)
+        if storage.rift_rails then
+            for unit_number, portaldata in pairs(storage.rift_rails) do
+                total_portaldatas = total_portaldatas + 1
+                if not (portaldata.shell and portaldata.shell.valid) then
+                    table.insert(data_ghosts, "Struct for unit_number " .. unit_number .. " (ID: " .. (portaldata.id or "N/A") .. ") has an invalid shell.")
+                end
+            end
+        end
+        report["Data Ghosts (Data exists, Entity gone)"] = data_ghosts
+
+        -- 2. 查找"实体幽灵" (实体存在，数据已消失)
+        local component_names = {
+            "rift-rail-entity",
+            "rift-rail-core",
+            "rift-rail-station",
+            "rift-rail-signal",
+            "rift-rail-internal-rail",
+            "rift-rail-collider",
+            "rift-rail-blocker",
+            "rift-rail-lamp",
+        }
+        local total_components = 0
+        for _, surface in pairs(game.surfaces) do
+            for _, entity in pairs(surface.find_entities_filtered({ name = component_names })) do
+                total_components = total_components + 1
+                if not State.get_portaldata(entity) then
+                    -- [修正] 对 entity.unit_number 进行安全转换，防止 simple-entity (如 collider) 因没有 unit_number 而报错
+                    table.insert(entity_ghosts, "Entity '" .. entity.name .. "' (Unit No: " .. tostring(entity.unit_number) .. ") at [gps=" .. entity.position.x .. "," .. entity.position.y .. "," .. entity.surface.name .. "] has no corresponding portaldata data.")
+                end
+            end
+        end
+        report["Entity Ghosts (Entity exists, Data gone)"] = entity_ghosts
+
+        -- 3. 总结
+        report["Summary"] = {
+            ["Total portaldatas in storage"] = total_portaldatas,
+            ["Total Rift Rail components in world"] = total_components, -- 修正了描述
+            ["Data ghosts found"] = #data_ghosts,
+            ["Entity ghosts found"] = #entity_ghosts,
+        }
+
+        return report
+    elseif key == "selected" or key == "get_by_id" or key == "get_by_unit" then
+        return get_portaldata(key, param)
+    end
+
+    -- 更新可用键列表
+    return "Unknown debug key. Available: 'count', 'size', 'find_ghosts', 'selected', 'get_by_id', 'get_by_unit'."
+end
