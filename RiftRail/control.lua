@@ -797,6 +797,15 @@ remote.add_interface("RiftRail_Tips", {
         end
     end,
 
+    -- 专供沙盒：静默重置传送门状态
+    reset_portal_logic = function(player_index, unit_number)
+        local p_data = State.get_portaldata_by_unit_number(unit_number)
+        if p_data then
+            Logic.unpair_portals(player_index, p_data.id)
+            p_data.default_exit_id = nil
+        end
+    end,
+
     -- 专供沙盒：强行打开指定实体的 GUI
     open_portal_gui_by_unit = function(player_index, unit_number)
         local player = game.get_player(player_index)
