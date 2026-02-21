@@ -353,6 +353,16 @@ function GUI.build_or_update(player, entity)
         end
     end
 
+    -- 如果之前有选中的目标，尝试在新的列表中找回它的序号
+    if my_data.last_selected_source_id then
+        for i, id in ipairs(dropdown_ids) do
+            if id == my_data.last_selected_source_id then
+                selected_idx = i
+                break
+            end
+        end
+    end
+
     dropdown.items = dropdown_items
     dropdown.tags = { ids = dropdown_ids, self_id = my_data.id, is_paired_map = dropdown_is_paired }
 
