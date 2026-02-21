@@ -34,4 +34,5 @@ require("prototypes.internal.core")
 require("prototypes.technology.rift-rail")
 
 require("prototypes.virtual-signal.goto-id")
+require("prototypes.tips-and-tricks.tips-and-tricks")
 -- =================================================================================================
