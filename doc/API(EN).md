@@ -39,15 +39,27 @@ Once you have the event ID, use script.on_event to listen for it.
 
 ### Custom Event Parameter Reference
 
-The event table includes:
+### Notes
+The event table includes the following fields:
 
-- `train`: LuaTrain, the train being teleported
-- `train_id`: number, the train's ID
-- `source_teleporter` / `destination_teleporter`: LuaEntity, entry/exit portal
-- `source_surface` / `destination_surface`: LuaSurface, entry/exit surface
-- `source_surface_index` / `destination_surface_index`: number, surface index
-- `tick`: number, when the event was fired
-- `old_train_id`: number, only in the arrival event, the original train ID
+#### `TrainDeparting`
+*   `train`: [LuaTrain] The complete, soon-to-be teleported old train entity.
+*   `train_id`: [number] The ID of the old train.
+*   `source_teleporter`: [LuaEntity] The source teleporter entity.
+*   `source_teleporter_id`: [number] The ID of the source teleporter.
+*   `source_surface`: [LuaSurface] The source surface.
+*   `source_surface_index`: [number] The index of the source surface.
+
+#### `TrainArrived`
+*   `train`: [LuaTrain] The complete, newly created train entity.
+*   `train_id`: [number] The ID of the new train.
+*   `old_train_id`: [number] **[Key]** The ID of the old train that was teleported, used to link with the `TrainDeparting` event.
+*   `source_surface`: [LuaSurface] The origin surface.
+*   `source_surface_index`: [number] The index of the origin surface.
+*   `destination_teleporter`: [LuaEntity] The destination teleporter entity.
+*   `destination_teleporter_id`: [number] The ID of the destination teleporter.
+*   `destination_surface`: [LuaSurface] The destination surface.
+*   `destination_surface_index`: [number] The index of the destination surface.
 
 ### Notes
 

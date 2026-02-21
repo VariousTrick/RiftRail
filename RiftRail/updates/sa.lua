@@ -25,8 +25,9 @@ if recipe then
         { type = "item", name = "quantum-processor", amount = 50 },
         { type = "item", name = "superconductor",    amount = 50 },
         { type = "item", name = "supercapacitor",    amount = 25 },
-        { type = "item", name = "tungsten-plate",    amount = 100 },
-        { type = "item", name = "carbon-fiber",      amount = 100 }
+        { type = "item", name = "tungsten-plate",    amount = 50 },
+        { type = "item", name = "carbon-fiber",      amount = 50 },
+        { type = "item", name = "satellit",          amount = 1 }
     }
 
     -- recipe requires assembler 3 to craft and space
@@ -72,4 +73,3 @@ for _, name in pairs(recycling_recipes) do
         data.raw.recipe[name] = nil -- optionally remove all
     end
 end
-

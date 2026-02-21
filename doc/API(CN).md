@@ -41,13 +41,24 @@ remote.call("RiftRail", "get_train_arrived_event")
 
 事件参数为 table，常见字段如下：
 
-- `train`：LuaTrain，传送中的列车对象
-- `train_id`：number，列车ID
-- `source_teleporter` / `destination_teleporter`：LuaEntity，入口/出口传送门
-- `source_surface` / `destination_surface`：LuaSurface，入口/出口地表
-- `source_surface_index` / `destination_surface_index`：number，地表索引
-- `tick`：number，事件发生时刻
-- `old_train_id`：number，仅到达事件有，表示原始列车ID
+#### `TrainDeparting`
+*   `train`: [LuaTrain] 完整的、即将被传送的旧列车实体。
+*   `train_id`: [number] 旧列车的ID。
+*   `source_teleporter`: [LuaEntity] 出发传送门实体。
+*   `source_teleporter_id`: [number] 出发传送门的ID。
+*   `source_surface`: [LuaSurface] 出发地表。
+*   `source_surface_index`: [number] 出发地表的索引。
+
+#### `TrainArrived`
+*   `train`: [LuaTrain] 完整的、刚刚形成的新列车实体。
+*   `train_id`: [number] 新列车的ID。
+*   `old_train_id`: [number] **【关键】** 被传送的旧列车的ID，用于关联`TrainDeparting`事件。
+*   `source_surface`: [LuaSurface] 起始地表。
+*   `source_surface_index`: [number] 起始地表的索引。
+*   `destination_teleporter`: [LuaEntity] 到达传送门实体。
+*   `destination_teleporter_id`: [number] 到达传送门的ID。
+*   `destination_surface`: [LuaSurface] 到达地表。
+*   `destination_surface_index`: [number] 到达地表的索引。
 
 ### 说明
 
