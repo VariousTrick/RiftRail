@@ -4,7 +4,7 @@ local Info = {}
 -- 1. 定义左侧菜单树 (图纸)
 function Info.menu(player_index)
     return {
-        -- 注意：根目录通常使用你的接口名称，子目录我们用 rr_ 前缀
+        -- 注意：根目录通常使用接口名称，子目录我们用 rr_ 前缀
         rr_pairing = 1,
         rr_routing = 1,
         rr_ltn = 1,
@@ -14,7 +14,6 @@ end
 
 -- 2. 定义页面内容 (导游)
 function Info.page_content(page_name, player_index, element)
-    -- 注意这里：前缀已经全部统一改成了 rift_rail_informatron
     if page_name == "rift_rail_informatron" then
         element.add({ type = "label", name = "text_1", caption = { "rift_rail_informatron.page_main_text_1" } })
         element.add({ type = "label", name = "text_2", caption = { "rift_rail_informatron.page_main_text_2" } })
