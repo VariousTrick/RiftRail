@@ -27,7 +27,7 @@ if recipe then
         { type = "item", name = "supercapacitor",    amount = 25 },
         { type = "item", name = "tungsten-plate",    amount = 50 },
         { type = "item", name = "carbon-fiber",      amount = 50 },
-        { type = "item", name = "satellit",          amount = 1 }
+        { type = "item", name = "satellit",          amount = 2 }
     }
 
     -- recipe requires assembler 3 to craft and space
