@@ -22,6 +22,8 @@ data:extend({
         order = "a", -- 排在最前面
         indent = 0,
 
+        length = 11,
+
         -- 【关键修复】：不加这个，玩家研究了科技也不会解锁教程！
         trigger = { type = "research", technology = "rift-rail-tech" },
 
@@ -43,6 +45,8 @@ data:extend({
 
         order = "b", -- 排在基础教程后面
         indent = 1,
+
+        length = 18,
 
         -- 【优雅的设定】：必须看完配对教程，才会解锁进阶教程
         -- dependencies = { "rift-rail-pairing-tutorial" },

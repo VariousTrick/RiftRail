@@ -3,8 +3,8 @@ local surface = game.surfaces[1]
 
 -- 【1. 搭建官方黑白相间棋盘地板】
 local tiles = {}
-for x = -40, 40 do
-    for y = -20, 20 do
+for x = -60, 60 do
+    for y = -30, 30 do
         -- 核心算法：X+Y 是偶数铺暗格，奇数铺亮格
         local tile_name = ((math.floor(x) + math.floor(y)) % 2 == 0) and "lab-dark-1" or "lab-dark-2"
         table.insert(tiles, { name = tile_name, position = { x, y } })

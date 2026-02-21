@@ -803,7 +803,16 @@ remote.add_interface("RiftRail_Tips", {
         local portal_data = State.get_portaldata_by_unit_number(unit_number)
 
         if player and portal_data and portal_data.shell and portal_data.shell.valid then
+            -- 1. 照常调用 GUI 构建逻辑
             GUI.build_or_update(player, portal_data.shell)
+
+            -- 2. 【沙盒特供“黑魔法”】
+            -- 刚建完，立马把它抓住，解除居中，钉在左上角！
+            local frame = player.gui.screen.rift_rail_main_frame
+            if frame and frame.valid then
+                frame.auto_center = false
+                frame.location = pos or { 0, 0 }
+            end
         end
     end,
 
@@ -851,6 +860,35 @@ remote.add_interface("RiftRail_Tips", {
             if GUI and GUI.handle_selection_state_changed then
                 GUI.handle_selection_state_changed(fake_event)
             end
+
+            -- 引擎还没渲染画面，我们立刻抓住刚刚在正中间重生的新窗口，强行改坐标！
+            local new_frame = player.gui.screen.rift_rail_main_frame
+            if new_frame and new_frame.valid then
+                new_frame.auto_center = false
+                new_frame.location = pos or { 0, 0 } -- 如果剧本没传 pos，则用 0, 0 兜底
+            end
+        end
+    end,
+
+    -- 专供沙盒：强行关闭测试玩家的摄像头预览
+    disable_camera_preview = function(player_index)
+        storage.rift_rail_player_settings = storage.rift_rail_player_settings or {}
+        storage.rift_rail_player_settings[player_index] = { show_preview = false }
+    end,
+
+    -- 专供沙盒：将 GUI 钉在指定位置
+    -- pos: {x, y} 格式的坐标表
+    pin_gui_to_location = function(player_index, pos)
+        local player = game.get_player(player_index)
+        if not (player and player.valid) then
+            return
+        end
+
+        local frame = player.gui.screen.rift_rail_main_frame
+        if frame and frame.valid then
+            frame.auto_center = false
+            -- 如果传了 pos 就用 pos，否则默认 0,0
+            frame.location = pos or { 0, 0 }
         end
     end,
 })
