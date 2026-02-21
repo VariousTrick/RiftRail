@@ -755,7 +755,7 @@ remote.add_interface("RiftRail", {
         Logic.unpair_all_from_exit(player_index, portal_id)
     end,
 
-    -- [多对多新增] 精准解绑接口
+    -- 精准解绑接口
     unpair_portals_specific = function(player_index, source_id, target_id)
         Logic.unpair_portals_specific(player_index, source_id, target_id)
     end,
@@ -775,10 +775,10 @@ remote.add_interface("RiftRail_Tips", {
         end
 
         -- 2. 伪造 event 包装盒
-        -- 因为你的 Builder.on_built 只认 event.entity，我们投其所好
+        -- 因为 Builder.on_built 只认 event.entity，我们投其所好
         local fake_event = {
             entity = placer_entity,
-            -- 如果你以后修改代码，需要用到时间戳，这里也可以加一句 tick = game.tick
+            -- 如果以后修改代码，需要用到时间戳，这里也可以加一句 tick = game.tick
         }
 
         -- 3. 直接把伪造好的数据塞进核心处理函数！
@@ -794,6 +794,63 @@ remote.add_interface("RiftRail_Tips", {
         -- 2. 如果查到了，提取出真正的 custom_id 交给核心逻辑去配对
         if source_data and target_data then
             Logic.pair_portals(player_index, source_data.id, target_data.id)
+        end
+    end,
+
+    -- 专供沙盒：强行打开指定实体的 GUI
+    open_portal_gui_by_unit = function(player_index, unit_number)
+        local player = game.get_player(player_index)
+        local portal_data = State.get_portaldata_by_unit_number(unit_number)
+
+        if player and portal_data and portal_data.shell and portal_data.shell.valid then
+            GUI.build_or_update(player, portal_data.shell)
+        end
+    end,
+
+    -- 专供沙盒：模拟玩家在下拉列表中选中了某一项
+    simulate_gui_selection = function(player_index, target_index)
+        local player = game.get_player(player_index)
+        if not player then
+            return
+        end
+
+        local main_frame = player.gui.screen.rift_rail_main_frame
+        if not (main_frame and main_frame.valid) then
+            return
+        end
+
+        -- 递归遍历寻找你的下拉列表组件
+        local function find_dropdown(element)
+            if element.name == "rift_rail_target_dropdown" then
+                return element
+            end
+            for _, child in pairs(element.children) do
+                local found = find_dropdown(child)
+                if found then
+                    return found
+                end
+            end
+            return nil
+        end
+
+        local dropdown = find_dropdown(main_frame)
+
+        if dropdown and dropdown.items and #dropdown.items >= target_index then
+            -- 1. 强行改变选中项的序号
+            dropdown.selected_index = target_index
+
+            -- 2. 播放系统的 UI 点击音效，增加真实感
+            player.play_sound({ path = "utility/gui_click" })
+
+            -- 3. 伪造一个事件，丢给你的内部逻辑，让它去更新旁边的“配对”按钮和摄像头预览！
+            local fake_event = {
+                element = dropdown,
+                player_index = player.index,
+            }
+
+            if GUI and GUI.handle_selection_state_changed then
+                GUI.handle_selection_state_changed(fake_event)
+            end
         end
     end,
 })
