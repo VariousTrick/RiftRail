@@ -37,8 +37,7 @@ function Util.position_in_rect(rect, pos)
     if not (rect and rect.left_top and rect.right_bottom and pos) then
         return false
     end
-    return pos.x >= rect.left_top.x and pos.x <= rect.right_bottom.x and pos.y >= rect.left_top.y and
-    pos.y <= rect.right_bottom.y
+    return pos.x >= rect.left_top.x and pos.x <= rect.right_bottom.x and pos.y >= rect.left_top.y and pos.y <= rect.right_bottom.y
 end
 
 -- 获取车辆所属的火车ID (安全获取)
@@ -55,8 +54,8 @@ end
 -- =========================================================================
 -- 核心物品栏转移函数 (重构版：使用 set_stack)
 -- 功能：将一个物品栏的内容 1:1 克隆到另一个，完美保留位置布局、耐久度和元数据。
--- @param source_inv 源物品栏
--- @param destination_inv 目标物品栏
+---@param source_inv 源物品栏
+---@param destination_inv 目标物品栏
 -- =========================================================================
 function Util.clone_inventory_contents(source_inv, destination_inv)
     if not (source_inv and destination_inv) then
@@ -88,8 +87,8 @@ end
 -- =========================================================================
 -- 燃烧室内容转移函数
 -- 功能：转移燃料、燃烧进度和废料。
--- @param source_entity 源实体
--- @param destination_entity 目标实体
+---@param source_entity 源实体
+---@param destination_entity 目标实体
 -- =========================================================================
 function Util.clone_burner_state(source_entity, destination_entity)
     if not (source_entity and source_entity.valid and destination_entity and destination_entity.valid) then
@@ -216,8 +215,7 @@ end
 -- 转移所有物品栏 (智能判断类型 - 调整顺序版：先判断类型，后尝试通用接口)
 function Util.clone_all_inventories(source_entity, destination_entity)
     if RiftRail.DEBUG_MODE_ENABLED then
-        log_util("DEBUG: 开始转移实体所有物品栏 (ID: " ..
-        source_entity.unit_number .. " -> " .. destination_entity.unit_number .. ")")
+        log_util("DEBUG: 开始转移实体所有物品栏 (ID: " .. source_entity.unit_number .. " -> " .. destination_entity.unit_number .. ")")
     end
 
     if not (source_entity and source_entity.valid and destination_entity and destination_entity.valid) then

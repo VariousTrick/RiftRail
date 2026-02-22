@@ -16,8 +16,9 @@ data:extend({
         localised_name = { "tips.rift-rail-pairing-tutorial" },
         localised_description = { "tips.item-description-pairing" },
         is_title = true,
+        tag = "[item=rift-rail-placer]",
         order = "a",
-        indent = 0,
+        -- indent = 0,
         trigger = { type = "research", technology = "rift-rail-tech" },
         simulation = {
             mods = { "RiftRail" },
@@ -35,8 +36,8 @@ data:extend({
         localised_description = { "tips.item-description-advanced" },
         order = "b",
         indent = 1,
-        -- 【优雅的设定】：必须看完配对教程，才会解锁进阶教程
-        -- dependencies = { "rift-rail-pairing-tutorial" },
+        dependencies = { "rift-rail-pairing-tutorial" },
+        trigger = { type = "research", technology = "rift-rail-tech" },
         simulation = {
             mods = { "RiftRail" },
             init_update_count = 60,

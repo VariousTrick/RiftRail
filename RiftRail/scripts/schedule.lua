@@ -26,10 +26,12 @@ local function log_schedule(message)
 end
 
 --- 核心函数：转移时刻表和中断机制
--- @param old_train LuaTrain: 即将被销毁的、进入传送门的旧火车实体
--- @param new_train LuaTrain: 在出口处新创建的火车实体
--- @param entry_portal_station_name string: 入口传送门内部火车站的完整名称
-function Schedule.copy_schedule(old_train, new_train, entry_portal_station_name)
+---@param old_train LuaTrain: 即将被销毁的、进入传送门的旧火车实体
+---@param new_train LuaTrain: 在出口处新创建的火车实体
+---@param entry_portal_station_name string: 入口传送门内部火车站的完整名称
+---@param override_index integer|nil: 可选参数，强制设置新火车的目标索引（用于特殊情况）
+---@param saved_manual_mode boolean|nil: 可选参数，传入旧火车的手动模式状态（用于特殊情况）
+function Schedule.copy_schedule(old_train, new_train, entry_portal_station_name, override_index, saved_manual_mode)
     if RiftRail.DEBUG_MODE_ENABLED then
         log_schedule("DEBUG (copy_schedule v3.0): 开始为新火车 (ID: " .. new_train.id .. ") 转移时刻表...")
     end
@@ -49,9 +51,9 @@ function Schedule.copy_schedule(old_train, new_train, entry_portal_station_name)
         return
     end
 
-    local current_index = schedule_old.current
+    local current_index = override_index or schedule_old.current
     if RiftRail.DEBUG_MODE_ENABLED then
-        log_schedule("DEBUG: 初始状态 - 站点数: " .. #records .. ", 当前索引: " .. current_index)
+        log_schedule("DEBUG: 初始状态 - 站点数: " .. #records .. ", 当前索引: " .. current_index .. (override_index and " [使用了传入的正确指针]" or ""))
     end
 
     -- ========================================================================
@@ -96,8 +98,13 @@ function Schedule.copy_schedule(old_train, new_train, entry_portal_station_name)
 
     local current_record = records[current_index]
 
+    local is_manual = old_train.manual_mode
+    if saved_manual_mode ~= nil then
+        is_manual = saved_manual_mode
+    end
+
     -- 只有当火车处于自动模式，且当前指向的确实是传送门时，才介入处理
-    if not old_train.manual_mode and current_record and current_record.station == entry_portal_station_name then
+    if not is_manual and current_record and current_record.station == entry_portal_station_name then
         if current_record.temporary then
             -- [情况 A] 临时的传送门站 -> 删除
             if RiftRail.DEBUG_MODE_ENABLED then

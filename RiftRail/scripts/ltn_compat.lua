@@ -149,8 +149,8 @@ local p_leave_pool
 local p_commit_all_ltn_connections
 
 --- 辅助函数：通过 unit_number 查找传送门数据
---- @param unit_number number 传送门的 unit_number
---- @return table|nil 传送门数据
+---@param unit_number number 传送门的 unit_number
+---@return table|nil 传送门数据
 find_portal_by_unit_number = function(unit_number)
     if not storage.rift_rails then
         return nil
@@ -166,8 +166,8 @@ find_portal_by_unit_number = function(unit_number)
 end
 
 --- 计算一个传送门"应该拥有"的所有路径
---- @param portal_data table 传送门数据
---- @return table 路径映射表 [target_id] = { partner_data, should_register }
+---@param portal_data table 传送门数据
+---@return table 路径映射表 [target_id] = { partner_data, should_register }
 compute_desired_routes = function(portal_data)
     local result = {}
 
@@ -194,8 +194,8 @@ end
 --- 【决策者】计算一个传送门应该存在于哪些连接池中
 --- 设计原则：这是一个纯函数，只负责计算，不修改任何状态
 ---
---- @param portal_data table 传送门数据
---- @return table<number, boolean> 地表索引映射表 {[dest_surface_index] = true}
+---@param portal_data table 传送门数据
+---@return table<number, boolean> 地表索引映射表 {[dest_surface_index] = true}
 ---
 --- 池子加入规则：
 ---   1. 必须启用 LTN (`ltn_enabled = true`)
@@ -237,8 +237,8 @@ end
 --- 【历史学家】查询一个传送门当前存在于哪些连接池中
 --- 设计原则：这是一个纯查询函数，只读取状态，不修改任何数据
 ---
---- @param portal_data table 传送门数据
---- @return table<number, boolean> 地表索引映射表 {[dest_surface_index] = true}
+---@param portal_data table 传送门数据
+---@return table<number, boolean> 地表索引映射表 {[dest_surface_index] = true}
 ---
 --- 返回示例：
 ---   {[2] = true}  -- 当前存在于通往地表2的池子中
@@ -267,9 +267,9 @@ end
 --- 【执行者】将传送门加入指定的连接池，并与反向池中的伙伴建立 LTN 连接
 --- 设计原则：这是原子操作，负责同时更新池子状态和调用 LTN API
 ---
---- @param portal_data table 传送门数据
---- @param dest_surface number 目标地表索引
---- @param batch_mode boolean|nil 批量模式（true时跳过 remote.call，用于批量重建）
+---@param portal_data table 传送门数据
+---@param dest_surface number 目标地表索引
+---@param batch_mode boolean|nil 批量模式（true时跳过 remote.call，用于批量重建）
 ---
 --- 执行步骤：
 ---   1. 将自己加入 pools[source_surface][dest_surface]
@@ -324,9 +324,9 @@ end
 --- 【执行者】将传送门从指定的连接池中移除，并断开与反向池中伙伴的 LTN 连接
 --- 设计原则：这是原子操作，负责同时断开连接和更新池子状态
 ---
---- @param portal_data table 传送门数据
---- @param dest_surface number 目标地表索引
---- @param batch_mode boolean|nil 批量模式（true时跳过 remote.call）
+---@param portal_data table 传送门数据
+---@param dest_surface number 目标地表索引
+---@param batch_mode boolean|nil 批量模式（true时跳过 remote.call）
 ---
 --- 执行步骤：
 ---   1. 如果不是批量模式，扫描反向池子并与每个伙伴调用 LTN disconnect_surfaces
@@ -427,8 +427,8 @@ p_commit_all_ltn_connections = function()
 end
 
 --- 更新路由表（对比期望状态与当前状态）
---- @param portal_data table 传送门数据
---- @param desired_routes table 期望的路径集合
+---@param portal_data table 传送门数据
+---@param desired_routes table 期望的路径集合
 update_routing_table_for_portal = function(portal_data, desired_routes)
     local source_surface = portal_data.surface.index
     local unit_number = portal_data.unit_number
@@ -502,8 +502,8 @@ end
 ---   2. 此函数是唯一的状态更新入口，保证一致性
 ---   3. 可被重复调用，结果幂等（相同输入 → 相同输出）
 ---
---- @param portal_data table 需要同步的传送门数据
---- @param batch_mode boolean|nil 批量模式（true时跳过远程调用，用于批量重建）
+---@param portal_data table 需要同步的传送门数据
+---@param batch_mode boolean|nil 批量模式（true时跳过远程调用，用于批量重建）
 ---
 --- 执行流程：
 ---   Part A: 更新路由表（记录 Entry → Exit 映射，用于生成时刻表）
@@ -544,9 +544,9 @@ sync_portal_ltn_state = function(portal_data, batch_mode)
 end
 
 --- 检查两个传送门之间是否已连接（同步前）
---- @param portal1 table 传送门1
---- @param portal2 table 传送门2
---- @return boolean 是否已连接
+---@param portal1 table 传送门1
+---@param portal2 table 传送门2
+---@return boolean 是否已连接
 check_if_connected_before_sync = function(portal1, portal2)
     if not (portal1 and portal2) then
         return false
@@ -573,9 +573,9 @@ check_if_connected_before_sync = function(portal1, portal2)
 end
 
 --- 检查两个传送门之间是否已连接（同步后）
---- @param portal1 table 传送门1
---- @param portal2 table 传送门2
---- @return boolean 是否已连接
+---@param portal1 table 传送门1
+---@param portal2 table 传送门2
+---@return boolean 是否已连接
 check_if_connected_after_sync = function(portal1, portal2)
     -- 连接的条件：双方都启用 LTN，且至少有一方是 Entry 模式
     if not (portal1 and portal2) then
@@ -601,13 +601,13 @@ check_if_connected_after_sync = function(portal1, portal2)
 end
 
 --- 构造连接状态变化的提示消息
---- @param my_enabled boolean 当前操作建筑的新状态
---- @param was_connected boolean 操作前是否已连接
---- @param now_connected boolean 操作后是否已连接
---- @param select_portal table 源传送门
---- @param target_portal table 目标传送门
---- @param operator_is_first boolean|nil 操作者顺序标记
---- @return table|nil 本地化消息表
+---@param my_enabled boolean 当前操作建筑的新状态
+---@param was_connected boolean 操作前是否已连接
+---@param now_connected boolean 操作后是否已连接
+---@param select_portal table 源传送门
+---@param target_portal table 目标传送门
+---@param operator_is_first boolean|nil 操作者顺序标记
+---@return table|nil 本地化消息表
 build_connection_message = function(my_enabled, was_connected, now_connected, select_portal, target_portal, operator_is_first)
     local first_portal = select_portal
     local second_portal = target_portal
@@ -648,9 +648,9 @@ build_connection_message = function(my_enabled, was_connected, now_connected, se
 end
 
 --- 发送连接状态提示消息
---- @param msg table|nil 本地化消息
---- @param player LuaPlayer|nil 目标玩家
---- @param silent boolean|nil 静默模式
+---@param msg table|nil 本地化消息
+---@param player LuaPlayer|nil 目标玩家
+---@param silent boolean|nil 静默模式
 send_connection_message = function(msg, player, silent)
     if not msg or silent then
         return
@@ -679,8 +679,8 @@ end
 -- ============================================================================
 
 --- 传送门模式切换时的处理函数
---- @param portal_data table 传送门数据
---- @param old_mode string|nil 旧模式
+---@param portal_data table 传送门数据
+---@param old_mode string|nil 旧模式
 function LTN.on_portal_mode_changed(portal_data, old_mode)
     if not portal_data or not portal_data.ltn_enabled then
         return
@@ -705,7 +705,7 @@ function LTN.on_portal_mode_changed(portal_data, old_mode)
 end
 
 --- 传送门销毁时的处理函数
---- @param portal_data table 传送门数据
+---@param portal_data table 传送门数据
 function LTN.on_portal_destroyed(portal_data)
     if not portal_data then
         return
@@ -731,13 +731,13 @@ function LTN.on_portal_destroyed(portal_data)
 end
 
 --- 更新 LTN 连接（简化版，使用核心同步函数）
---- @param select_portal table 操作的传送门
---- @param target_portal table 目标传送门
---- @param connect boolean 连接状态（此参数在新架构中被忽略，自动从数据推导）
---- @param player LuaPlayer|nil 操作玩家（用于消息提示）
---- @param my_enabled boolean 当前操作建筑的新状态
---- @param silent boolean|nil 静默模式
---- @param operator_is_first boolean|nil 操作者顺序标记
+---@param select_portal table 操作的传送门
+---@param target_portal table 目标传送门
+---@param connect boolean 连接状态（此参数在新架构中被忽略，自动从数据推导）
+---@param player LuaPlayer|nil 操作玩家（用于消息提示）
+---@param my_enabled boolean 当前操作建筑的新状态
+---@param silent boolean|nil 静默模式
+---@param operator_is_first boolean|nil 操作者顺序标记
 function LTN.update_connection(select_portal, target_portal, connect, player, my_enabled, silent, operator_is_first)
     -- 门卫拦截：如果双方都没开启 LTN，说明此事与 LTN 无关，直接退出
     if not select_portal.ltn_enabled and not (target_portal and target_portal.ltn_enabled) then
@@ -935,13 +935,13 @@ end
 --- 尝试为一次跨地表行程插入传送门路由。
 --- 设计原则：这是一个独立的、可重用的逻辑块，封装了"判断-寻路-插站"的完整流程。
 ---
---- @param train LuaTrain 火车实体
---- @param from_surface_idx number 起点地表索引
---- @param to_surface_idx number 终点地表索引
---- @param from_pos table 起点坐标 {x, y}（用于计算距离）
---- @param to_pos table 终点坐标 {x, y}（用于计算距离）
---- @param insert_index number 时刻表插入位置
---- @param log_context string 日志上下文（例如 "取货", "送货", "返程"）
+---@param train LuaTrain 火车实体
+---@param from_surface_idx number 起点地表索引
+---@param to_surface_idx number 终点地表索引
+---@param from_pos table 起点坐标 {x, y}（用于计算距离）
+---@param to_pos table 终点坐标 {x, y}（用于计算距离）
+---@param insert_index number 时刻表插入位置
+---@param log_context string 日志上下文（例如 "取货", "送货", "返程"）
 local function try_insert_cross_surface_route(train, from_surface_idx, to_surface_idx, from_pos, to_pos, insert_index, log_context)
     -- Step 1: 检查是否需要跨地表
     if from_surface_idx == to_surface_idx then

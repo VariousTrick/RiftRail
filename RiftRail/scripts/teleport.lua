@@ -281,9 +281,9 @@ end
 -- 速度方向计算函数 (基于铁轨端点距离)
 -- =================================================================================
 --- 计算列车相对于一个参考点的逻辑方向。
--- @param train (LuaTrain) 要计算的列车。
--- @param origin_pos (Position) 参考点坐标 (通常是传送门出口)。
--- @return (number) 1 代表逻辑正向 (Front更远), -1 代表逻辑反向 (Back更远)。
+---@param train (LuaTrain) 要计算的列车。
+---@param origin_pos (Position) 参考点坐标 (通常是传送门出口)。
+---@return (number) 1 代表逻辑正向 (Front更远), -1 代表逻辑反向 (Back更远)。
 local function calculate_speed_sign(train, select_portal)
     -- 安全检查：如果输入无效，默认返回正向
     if not (train and train.valid and select_portal) then
@@ -407,21 +407,9 @@ local function spawn_via_clone(old_entity, surface, position, needs_rotation)
 
     -- 步骤 1: 如果需要，执行“断开->旋转”
     if needs_rotation then
-        -- 在断开前，把当前正确的时刻表进度记下来！
-        local saved_index = nil
-        if old_entity.train and old_entity.train.schedule then
-            saved_index = old_entity.train.schedule.current
-        end
-
         -- 物理隔离，为旋转做准备
         old_entity.disconnect_rolling_stock(defines.rail_direction.front)
         old_entity.disconnect_rolling_stock(defines.rail_direction.back)
-
-        -- 断开后，立马把记忆还给它！
-        -- 这样后续的 clone 或是 copy_schedule 拿到的都是带有正确进度的旧车厢
-        if saved_index and old_entity.train and old_entity.train.schedule then
-            old_entity.train.go_to_station(saved_index)
-        end
 
         -- 尝试原地掉头
         local rotated_successfully = old_entity.rotate()
@@ -875,6 +863,7 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
     exit_portaldata.old_train_id = nil
     exit_portaldata.cached_geo = nil
     exit_portaldata.final_train_speed = nil
+    exit_portaldata.saved_schedule_index = nil
 
     -- 6. 【关键】标记需要重建入口碰撞器
     -- 我们不在这里直接创建，而是交给 on_tick 去计算正确的坐标并创建
@@ -986,17 +975,17 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     -- 排除掉刚刚传送过去的那节 (entry_portaldata.exit_car 记录的是上一节在新表面的替身，这里我们需要在旧表面找)
     -- 此处简化逻辑：因为是单向移除，旧车厢会被销毁，所以 get_connected 应该只能找到还没传的
 
-    -- 保存第一节车的数据 (用于 Cybersyn / 恢复)
-    if not entry_portaldata.exit_car then
+    -- 保存第一节车的数据
+    if is_first_car then
         exit_portaldata.saved_manual_mode = car.train.manual_mode
-        exit_portaldata.saved_speed = car.train.speed
         exit_portaldata.old_train_id = car.train.id
+        exit_portaldata.saved_schedule_index = car.train.schedule.current
     end
 
     -- 计算目标朝向
     -- 参数：入口方向, 出口几何预设方向, 车厢当前方向
     -- 接收 target_ori 和 is_nose_in 两个返回值
-    local target_ori, is_nose_in = calculate_arrival_orientation(entry_portaldata.shell.direction, geo.direction, car.orientation)
+    local _, is_nose_in = calculate_arrival_orientation(entry_portaldata.shell.direction, geo.direction, car.orientation)
 
     -- 判断是否需要引导车 (如果是正向车头则不需要)
     local need_leader = is_first_car and (car.type ~= "locomotive" or not is_nose_in)
@@ -1036,7 +1025,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
             log_tp("时刻表转移: 使用真实站名 '" .. real_station_name .. "' 进行比对")
         end
         -- 2. 转移时刻表
-        Schedule.copy_schedule(car.train, new_car.train, real_station_name)
+        Schedule.copy_schedule(car.train, new_car.train, real_station_name, exit_portaldata.saved_schedule_index, exit_portaldata.saved_manual_mode)
 
         -- 关键修复: 在被引导车重置前，立刻备份正确的索引！
         if new_car.train and new_car.train.schedule then
