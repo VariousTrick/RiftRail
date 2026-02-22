@@ -349,40 +349,100 @@ local function calculate_speed_sign(train, select_portal)
 end
 
 -- =================================================================================
--- 【克隆工厂 - 快速通道】使用 clone API，仅在朝向相同时调用
+-- 【纯函数】计算车厢在出口生成的朝向 (Orientation 0.0-1.0)
 -- =================================================================================
 -- 参数：
---   old_entity: 原车厢实体
---   surface:    目标地表
---   position:   目标坐标
+--   entry_shell_dir: 入口传送门的朝向 (0, 4, 8, 12)
+--   exit_geo_dir:    出口传送门的目标朝向 (0, 4, 8, 12)
+--   current_ori:     车厢当前的朝向 (0.0 - 1.0)
+local function calculate_arrival_orientation(entry_shell_dir, exit_geo_dir, current_ori)
+    -- 1. 将入口建筑朝向转为 Orientation (0-1)
+    local entry_shell_ori = entry_shell_dir / 16.0
+
+    -- 2. 判断车厢是“顺着进”还是“倒着进”
+    -- 计算角度差 (处理 0.0/1.0 的环形边界)
+    local diff = math.abs(current_ori - entry_shell_ori)
+    if diff > 0.5 then
+        diff = 1.0 - diff
+    end
+
+    -- 判定阈值 (0.125 = 45度，小于45度夹角视为顺向)
+    local is_nose_in = diff < 0.125
+
+    if RiftRail.DEBUG_MODE_ENABLED then
+        log_tp("方向计算: 车厢=" .. string.format("%.2f", current_ori) .. ", 入口=" .. entry_shell_ori .. ", 判定=" .. (is_nose_in and "顺向(NoseIn)" or "逆向(TailIn)"))
+    end
+
+    -- 3. 计算出口基准朝向
+    local exit_base_ori = exit_geo_dir / 16.0
+    local target_ori = exit_base_ori
+
+    -- 4. 根据进出关系修正最终朝向
+    if not is_nose_in then
+        -- 逆向进入 -> 逆向离开 (翻转 180 度即 +0.5)
+        target_ori = (target_ori + 0.5) % 1.0
+    end
+
+    if RiftRail.DEBUG_MODE_ENABLED and not is_nose_in then
+        log_tp("方向计算: 执行逆向翻转 -> " .. target_ori)
+    end
+
+    -- 增加第二个返回值 is_nose_in
+    return target_ori, is_nose_in
+end
+
+-- =================================================================================
+-- 【克隆工厂 v3.0 - 旋转克隆】 - 统一处理所有平行传送
+-- =================================================================================
+-- 参数：
+--   old_entity:     原车厢实体
+--   surface:        目标地表
+--   position:       目标坐标
+--   needs_rotation: [boolean] 是否需要在克隆前进行原地180度旋转
 -- 返回：新创建的车厢实体 (失败返回 nil)
-local function spawn_cloned_car_fast(old_entity, surface, position)
+local function spawn_via_clone(old_entity, surface, position, needs_rotation)
     if not (old_entity and old_entity.valid) then
         return nil
     end
 
-    -- 1. 使用 clone API 直接复制实体
-    -- 这个API会自动处理库存、装备网格、颜色、生命值、过滤器等所有数据
+    -- 步骤 1: (可选) 如果需要，执行“断开->旋转”的魔法
+    if needs_rotation then
+        -- 物理隔离，为旋转做准备
+        old_entity.disconnect_rolling_stock(defines.rail_direction.front)
+        old_entity.disconnect_rolling_stock(defines.rail_direction.back)
+
+        -- 尝试原地掉头
+        local rotated_successfully = old_entity.rotate()
+
+        if not rotated_successfully then
+            -- 极端情况：由于铁轨扭曲等原因，原地旋转失败。
+            -- 优雅地失败，让主逻辑降级到 create_entity。
+            if RiftRail.DEBUG_MODE_ENABLED then
+                log_tp("警告：车厢在入口原地旋转失败，将尝试使用 create_entity 降级处理。")
+            end
+            return nil -- 返回 nil，主逻辑会知道需要使用备用方案
+        end
+    end
+
+    -- 步骤 2: 极速克隆
+    -- 无论是旋转过的还是没旋转的，都直接克隆
     local new_entity = old_entity.clone({
         surface = surface,
         position = position,
         force = old_entity.force,
-        snap_to_grid = false,
         create_build_effect_smoke = false,
     })
 
     if not new_entity then
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_tp("克隆工厂(快速): clone() API 调用失败 " .. old_entity.name)
-        end
+        -- 克隆失败，可能是出口在最后一刻被堵住
+        -- 不需要做任何回滚，主逻辑会在下一tick重新尝试
         return nil
     end
 
-    -- 2. 【关键】clone 不会转移司机，必须手动处理
+    -- 步骤 3: 手动转移司机 (clone 唯一不复制的东西)
     local driver = old_entity.get_driver()
     if driver then
-        old_entity.set_driver(nil) -- 先从旧车下车
-
+        old_entity.set_driver(nil)
         if driver.object_name == "LuaPlayer" then
             new_entity.set_driver(driver)
         elseif driver.valid and driver.teleport then
@@ -390,11 +450,6 @@ local function spawn_cloned_car_fast(old_entity, surface, position)
             new_entity.set_driver(driver)
         end
     end
-
-    -- =========================================================================
-    -- 【新增】手动触发 on_built_entity 事件以提高兼容性
-    -- =========================================================================
-    -- script.raise_event(defines.events.on_built_entity, { created_entity = new_entity })
 
     return new_entity
 end
@@ -462,48 +517,47 @@ local function spawn_cloned_car(old_entity, surface, position, orientation)
 
     return new_entity
 end
+
 -- =================================================================================
--- 【纯函数】计算车厢在出口生成的朝向 (Orientation 0.0-1.0)
+-- 【智能生成决策 v4.0】 - 封装所有创建逻辑的主函数
 -- =================================================================================
+-- 这个函数是传送的核心大脑，它会决定使用最高效的方式创建下一节车厢。
 -- 参数：
---   entry_shell_dir: 入口传送门的朝向 (0, 4, 8, 12)
---   exit_geo_dir:    出口传送门的目标朝向 (0, 4, 8, 12)
---   current_ori:     车厢当前的朝向 (0.0 - 1.0)
-local function calculate_arrival_orientation(entry_shell_dir, exit_geo_dir, current_ori)
-    -- 1. 将入口建筑朝向转为 Orientation (0-1)
-    local entry_shell_ori = entry_shell_dir / 16.0
+--   car:              要传送的旧车厢
+--   entry_portaldata: 入口数据
+--   exit_portaldata:  出口数据
+--   spawn_pos:        出口生成坐标
+--   geo:              出口的几何数据
+-- 返回：新创建的车厢实体 (或 nil)
+local function spawn_next_car_intelligently(car, entry_portaldata, exit_portaldata, spawn_pos, geo)
+    local new_car = nil
 
-    -- 2. 判断车厢是“顺着进”还是“倒着进”
-    -- 计算角度差 (处理 0.0/1.0 的环形边界)
-    local diff = math.abs(current_ori - entry_shell_ori)
-    if diff > 0.5 then
-        diff = 1.0 - diff
+    -- 首先，判断入口和出口铁轨是否平行
+    local entry_dir = entry_portaldata.shell.direction
+    local exit_dir = exit_portaldata.shell.direction
+    local is_parallel = (entry_dir == exit_dir) or ((entry_dir + 8) % 16 == exit_dir)
+
+    if is_parallel then
+        -- 【高性能路径】铁轨平行，尝试使用 clone
+        local needs_rotation = (entry_dir == exit_dir) -- 建筑同向时，需要旋转
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_tp("优化: 铁轨平行，尝试使用 clone()。" .. (needs_rotation and " (需要旋转)" or " (无需旋转)"))
+        end
+        new_car = spawn_via_clone(car, exit_portaldata.surface, spawn_pos, needs_rotation)
     end
 
-    -- 判定阈值 (0.125 = 45度，小于45度夹角视为顺向)
-    local is_nose_in = diff < 0.125
-
-    if RiftRail.DEBUG_MODE_ENABLED then
-        log_tp("方向计算: 车厢=" .. string.format("%.2f", current_ori) .. ", 入口=" .. entry_shell_ori .. ", 判定=" .. (is_nose_in and "顺向(NoseIn)" or "逆向(TailIn)"))
+    -- 【降级/备用路径】如果不是平行，或者 clone 失败（比如旋转失败），则使用传统方法
+    if not new_car then
+        if is_parallel and RiftRail.DEBUG_MODE_ENABLED then
+            log_tp("Clone 路径失败，降级至 create_entity 进行传送。")
+        end
+        local target_ori, is_nose_in = calculate_arrival_orientation(entry_dir, geo.direction, car.orientation)
+        new_car = spawn_cloned_car(car, exit_portaldata.surface, spawn_pos, target_ori)
     end
 
-    -- 3. 计算出口基准朝向
-    local exit_base_ori = exit_geo_dir / 16.0
-    local target_ori = exit_base_ori
-
-    -- 4. 根据进出关系修正最终朝向
-    if not is_nose_in then
-        -- 逆向进入 -> 逆向离开 (翻转 180 度即 +0.5)
-        target_ori = (target_ori + 0.5) % 1.0
-    end
-
-    if RiftRail.DEBUG_MODE_ENABLED and not is_nose_in then
-        log_tp("方向计算: 执行逆向翻转 -> " .. target_ori)
-    end
-
-    -- 增加第二个返回值 is_nose_in
-    return target_ori, is_nose_in
+    return new_car
 end
+
 -- =================================================================================
 -- 【辅助函数】确保几何数据缓存有效 (去重逻辑)
 -- =================================================================================
@@ -951,24 +1005,14 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     -- =========================================================================
     -- 【动态克隆决策】根据入口和出口的朝向决定使用哪种生成方式
     -- =========================================================================
-    local new_car = nil
-    -- 仅当入口和出口朝向相反时，才使用 clone，因为此时期望的火车世界朝向不变
-    if (entry_portaldata.shell.direction + 8) % 16 == exit_portaldata.shell.direction then
-        -- 朝向相反，使用高性能的 clone API
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_tp("优化: 朝向相反，使用 clone() 快速传送。")
-        end
-        new_car = spawn_cloned_car_fast(car, exit_portaldata.surface, spawn_pos)
-    else
-        -- 【常规路径】其他所有情况（包括朝向相同），都需要重新计算朝向
-        new_car = spawn_cloned_car(car, exit_portaldata.surface, spawn_pos, target_ori)
-    end
+    -- 【调用我们的新“大脑”函数来完成所有复杂的创建决策】
+    local new_car = spawn_next_car_intelligently(car, entry_portaldata, exit_portaldata, spawn_pos, geo)
 
     if not new_car then
         if RiftRail.DEBUG_MODE_ENABLED then
             log_tp("严重错误: 无法在出口创建车厢！")
         end
-        finalize_sequence(entry_portaldata, exit_portaldata)
+        -- finalize_sequence(entry_portaldata, exit_portaldata)
         return
     end
 
