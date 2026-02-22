@@ -11,6 +11,10 @@
 -   [ ] Add a statistics counter for "Total Trains Teleported" in the GUI.
 -   [ ] (Advanced) Draw connection lines between portals on the map view.
 -   [ ] (Advanced) Display the portal network topology on the minimap.
+-   [ ] Add blueprint support for links to auto-restore connections when pasting paired portals.
+-   [ ] Add a debug/performance profiling mode to display the current "active list" count for UPS monitoring.
+-   [ ] Add in-game Tips & Tricks/Factoriopedia entries for the "UPS Optimization Guide".
+-   [ ] Add visual status indicators (e.g., lights) for portals to show idle/active states.
 
 ---
 
@@ -28,6 +32,10 @@
 -   [x] Added in-game migration notification messages.
 -   [x] Cleaned up all deprecated comments and debug logs from the code.
 -   [x] Standardized version numbers in file headers.
+-   [x] Expanded native Clone API activation conditions (Same-Axis Optimization) to further reduce UPS consumption.
+-   [x] Adjusted the portal recipe balance for the Space Age (SA) environment.
+-   [x] Added a second dedicated demo scenario to explain pairing logic and workflow.
+-   [x] Optimized the file structure and recipe balancing across various mod environments (SA, SE, K2, SE+K2) - Special thanks to Ldmf for this contribution!
 
 ---
 
@@ -51,6 +59,10 @@
 -   [ ] 在 GUI 中为“累计传送列车”添加一个统计计数器。
 -   [ ] (高级) 在地图视图上绘制已连接传送门之间的连线。
 -   [ ] (高级) 在小地图上显示传送网络拓扑。
+-   [ ] 新增蓝图保存配对关系功能，支持在复制粘贴时自动恢复传送门之间的连接。
+-   [ ] 添加调试/性能监控模式，在界面上显示当前“活跃列表”中的传送门数量，方便监控 UPS 状态。
+-   [ ] 在游戏内“提示与技巧”或“异星百科”中添加“性能与 UPS 优化指北”。
+-   [ ] 为传送门添加工作状态指示灯（如空闲、激活等视觉反馈）。
 
 ---
 
@@ -68,6 +80,10 @@
 -   [x] 添加了游戏内的迁移提示消息。
 -   [x] 清理了代码中所有废弃的注释和调试日志。
 -   [x] 统一了文件头部的版本号注释。
+-   [x] 扩展了原生 Clone API 的触发条件（同向放置优化），进一步降低列车传送时的 UPS 消耗。
+-   [x] 针对 Space Age (SA) 环境调整了传送门配方平衡（卫星数量增加至 2 个）。
+-   [x] 新增了第二个演示场景，专门用于演示传送门的配对逻辑与操作流程。
+-   [x] 优化了文件结构以及各模组环境（SA, SE, K2, SE+K2）的配方平衡（特别感谢 Ldmf 提交的代码与贡献！）。
 
 ---
 
