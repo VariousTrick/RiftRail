@@ -405,11 +405,23 @@ local function spawn_via_clone(old_entity, surface, position, needs_rotation)
         return nil
     end
 
-    -- 步骤 1: (可选) 如果需要，执行“断开->旋转”的魔法
+    -- 步骤 1: 如果需要，执行“断开->旋转”
     if needs_rotation then
+        -- 在断开前，把当前正确的时刻表进度记下来！
+        local saved_index = nil
+        if old_entity.train and old_entity.train.schedule then
+            saved_index = old_entity.train.schedule.current
+        end
+
         -- 物理隔离，为旋转做准备
         old_entity.disconnect_rolling_stock(defines.rail_direction.front)
         old_entity.disconnect_rolling_stock(defines.rail_direction.back)
+
+        -- 断开后，立马把记忆还给它！
+        -- 这样后续的 clone 或是 copy_schedule 拿到的都是带有正确进度的旧车厢
+        if saved_index and old_entity.train and old_entity.train.schedule then
+            old_entity.train.go_to_station(saved_index)
+        end
 
         -- 尝试原地掉头
         local rotated_successfully = old_entity.rotate()
