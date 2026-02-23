@@ -1336,7 +1336,7 @@ end
 ---@param tick integer 当前tick / Current tick
 local function process_teleport_sequence(portaldata, tick)
     -- 频率控制：从游戏设置中读取间隔值
-    local interval = exit_portaldata.placement_interval or settings.global["rift-rail-placement-interval"].value
+    local interval = portaldata.placement_interval or settings.global["rift-rail-placement-interval"].value
     -- 只有当间隔大于1时，才启用频率控制，以获得最佳性能
     if interval > 1 and tick % interval ~= portaldata.unit_number % interval then
         return
