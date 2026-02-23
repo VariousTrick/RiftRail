@@ -838,19 +838,19 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
     end
 
     -- 5. 重置状态变量
-    entry_portaldata.entry_car = nil -- 清理入口车厢引用，防止 on_tick 中的过期访问
-    entry_portaldata.exit_car = nil -- 清理入口车厢引用，防止 on_tick 中的过期访问
-    entry_portaldata.selected_exit_id = nil -- 清理已选出口缓存，允许下次重新选择
-    entry_portaldata.gui_map = nil -- 清理 GUI 观看者映射表
-    exit_portaldata.entry_car = nil -- 清理入口车厢引用，防止 on_tick 中的过期访问
-    exit_portaldata.exit_car = nil -- 清理出口车厢引用，防止 on_tick 中的过期访问
-    exit_portaldata.old_train_id = nil -- 清理旧车ID缓存
-    exit_portaldata.cached_geo = nil -- 清理几何缓存，强制下次重新计算
+    entry_portaldata.entry_car = nil            -- 清理入口车厢引用，防止 on_tick 中的过期访问
+    entry_portaldata.exit_car = nil             -- 清理入口车厢引用，防止 on_tick 中的过期访问
+    entry_portaldata.selected_exit_id = nil     -- 清理已选出口缓存，允许下次重新选择
+    entry_portaldata.gui_map = nil              -- 清理 GUI 观看者映射表
+    exit_portaldata.entry_car = nil             -- 清理入口车厢引用，防止 on_tick 中的过期访问
+    exit_portaldata.exit_car = nil              -- 清理出口车厢引用，防止 on_tick 中的过期访问
+    exit_portaldata.old_train_id = nil          -- 清理旧车ID缓存
+    exit_portaldata.cached_geo = nil            -- 清理几何缓存，强制下次重新计算
     exit_portaldata.cached_teleport_speed = nil -- 清理缓存速度
-    exit_portaldata.saved_schedule_index = nil -- 清理时刻表索引缓存
-    exit_portaldata.locking_entry_id = nil -- 释放互斥锁,允许其他入口使用
-    exit_portaldata.placement_interval = nil -- 清理放置间隔缓存
-    exit_portaldata.saved_manual_mode = nil -- 清理手动/自动模式缓存
+    exit_portaldata.saved_schedule_index = nil  -- 清理时刻表索引缓存
+    exit_portaldata.locking_entry_id = nil      -- 释放互斥锁,允许其他入口使用
+    exit_portaldata.placement_interval = nil    -- 清理放置间隔缓存
+    exit_portaldata.saved_manual_mode = nil     -- 清理手动/自动模式缓存
 
     -- 6. 【关键】标记需要重建入口碰撞器
     -- 我们不在这里直接创建，而是交给 on_tick 去计算正确的坐标并创建
@@ -964,11 +964,13 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
 
     -- 保存第一节车的数据
     if is_first_car then
-        exit_portaldata.saved_manual_mode = car.train.manual_mode -- 保存手动/自动模式
-        exit_portaldata.old_train_id = car.train.id -- 保存旧车ID
+        exit_portaldata.saved_manual_mode = car.train.manual_mode         -- 保存手动/自动模式
+        exit_portaldata.old_train_id = car.train.id                       -- 保存旧车ID
         exit_portaldata.saved_schedule_index = car.train.schedule.current -- 保存时刻表索引
-        exit_portaldata.cached_teleport_speed = settings.global["rift-rail-teleport-speed"].value -- 缓存设定中的列车速度，供 sync_momentum 使用
-        exit_portaldata.placement_interval = settings.global["rift-rail-placement-interval"].value -- 缓存设定中的放置间隔，供 process_teleport_sequence 使用
+        exit_portaldata.cached_teleport_speed = settings.global["rift-rail-teleport-speed"]
+            .value                                                        -- 缓存设定中的列车速度，供 sync_momentum 使用
+        exit_portaldata.placement_interval = settings.global["rift-rail-placement-interval"]
+            .value                                                        -- 缓存设定中的放置间隔，供 process_teleport_sequence 使用
     end
 
     -- 计算目标朝向
@@ -1046,7 +1048,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
 
     -- 更新链表指针
     entry_portaldata.exit_car = new_car -- 记录刚传过去的这节 (虽然没什么用，但保持一致)
-    exit_portaldata.exit_car = new_car -- 记录出口的最前头 (用于拉动)
+    exit_portaldata.exit_car = new_car  -- 记录出口的最前头 (用于拉动)
 
     -- 准备下一节
     -- =========================================================================
