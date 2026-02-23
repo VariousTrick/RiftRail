@@ -232,6 +232,11 @@ end
 -- 返回：Map<UnitNumber, Player[]>  { [车厢ID] = {玩家A, 玩家B} }
 local function collect_gui_watchers(train)
     local map = {}
+
+    if not settings.global["rift-rail-train-gui-track"].value then
+        return nil -- 如果功能被全局禁用，直接返回 nil
+    end
+
     if not (train and train.valid) then
         return nil
     end
