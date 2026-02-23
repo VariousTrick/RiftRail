@@ -15,6 +15,16 @@ data:extend({
         localised_name = { "mod-setting-name.rift-rail-show-logistics-notifications" },
         localised_description = { "mod-setting-description.rift-rail-show-logistics-notifications" },
     },
+    -- 列车界面追踪功能开关（地图全局设置）
+    {
+        type = "bool-setting",
+        name = "rift-rail-train-gui-track",
+        setting_type = "runtime-global", -- 地图全局设置
+        default_value = true,
+        order = "a-b", -- 紧跟在通知开关之后
+        localised_name = { "mod-setting-name.rift-rail-train-gui-track" },
+        localised_description = { "mod-setting-description.rift-rail-train-gui-track" },
+    },
     -- 调试日志
     {
         type = "bool-setting",
