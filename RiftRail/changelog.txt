@@ -1,4 +1,12 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.11.4
+Date: 2026-02-24
+  Changes:
+    - 添加了一个新的模组设置选项，允许玩家选择是否在传送后自动打开列车界面并跟随列车。默认启用。
+      added a new mod setting option that allows players to choose whether to automatically open the train GUI and track the train after teleportation. Enabled by default.
+    - 优化了代码结构，看起来更顺眼，但对性能没有任何提升。顺便加入了一些无聊的注释。
+      Optimized the code structure for better readability, but it does not improve performance. Also added some boring comments.
+---------------------------------------------------------------------------------------------------
 Version: 0.11.3
 Date: 2026-02-23
   Changes:
