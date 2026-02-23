@@ -8,6 +8,8 @@ local Teleport = {}
 -- =================================================================================
 local Events = nil
 -- 负责触发“出发”事件
+---@see doc/API(CN).md#remote.call("RiftRail", "get_train_departing_event")
+---@see doc/API(EN).md#How-to-Get-Rift-Rail-Custom-Event-IDs
 local function raise_departing_event(entry_portaldata, train_to_depart)
     if not (entry_portaldata and entry_portaldata.shell and train_to_depart and train_to_depart.valid) then
         return
@@ -31,6 +33,8 @@ local function raise_departing_event(entry_portaldata, train_to_depart)
 end
 
 -- 负责触发“抵达”事件
+---@see doc/API(CN).md#remote.call("RiftRail", "get_train_arrived_event")
+---@see doc/API(EN).md#How-to-Get-Rift-Rail-Custom-Event-IDs
 local function raise_arrived_event(entry_portaldata, exit_portaldata, final_train)
     if not (entry_portaldata and exit_portaldata and exit_portaldata.shell and final_train and final_train.valid) then
         return
@@ -96,6 +100,9 @@ end
 -- =================================================================================
 -- 统一列车时刻表索引读取函数（处理不同列车状态）
 -- =================================================================================
+---@param train LuaTrain 要读取的列车 / The train to read
+---@param phase_name string 阶段名（可选）/ Phase name (optional)
+---@return integer|nil 当前时刻表索引 / Current schedule index
 local function read_train_schedule_index(train, phase_name)
     if not (train and train.valid and train.schedule) then
         return nil
@@ -201,6 +208,9 @@ end
 -- =================================================================================
 -- 通用查找子实体函数
 -- =================================================================================
+---@param portaldata PortalData 传送门数据 / Portal data
+---@param name_to_find string 要查找的实体名 / Entity name to find
+---@return LuaEntity|nil 匹配的子实体 / Matched child entity
 local function find_child_entity(portaldata, name_to_find)
     if not (portaldata and portaldata.children) then
         return nil
@@ -216,6 +226,8 @@ end
 -- =================================================================================
 -- 辅助函数：从子实体中获取真实的车站名称 (带图标)
 -- =================================================================================
+---@param portaldata PortalData 传送门数据 / Portal data
+---@return string 真实车站名称 / Real station name
 local function get_real_station_name(portaldata)
     -- 适配 children 结构 {entity=..., relative_pos=...}
     local station = find_child_entity(portaldata, "rift-rail-station")
@@ -227,8 +239,8 @@ end
 -- =================================================================================
 -- 精准记录查看具体车厢的玩家（映射表模式）
 -- =================================================================================
--- 参数：train (LuaTrain 对象)
--- 返回：Map<UnitNumber, Player[]>  { [车厢ID] = {玩家A, 玩家B} }
+---@param train LuaTrain 要查找的列车 / The train to search
+---@return table|nil 车厢ID到玩家列表映射 / Map<UnitNumber, Player[]>  { [carriage ID] = {PlayerA, PlayerB} }
 local function collect_gui_watchers(train)
     local map = {}
 
@@ -266,7 +278,9 @@ end
 -- =================================================================================
 -- 精准恢复 GUI 到指定车厢实体
 -- =================================================================================
--- 参数：watchers (玩家对象列表), entity (新生成的车厢实体)
+
+---@param watchers table 玩家对象列表 / List of player objects
+---@param entity LuaEntity 新生成的车厢实体 / Newly created carriage entity
 local function reopen_car_gui(watchers, entity)
     -- 如果没人看这节车，或者实体无效，直接返回
     if not (watchers and entity and entity.valid) then
@@ -285,9 +299,9 @@ end
 -- 速度方向计算函数 (基于铁轨端点距离)
 -- =================================================================================
 --- 计算列车相对于一个参考点的逻辑方向。
----@param train (LuaTrain) 要计算的列车。
----@param origin_pos (Position) 参考点坐标 (通常是传送门出口)。
----@return (number) 1 代表逻辑正向 (Front更远), -1 代表逻辑反向 (Back更远)。
+---@param train LuaTrain 要计算的列车 / The train to calculate
+---@param select_portal PortalData 参考传送门 / Reference portal
+---@return integer 1 代表逻辑正向 (Front更远), -1 代表逻辑反向 (Back更远)。/ 1 for forward, -1 for backward
 local function calculate_speed_sign(train, select_portal)
     -- 安全检查：如果输入无效，默认返回正向
     if not (train and train.valid and select_portal) then
@@ -355,10 +369,11 @@ end
 -- =================================================================================
 -- 【纯函数】计算车厢在出口生成的朝向 (Orientation 0.0-1.0)
 -- =================================================================================
--- 参数：
---   entry_shell_dir: 入口传送门的朝向 (0, 4, 8, 12)
---   exit_geo_dir:    出口传送门的目标朝向 (0, 4, 8, 12)
---   current_ori:     车厢当前的朝向 (0.0 - 1.0)
+---@param entry_shell_dir integer 入口传送门朝向 / Entry portal direction
+---@param exit_geo_dir integer 出口传送门朝向 / Exit portal direction
+---@param current_ori number 当前车厢朝向 / Current carriage orientation
+---@return number 目标朝向 / Target orientation
+---@return boolean 是否顺向 / Is nose-in
 local function calculate_arrival_orientation(entry_shell_dir, exit_geo_dir, current_ori)
     -- 1. 将入口建筑朝向转为 Orientation (0-1)
     local entry_shell_ori = entry_shell_dir / 16.0
@@ -418,12 +433,11 @@ end
 -- =================================================================================
 -- 【克隆工厂 v3.0 - 旋转克隆】 - 统一处理所有平行传送
 -- =================================================================================
--- 参数：
---   old_entity:     原车厢实体
---   surface:        目标地表
---   position:       目标坐标
---   needs_rotation: [boolean] 是否需要在克隆前进行原地180度旋转
--- 返回：新创建的车厢实体 (失败返回 nil)
+---@param old_entity LuaEntity 原车厢实体 / Old carriage entity
+---@param surface LuaSurface 目标地表 / Target surface
+---@param position Position 目标坐标 / Target position
+---@param needs_rotation boolean 是否需要在克隆前进行原地180度旋转 / Whether needs rotation
+---@return LuaEntity|nil 新车厢实体 / New carriage entity
 local function spawn_via_clone(old_entity, surface, position, needs_rotation)
     if not (old_entity and old_entity.valid) then
         return nil
@@ -472,12 +486,11 @@ end
 -- =================================================================================
 -- 【克隆工厂】生成替身车厢并转移所有属性
 -- =================================================================================
--- 参数：
---   old_entity: 原车厢实体
---   surface:    目标地表
---   position:   目标坐标
---   orientation:目标朝向 (0.0-1.0)
--- 返回：新创建的车厢实体 (失败返回 nil)
+---@param old_entity LuaEntity 原车厢实体 / Old carriage entity
+---@param surface LuaSurface 目标地表 / Target surface
+---@param position Position 目标坐标 / Target position
+---@param orientation number 目标朝向(0.0-1.0) / Target orientation (0.0-1.0)
+---@return LuaEntity|nil 新车厢实体 / New carriage entity
 local function spawn_cloned_car(old_entity, surface, position, orientation)
     if not (old_entity and old_entity.valid) then
         return nil
@@ -524,13 +537,12 @@ end
 -- 【智能生成决策 v4.0】 - 封装所有创建逻辑的主函数
 -- =================================================================================
 -- 这个函数是传送的核心大脑，它会决定使用最高效的方式创建下一节车厢。
--- 参数：
---   car:              要传送的旧车厢
---   entry_portaldata: 入口数据
---   exit_portaldata:  出口数据
---   spawn_pos:        出口生成坐标
---   geo:              出口的几何数据
--- 返回：新创建的车厢实体 (或 nil)
+---@param car LuaEntity 要传送的旧车厢 / Old carriage to teleport
+---@param entry_portaldata PortalData 入口数据 / Entry portal data
+---@param exit_portaldata PortalData 出口数据 / Exit portal data
+---@param spawn_pos Position 出口生成坐标 / Spawn position
+---@param geo table 几何数据 / Geometry data
+---@return LuaEntity|nil 新车厢实体 / New carriage entity
 local function spawn_next_car_intelligently(car, entry_portaldata, exit_portaldata, spawn_pos, geo)
     local new_car = nil
 
@@ -563,8 +575,8 @@ end
 -- =================================================================================
 -- 【辅助函数】确保几何数据缓存有效 (去重逻辑)
 -- =================================================================================
--- 参数：portaldata (传送门数据)
--- 返回：有效的 geo 配置表
+---@param portaldata PortalData 传送门数据 / Portal data
+---@return table 有效的几何配置表 / Valid geometry config
 local function ensure_geometry_cache(portaldata)
     if not (portaldata and portaldata.shell and portaldata.shell.valid) then
         return nil
@@ -582,6 +594,8 @@ end
 -- =================================================================================
 -- 辅助函数：从列车时刻表中读取目标ID信号 (riftrail-go-to-id)
 -- =================================================================================
+---@param train LuaTrain 要读取的列车 / The train to read
+---@return integer|nil 目标传送门ID / Target portal ID
 local function get_circuit_go_to_id(train)
     if not (train and train.valid and train.schedule) then
         return nil
@@ -613,6 +627,8 @@ end
 -- =================================================================================
 -- 优先级 1: go-to-id 信号 (无论来自LTN还是玩家手动设置)
 -- 优先级 2: 默认返回第一个可用出口 (兜底)
+---@param entry_portaldata PortalData 入口数据 / Entry portal data
+---@return PortalData|nil 目标出口数据 / Target exit portal data
 local function select_target_exit(entry_portaldata)
     -- [防御性检查 1] 确保入口数据存在
     if not entry_portaldata then
@@ -704,8 +720,8 @@ end
 -- =================================================================================
 -- 【业务逻辑】尝试启动传送流程
 -- =================================================================================
-
--- 传送会话初始化
+---@param entry_portal PortalData 入口数据 / Entry portal data
+---@param exit_portal PortalData 出口数据 / Exit portal data
 local function initialize_teleport_session(entry_portal, exit_portal)
     -- 1. 抢占互斥锁
     exit_portal.locking_entry_id = entry_portal.unit_number
@@ -732,6 +748,7 @@ local function initialize_teleport_session(entry_portal, exit_portal)
 end
 
 -- 排队逻辑处理器
+---@param portaldata PortalData 传送门数据 / Portal data
 local function process_waiting_logic(portaldata)
     -- 车厢无效 -> 清理并退出
     if not (portaldata.waiting_car and portaldata.waiting_car.valid) then
@@ -756,13 +773,13 @@ local function process_waiting_logic(portaldata)
     -- 通过所有检查 -> 执行初始化
     initialize_teleport_session(portaldata, exit_portal)
 end
-
--- =================================================================================
--- 新增辅助函数 (代码提纯)
--- =================================================================================
 -- =================================================================================
 -- 统一列车状态恢复函数
 -- =================================================================================
+---@param train LuaTrain 要恢复的列车 / Train to restore
+---@param portaldata PortalData 传送门数据 / Portal data
+---@param apply_speed boolean 是否恢复速度 / Whether to restore speed
+---@param target_index integer|nil 目标索引 / Target index
 local function restore_train_state(train, portaldata, apply_speed, target_index)
     if not (train and train.valid) then
         return
@@ -800,6 +817,8 @@ end
 -- =================================================================================
 -- 结束传送：清理状态，恢复数据
 -- =================================================================================
+---@param entry_portaldata PortalData 入口数据 / Entry portal data
+---@param exit_portaldata PortalData 出口数据 / Exit portal data
 local function finalize_sequence(entry_portaldata, exit_portaldata)
     if RiftRail.DEBUG_MODE_ENABLED then
         log_tp("传送结束: 清理状态 (入口ID: " .. entry_portaldata.id .. ", 出口ID: " .. exit_portaldata.id .. ")")
@@ -866,6 +885,8 @@ end
 -- =================================================================================
 -- 传送下一节车厢 (由 on_tick 驱动)
 -- =================================================================================
+---@param entry_portaldata PortalData 入口数据 / Entry portal data
+---@param exit_portaldata PortalData 出口数据 / Exit portal data
 function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     -- 必须在 entry_portaldata.exit_car 被后续逻辑更新之前记录下来
     local is_first_car = (entry_portaldata.exit_car == nil)
@@ -1106,7 +1127,7 @@ end
 -- =================================================================================
 -- 触发入口 (on_entity_died)
 -- =================================================================================
-
+---@param event EventData 碰撞器死亡事件 / Collider died event
 function Teleport.on_collider_died(event)
     local entity = event.entity
     if not (entity and entity.valid) then
@@ -1192,7 +1213,7 @@ end
 -- =================================================================================
 -- 持续动力 (每 tick 调用)
 -- =================================================================================
-
+---@param portaldata PortalData 传送门数据 / Portal data
 function Teleport.sync_momentum(portaldata)
     -- 使用目标选择器
     local exit_portaldata = select_target_exit(portaldata)
@@ -1268,6 +1289,7 @@ end
 -- =================================================================================
 -- 【独立任务】处理碰撞器重建
 -- =================================================================================
+---@param portaldata PortalData 传送门数据
 local function process_rebuild_collider(portaldata)
     if not (portaldata.shell and portaldata.shell.valid) then
         return
@@ -1310,6 +1332,8 @@ end
 -- =================================================================================
 -- 【独立任务】处理传送序列步进
 -- =================================================================================
+---@param portaldata PortalData 传送门数据 / Portal data
+---@param tick integer 当前tick / Current tick
 local function process_teleport_sequence(portaldata, tick)
     -- 频率控制：从游戏设置中读取间隔值
     local interval = exit_portaldata.placement_interval or settings.global["rift-rail-placement-interval"].value
@@ -1334,7 +1358,7 @@ end
 -- =================================================================================
 -- Tick 调度 (GC 优化版)
 -- =================================================================================
-
+---@param event EventData tick事件 / Tick event
 function Teleport.on_tick(event)
     local list = storage.active_teleporter_list or {}
 
