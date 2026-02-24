@@ -580,72 +580,15 @@ end)
 script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
     -- 只有当开关被打开时才执行
     if event.setting == "rift-rail-reset-colliders" and settings.global["rift-rail-reset-colliders"].value then
-        -- 1. 【焦土】销毁全图所有的旧碰撞器
-        for _, surface in pairs(game.surfaces) do
-            local old_colliders = surface.find_entities_filtered({ name = "rift-rail-collider" })
-            for _, c in pairs(old_colliders) do
-                c.destroy()
-            end
-        end
-
-        -- 2. 【重生】在正确位置重新生成
-        if storage.rift_rails then
-            for _, portaldata in pairs(storage.rift_rails) do
-                if portaldata.shell and portaldata.shell.valid then
-                    -- 只有入口和中立需要碰撞器
-                    if portaldata.mode == "entry" or portaldata.mode == "neutral" then
-                        local dir = portaldata.shell.direction
-                        local offset = { x = 0, y = 0 }
-
-                        -- 偏移量计算
-                        if dir == 0 then
-                            offset = { x = 0, y = -2 } -- North
-                        elseif dir == 4 then
-                            offset = { x = 2, y = 0 } -- East
-                        elseif dir == 8 then
-                            offset = { x = 0, y = 2 } -- South
-                        elseif dir == 12 then
-                            offset = { x = -2, y = 0 } -- West
-                        end
-
-                        -- 获取新创建的 collider 实体
-                        local new_collider = portaldata.surface.create_entity({
-                            name = "rift-rail-collider",
-                            position = { x = portaldata.shell.position.x + offset.x, y = portaldata.shell.position.y + offset.y },
-                            force = portaldata.shell.force,
-                        })
-
-                        -- 将新 collider 同步回 children 列表
-                        if new_collider and portaldata.children then
-                            -- 1. 清理旧的 collider 引用
-                            for i = #portaldata.children, 1, -1 do
-                                local child_data = portaldata.children[i]
-                                if child_data and child_data.entity and (not child_data.entity.valid or child_data.entity.name == "rift-rail-collider") then
-                                    table.remove(portaldata.children, i)
-                                end
-                            end
-                            -- 2. 注册新的 collider
-                            table.insert(portaldata.children, {
-                                entity = new_collider,
-                                relative_pos = offset, -- "offset" 就是我们刚算好的相对坐标
-                            })
-                        end
-                    end
-                    -- 重置标记
-                    portaldata.collider_needs_rebuild = false
-                end
-            end
-        end
-
-        -- 3. 【自复位】执行完后自动把开关关掉
+        Util.rebuild_all_colliders()
+        -- 执行完后自动把开关关掉
         settings.global["rift-rail-reset-colliders"] = { value = false }
-
         game.print({ "messages.rift-rail-colliders-reset" })
+    end
 
-        -- 监听卸载清理开关
-    elseif event.setting == "rift-rail-uninstall-cleanup" and settings.global["rift-rail-uninstall-cleanup"].value then
+    -- 监听卸载清理开关
+    if event.setting == "rift-rail-uninstall-cleanup" and settings.global["rift-rail-uninstall-cleanup"].value then
         -- 1. 遍历所有建筑数据
-        local count_cs = 0
         local count_ltn = 0
 
         if storage.rift_rails then
@@ -676,9 +619,9 @@ script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
         if RiftRail.DEBUG_MODE_ENABLED then
             log_debug("卸载清理完成: LTN=" .. count_ltn)
         end
-
-        -- 监听调试模式的变更
-    elseif event.setting == "rift-rail-debug-mode" then
+    end
+    -- 监听调试模式的变更
+    if event.setting == "rift-rail-debug-mode" then
         RiftRail.DEBUG_MODE_ENABLED = settings.global["rift-rail-debug-mode"].value
     end
 end)
@@ -692,10 +635,12 @@ script.on_init(function()
     State.ensure_storage() -- 会创建空的 rift_rails 和 id_map
     storage.collider_map = {}
     storage.active_teleporter_list = {}
+    storage.collider_to_portal = {}
     if not storage.rift_rail_ltn_routing_table then
         storage.rift_rail_ltn_routing_table = {} -- 初始化 LTN 路由表
     end
     register_ltn_events() -- 注册 LTN 事件（若可用）
+    storage.collider_migration_done = true
 end)
 
 -- on_configuration_changed: 处理模组更新或配置变更
@@ -710,6 +655,15 @@ script.on_configuration_changed(function(event)
 
     -- 2. 执行所有迁移任务
     Migrations.run_all()
+
+    -- 处理碰撞器获得实体ID
+    if not storage.collider_migration_done then
+        Util.rebuild_all_colliders()
+        storage.collider_migration_done = true
+    end
+    if not storage.collider_to_portal then
+        storage.collider_to_portal = {}
+    end
 end)
 
 -- on_load: 只在加载存档时运行

@@ -3,7 +3,7 @@ local sprites = require("prototypes.sprites.rift-rail-sprites")
 
 data:extend({
     {
-        type = "simple-entity",
+        type = "simple-entity-with-owner",
         name = "rift-rail-collider",
 
         flags = {
@@ -11,7 +11,7 @@ data:extend({
             "not-repairable",
             "not-blueprintable",
             "not-deconstructable",
-            "not-on-map"
+            "not-on-map",
         },
 
         hidden = true,
@@ -23,8 +23,8 @@ data:extend({
         collision_box = util.create_centered_box(2, 2),
         collision_mask = {
             layers = {
-                ["train"] = true
-            }
+                ["train"] = true,
+            },
         },
     },
 })
