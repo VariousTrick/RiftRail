@@ -12,14 +12,18 @@ function State.ensure_storage()
     if not storage.rift_rails then
         storage.rift_rails = {}
         storage.next_rift_id = 1
-        -- 【新增】创建 id_map 缓存
         storage.rift_rail_id_map = {}
+        storage.collider_to_portal = {}
     end
 
     -- 2. 为从旧版本升级的存档补全 id_map
     if not storage.rift_rail_id_map then
         storage.rift_rail_id_map = {}
         -- 迁移逻辑将在 control.lua 的 on_configuration_changed 中执行
+    end
+
+    if not storage.collider_to_portal then
+        storage.collider_to_portal = {}
     end
 end
 

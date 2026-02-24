@@ -1069,7 +1069,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
 
     -- 更新链表指针
     entry_portaldata.exit_car = new_car -- 记录刚传过去的这节 (虽然没什么用，但保持一致)
-    exit_portaldata.exit_car = new_car  -- 记录出口的最前头 (用于拉动)
+    exit_portaldata.exit_car = new_car -- 记录出口的最前头 (用于拉动)
 
     -- 准备下一节
     -- =========================================================================
@@ -1134,6 +1134,10 @@ function Teleport.on_collider_died(event)
         return
     end
 
+    if not (entity.unit_number and storage.collider_to_portal) then
+        return
+    end
+
     local cause = event.cause -- 撞击者
     if cause and cause.name == "rift-rail-leader-train" then
         cause.destroy()
@@ -1141,24 +1145,17 @@ function Teleport.on_collider_died(event)
         return -- 销毁后直接结束，不执行任何传送逻辑
     end
 
-    -- 1. 反查建筑数据
-    -- 碰撞器是 children 的一部分，或者是位置重叠
-    -- 为了快，假设我们能通过位置找到 Core/Shell
-    -- 或者更简单：在 Builder.lua 里我们记录了 portaldata，我们可以遍历查找
-    -- 但遍历太慢。更好的方法是：on_entity_died 传入的 entity 我们去 State 查
-    -- 但 State.get_portaldata 主要是查 Shell 或 Core。
-    -- 临时方案：搜索附近的 Shell
-    local shells = entity.surface.find_entities_filtered({
-        name = "rift-rail-entity",
-        position = entity.position,
-        radius = 3,
-    })
-    local shell = shells[1]
-    if not shell then
-        return
+    -- 获取传送门 ID
+    local portal_unit_number = storage.collider_to_portal[entity.unit_number]
+    if not portal_unit_number then
+        return -- 不是我们的碰撞器，或者是旧版遗留
     end
 
-    local portaldata = State.get_portaldata(shell)
+    -- 立即清理字典 (人死销户，防止内存泄漏)
+    storage.collider_to_portal[entity.unit_number] = nil
+
+    -- 获取传送门数据 (直接用 unit_number 查，最快)
+    local portaldata = State.get_portaldata_by_unit_number(portal_unit_number)
     if not portaldata then
         return
     end
@@ -1308,8 +1305,18 @@ local function process_rebuild_collider(portaldata)
         force = portaldata.shell.force,
     })
 
+    if not portaldata.children then
+        portaldata.children = {}
+    end
+
     -- 4. 将新碰撞器同步回 children 列表
     if new_collider and portaldata.children then
+
+        if new_collider.unit_number then
+            storage.collider_to_portal = storage.collider_to_portal or {}
+            storage.collider_to_portal[new_collider.unit_number] = portaldata.unit_number
+        end
+
         -- 清理旧引用 (倒序)
         for i = #portaldata.children, 1, -1 do
             local child_data = portaldata.children[i]

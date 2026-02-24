@@ -281,7 +281,16 @@ function Builder.on_built(event)
     -- 6. 创建触发器
     if recovered_mode == "entry" or recovered_mode == "neutral" then
         local col_offset = rotate_point(MASTER_LAYOUT.collider, direction)
-        create_child("rift-rail-collider", col_offset, direction)
+
+        -- 1. 捕获创建出的实体
+        local collider = create_child("rift-rail-collider", col_offset, direction)
+
+        -- 2. 建立碰撞器与传送门的映射关系 (Collider -> Portal)
+        if collider and collider.unit_number then
+            storage.collider_to_portal = storage.collider_to_portal or {}
+            -- 写入映射: 碰撞器ID -> 传送门ID
+            storage.collider_to_portal[collider.unit_number] = shell.unit_number
+        end
     end
 
     -- 7. 创建物理堵头
@@ -505,6 +514,12 @@ function Builder.on_destroy(event, player_index)
             for _, child_data in pairs(data.children) do
                 local child = child_data.entity
                 if child and child.valid and child ~= entity then
+                    if child.unit_number and storage.collider_to_portal then
+                        if storage.collider_to_portal[child.unit_number] then
+                            storage.collider_to_portal[child.unit_number] = nil
+                        end
+                    end
+
                     child.destroy()
                 end
             end

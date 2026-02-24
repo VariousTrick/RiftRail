@@ -133,12 +133,18 @@ local function update_collider_state(portaldata)
         return
     end
 
-    -- 1. 清理旧的碰撞器 (同时从户口本上除名)
+    -- 1. 清理旧的碰撞器 (同时从字典销户)
     if portaldata.children then
         -- 使用倒序遍历，安全地在循环中移除元素
         for i = #portaldata.children, 1, -1 do
             local child_data = portaldata.children[i]
             if child_data and child_data.entity and child_data.entity.valid and child_data.entity.name == "rift-rail-collider" then
+
+                -- 防止字典泄漏
+                if child_data.entity.unit_number and storage.collider_to_portal then
+                    storage.collider_to_portal[child_data.entity.unit_number] = nil
+                end
+
                 -- 从地图上销毁
                 child_data.entity.destroy()
                 -- 从 children 列表中移除
@@ -173,15 +179,23 @@ local function update_collider_state(portaldata)
             force = portaldata.shell.force,
         })
 
-        -- 将新创建的碰撞器登记到 children 列表中
-        if new_collider and portaldata.children then
-            table.insert(portaldata.children, {
-                entity = new_collider,
-                relative_pos = relative_pos,
-            })
+        -- 将新创建的碰撞器登记到 children 列表中并注册 ID
+        if new_collider then
+            if new_collider.unit_number then
+                storage.collider_to_portal = storage.collider_to_portal or {}
+                storage.collider_to_portal[new_collider.unit_number] = portaldata.unit_number
+            end
+
+            if portaldata.children then
+                table.insert(portaldata.children, {
+                    entity = new_collider,
+                    relative_pos = relative_pos,
+                })
+            end
         end
     end
 end
+
 
 -- ============================================================================
 -- 1. 更新名称
