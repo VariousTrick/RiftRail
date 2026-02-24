@@ -985,13 +985,13 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
 
     -- 保存第一节车的数据
     if is_first_car then
-        exit_portaldata.saved_manual_mode = car.train.manual_mode         -- 保存手动/自动模式
-        exit_portaldata.old_train_id = car.train.id                       -- 保存旧车ID
-        exit_portaldata.saved_schedule_index = car.train.schedule.current -- 保存时刻表索引
+        exit_portaldata.saved_manual_mode = car.train.manual_mode                                       -- 保存手动/自动模式
+        exit_portaldata.old_train_id = car.train.id                                                     -- 保存旧车ID
+        exit_portaldata.saved_schedule_index = car.train.schedule and car.train.schedule.current or nil -- 保存时刻表索引
         exit_portaldata.cached_teleport_speed = settings.global["rift-rail-teleport-speed"]
-            .value                                                        -- 缓存设定中的列车速度，供 sync_momentum 使用
+        .value                                                                                          -- 缓存设定中的列车速度，供 sync_momentum 使用
         exit_portaldata.placement_interval = settings.global["rift-rail-placement-interval"]
-            .value                                                        -- 缓存设定中的放置间隔，供 process_teleport_sequence 使用
+        .value                                                                                          -- 缓存设定中的放置间隔，供 process_teleport_sequence 使用
     end
 
     -- 计算目标朝向
