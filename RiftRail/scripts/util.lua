@@ -358,4 +358,24 @@ function Util.rebuild_all_colliders()
     end
 end
 
+-- 计算绝对的放置坐标和堵塞检测区域 (0表分配优化)
+function Util.calculate_teleport_cache(position, direction)
+    -- spawn_offset 永远是 {0,0}，所以放置坐标等于建筑中心坐标
+    local spawn_pos = { x = position.x, y = position.y }
+    local check_area = {}
+
+    -- 根据 16 方向制精确计算绝对坐标的包围盒 (左上角, 右下角)
+    if direction == 0 then
+        check_area = { left_top = { x = spawn_pos.x - 1, y = spawn_pos.y }, right_bottom = { x = spawn_pos.x + 1, y = spawn_pos.y + 10 } }
+    elseif direction == 4 then
+        check_area = { left_top = { x = spawn_pos.x - 10, y = spawn_pos.y - 1 }, right_bottom = { x = spawn_pos.x, y = spawn_pos.y + 1 } }
+    elseif direction == 8 then
+        check_area = { left_top = { x = spawn_pos.x - 1, y = spawn_pos.y - 10 }, right_bottom = { x = spawn_pos.x + 1, y = spawn_pos.y } }
+    elseif direction == 12 then
+        check_area = { left_top = { x = spawn_pos.x, y = spawn_pos.y - 1 }, right_bottom = { x = spawn_pos.x + 10, y = spawn_pos.y + 1 } }
+    end
+
+    return spawn_pos, check_area
+end
+
 return Util

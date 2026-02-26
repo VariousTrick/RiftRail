@@ -356,6 +356,8 @@ function Builder.on_built(event)
         shell = shell,
         children = children,
         blocker_position = storage.temp_blocker_pos,
+        cached_spawn_pos = cached_spawn,
+        cached_check_area = cached_area,
     }
     storage.temp_blocker_pos = nil
 

@@ -108,6 +108,7 @@ if Migrations.init then
         State = State,
         log_debug = log_debug,
         LTN = LTN,
+        Util = Util,
     })
 end
 
@@ -641,6 +642,7 @@ script.on_init(function()
     end
     register_ltn_events() -- 注册 LTN 事件（若可用）
     storage.collider_migration_done = true
+    storage.rift_rail_teleport_cache_calculated = true
 end)
 
 -- on_configuration_changed: 处理模组更新或配置变更
