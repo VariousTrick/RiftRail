@@ -8,6 +8,7 @@ local State = nil
 local log_debug = function() end
 
 function Builder.init(deps)
+    flib_util = deps.flib_util
     State = deps.State
     Logic = deps.Logic
     if deps.log_debug then
@@ -548,6 +549,266 @@ function Builder.on_destroy(event, player_index)
     -- 4: 在路径 B 的出口调用清理
     final_cleanup()
     log_debug("[Destroy] Path B finished.")
+end
+
+-- ============================================================================
+-- 蓝图与高级建造事件 (从 control.lua 迁移)
+-- ============================================================================
+
+-- 1. 处理克隆事件
+function Builder.on_cloned(event)
+    local new_entity = event.destination
+    local old_entity = event.source
+
+    if not (new_entity and new_entity.valid) then
+        return
+    end
+    if new_entity.name ~= "rift-rail-entity" then
+        return
+    end
+
+    local old_unit_number = old_entity.unit_number
+    -- 注意：因为 Builder 里可能没有引入 flib_util，如果你没引入，可以直接用 util.table.deepcopy
+    local flib_util = require("util")
+
+    local old_data = storage.rift_rails and storage.rift_rails[old_unit_number]
+    if not old_data then
+        return
+    end
+
+    local new_data = flib_util.table.deepcopy(old_data)
+    local new_unit_number = new_entity.unit_number
+
+    new_data.unit_number = new_unit_number
+    new_data.shell = new_entity
+    new_data.surface = new_entity.surface
+
+    -- 重建 children 列表
+    local old_children_list = new_data.children
+    new_data.children = {}
+    local new_center_pos = new_entity.position
+
+    if old_children_list then
+        for _, old_child_data in pairs(old_children_list) do
+            if old_child_data.relative_pos and old_child_data.entity and old_child_data.entity.valid then
+                local child_name = old_child_data.entity.name
+                local expected_pos = {
+                    x = new_center_pos.x + old_child_data.relative_pos.x,
+                    y = new_center_pos.y + old_child_data.relative_pos.y,
+                }
+                local search_radius = (child_name == "rift-rail-lamp") and 1.5 or 0.5
+                local found_clone = new_entity.surface.find_entities_filtered({
+                    name = child_name,
+                    position = expected_pos,
+                    radius = search_radius,
+                    limit = 1,
+                })
+
+                if found_clone and found_clone[1] then
+                    table.insert(new_data.children, {
+                        entity = found_clone[1],
+                        relative_pos = old_child_data.relative_pos,
+                    })
+
+                    -- 【重要】如果是碰撞器，必须给克隆体上户口！
+                    if child_name == "rift-rail-collider" and found_clone[1].unit_number then
+                        storage.collider_to_portal = storage.collider_to_portal or {}
+                        storage.collider_to_portal[found_clone[1].unit_number] = new_unit_number
+                    end
+                end
+            end
+        end
+    end
+
+    -- 清除旧的速度方向缓存
+    new_data.blocker_position = nil
+
+    -- 【核心修复】：克隆后，必须重新计算绝对坐标缓存！
+    -- 假设你的 Builder.lua 顶部已经 require 了 "scripts.util" 并命名为 Util
+    local cached_spawn, cached_area = Util.calculate_teleport_cache(new_entity.position, new_entity.direction)
+    new_data.cached_spawn_pos = cached_spawn
+    new_data.cached_check_area = cached_area
+
+    -- 保存新数据，清理旧数据
+    storage.rift_rails[new_unit_number] = new_data
+    if storage.rift_rail_id_map then
+        storage.rift_rail_id_map[new_data.id] = new_unit_number
+    end
+    storage.rift_rails[old_unit_number] = nil
+end
+
+-- 2. 处理蓝图放置
+function Builder.on_setup_blueprint(event)
+    if not event.mapping then
+        return
+    end
+
+    local player = game.get_player(event.player_index)
+    -- 智能获取蓝图
+    local blueprint = player.blueprint_to_setup
+    if not (blueprint and blueprint.valid and blueprint.is_blueprint) then
+        blueprint = player.cursor_stack
+    end
+    if not (blueprint and blueprint.valid and blueprint.is_blueprint) then
+        return
+    end
+
+    local entities = blueprint.get_blueprint_entities()
+    if not entities then
+        return
+    end
+
+    local mapping = event.mapping.get()
+    local modified = false
+    local new_entities = {}
+
+    -- 用于生成唯一的 entity_number
+    local max_entity_number = 0
+    for _, e in pairs(entities) do
+        if e.entity_number > max_entity_number then
+            max_entity_number = e.entity_number
+        end
+    end
+
+    for i, bp_entity in pairs(entities) do
+        local source_entity = mapping[bp_entity.entity_number]
+
+        if source_entity and source_entity.valid and source_entity.name == "rift-rail-entity" then
+            -- 1. 处理主建筑 -> 替换为放置器
+            modified = true
+            local data = storage.rift_rails[source_entity.unit_number]
+
+            local placer_entity = {
+                entity_number = bp_entity.entity_number,
+                name = "rift-rail-placer-entity",
+                position = bp_entity.position,
+                direction = bp_entity.direction,
+                tags = {},
+            }
+            if data then
+                placer_entity.tags.rr_name = data.name
+                placer_entity.tags.rr_mode = data.mode
+                placer_entity.tags.rr_icon = data.icon
+                placer_entity.tags.rr_prefix = data.prefix
+            end
+            table.insert(new_entities, placer_entity)
+
+            -- 2. 注入内部车站 (实现蓝图参数化)
+            if data and data.children then
+                for _, child_data in pairs(data.children) do
+                    local child = child_data.entity
+                    if child and child.valid and child.name == "rift-rail-station" then
+                        -- 计算原始相对坐标 (保留横向偏移 x=2)
+                        local offset_x = child.position.x - source_entity.position.x
+                        local offset_y = child.position.y - source_entity.position.y
+                        local dir = source_entity.direction
+
+                        -- 纵向保持 6.5 (红绿灯下方)
+                        -- 横向从 2.0 改为 3.5 (确保边缘不重叠)
+                        if dir == 0 then -- North
+                            offset_x = 2 -- 向右更远一点
+                            offset_y = 7
+                        elseif dir == 4 then -- East
+                            offset_x = -7
+                            offset_y = 2 -- 向下更远一点
+                        elseif dir == 8 then -- South
+                            offset_x = -2 -- 向左更远一点
+                            offset_y = -7
+                        elseif dir == 12 then -- West
+                            offset_x = 7
+                            offset_y = -2 -- 向上更远一点
+                        end
+
+                        max_entity_number = max_entity_number + 1
+
+                        local station_bp_entity = {
+                            entity_number = max_entity_number,
+                            name = "rift-rail-station",
+                            position = {
+                                x = bp_entity.position.x + offset_x,
+                                y = bp_entity.position.y + offset_y,
+                            },
+                            direction = child.direction,
+                            station = child.backer_name,
+                        }
+
+                        table.insert(new_entities, station_bp_entity)
+                        if RiftRail.DEBUG_MODE_ENABLED then
+                            log_debug("[Control] 蓝图注入车站: 偏移修正 (" .. offset_x .. ", " .. offset_y .. ")")
+                        end
+                        break
+                    end
+                end
+            end
+
+            -- [重要] 允许车站通过过滤器
+        elseif not (source_entity and source_entity.valid and source_entity.name:find("rift-rail-")) or (source_entity.name == "rift-rail-station") then
+            table.insert(new_entities, bp_entity)
+        end
+    end
+
+    if modified then
+        blueprint.set_blueprint_entities(new_entities)
+    end
+end
+
+-- 3. 处理配置粘贴 (Shift+右键/左键)
+function Builder.on_settings_pasted(event)
+    local source = event.source
+    local dest = event.destination
+    local player = game.get_player(event.player_index)
+
+    -- 1. 验证：必须是从我们的建筑复制到我们的建筑
+    if not (source.valid and dest.valid) then
+        return
+    end
+    if source.name ~= "rift-rail-entity" or dest.name ~= "rift-rail-entity" then
+        return
+    end
+
+    -- 2. 获取数据
+    local source_data = storage.rift_rails[source.unit_number]
+    local dest_data = storage.rift_rails[dest.unit_number]
+
+    if source_data and dest_data then
+        -- 3. 复制基础配置 (名字、图标)
+        dest_data.name = source_data.name
+        dest_data.icon = source_data.icon -- 这是一个 table，直接引用没问题，因为后续通常是读操作
+        dest_data.prefix = source_data.prefix
+
+        -- 4. 应用模式 (Entry/Exit/Neutral)
+        -- 我们调用 Logic.set_mode，这样它会自动处理碰撞器的生成/销毁，以及打印提示信息
+        -- 注意：这里传入 player_index，所以玩家会收到 "模式已切换为入口" 的提示，反馈感很好
+        Logic.set_mode(event.player_index, dest_data.id, source_data.mode)
+
+        -- 5. 刷新车站显示名称 (backer_name)
+        if dest_data.children then
+            for _, child_data in pairs(dest_data.children) do
+                -- 先从数据结构中取出实体对象
+                local child = child_data.entity
+                if child and child.valid and child.name == "rift-rail-station" then
+                    -- 移除强制空格，保持与 Logic/Builder 一致
+                    local master_icon = "[item=rift-rail-placer]"
+                    local user_icon_str = ""
+                    if dest_data.icon then
+                        user_icon_str = "[" .. dest_data.icon.type .. "=" .. dest_data.icon.name .. "]"
+                    end
+                    -- dest_data.name 此时已包含必要的空格（如果有），直接拼接
+                    child.backer_name = master_icon .. (dest_data.prefix or "") .. user_icon_str .. dest_data.name
+                    break
+                end
+            end
+        end
+
+        -- 手动播放原版粘贴音效
+        -- 这会让 Shift+左键 时也能听到熟悉的“咔嚓”声
+        player.play_sound({ path = "utility/entity_settings_pasted" })
+
+        -- 6. Debug 信息
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_debug("设置已粘贴: " .. source_data.name .. " -> " .. dest_data.name)
+        end
+    end
 end
 
 return Builder

@@ -45,6 +45,7 @@ local Util = require("scripts.util")
 local Teleport = require("scripts.teleport")
 local LTN = require("scripts.ltn_compat")
 local Migrations = require("scripts.migrations")
+local Maintenance = require("scripts.maintenance")
 -- 仅当玩家安装并启用了 informatron 模组时，才加载并注册说明书接口
 if script.active_mods["informatron"] then
     local InformatronSetup = require("scripts.informatron")
@@ -55,6 +56,7 @@ end
 if Builder.init then
     Builder.init({
         log_debug = log_debug,
+        flib_util = flib_util,
         State = State,
         Logic = Logic,
     })
@@ -119,6 +121,15 @@ if Remote.init then
         Logic = Logic,
         Builder = Builder,
         GUI = GUI,
+        log_debug = log_debug,
+    })
+end
+
+if Maintenance.init then
+    Maintenance.init({
+        State = State,
+        LTN = LTN,
+        Util = Util,
         log_debug = log_debug,
     })
 end
@@ -221,70 +232,12 @@ end
 -- 6. GUI 事件 (保持不变)
 -- ============================================================================
 
-script.on_event(defines.events.on_entity_renamed, function(event)
-    local entity = event.entity
-    if not (entity and entity.valid and entity.name == "rift-rail-station") then
-        return
-    end
-
-    local portaldata = State.get_portaldata(entity)
-    if not portaldata then
-        return
-    end
-
-    local master_icon = "[item=rift-rail-placer]"
-    local raw_name = entity.backer_name or ""
-    local clean_str = raw_name:gsub("%[item=rift%-rail%-placer%]", "", 1)
-
-    local prefix, icon_type, icon_name, separator, plain_name = string.match(clean_str, "^(%s*)%[([%w%-]+)=([%w%-]+)%](%s*)(.*)")
-
-    if icon_type and icon_name then
-        if icon_name == "rift-rail-placer" then
-            portaldata.icon = nil
-            portaldata.prefix = prefix
-            portaldata.name = (separator or "") .. (plain_name or "")
-        else
-            portaldata.icon = { type = icon_type, name = icon_name }
-            portaldata.prefix = prefix
-            portaldata.name = (separator or "") .. (plain_name or "")
-        end
-    else
-        portaldata.icon = nil
-        local p_space, p_name = string.match(clean_str, "^(%s*)(.*)")
-        portaldata.prefix = p_space
-        portaldata.name = p_name or ""
-    end
-
-    local user_icon_str = ""
-    if portaldata.icon then
-        user_icon_str = "[" .. portaldata.icon.type .. "=" .. portaldata.icon.name .. "]"
-    end
-
-    local final_backer_name = master_icon .. (portaldata.prefix or "") .. user_icon_str .. portaldata.name
-    entity.backer_name = final_backer_name
-
-    -- 强制刷新列车限制，修正引擎因改名可能产生的自动同步错误
-    Logic.refresh_station_limit(portaldata)
-
-    -- 更新 LTN 路由表中的车站名缓存
-    if portaldata.ltn_enabled and LTN.update_station_name_in_routes then
-        LTN.update_station_name_in_routes(portaldata.unit_number, final_backer_name)
-    end
-
-    if portaldata.shell and portaldata.shell.valid then
-        for _, player in pairs(game.connected_players) do
-            local frame = player.gui.screen.rift_rail_main_frame
-            if frame and frame.valid and frame.tags.unit_number == portaldata.unit_number then
-                GUI.build_or_update(player, portaldata.shell)
-            end
-        end
-    end
-end)
+script.on_event(defines.events.on_entity_renamed, Logic.on_entity_renamed)
 
 script.on_event(defines.events.on_gui_opened, function(event)
     local entity = event.entity
 
-    -- [修改] 增加例外判断
+    -- 增加例外判断
     if entity and entity.valid then
         -- 如果打开的是内部车站，直接返回，不执行拦截
         -- 这样引擎就会默认打开车站的原生 GUI
@@ -304,333 +257,14 @@ script.on_event(defines.events.on_gui_switch_state_changed, GUI.handle_switch_st
 script.on_event(defines.events.on_gui_checked_state_changed, GUI.handle_checked_state_changed)
 script.on_event(defines.events.on_gui_confirmed, GUI.handle_confirmed)
 script.on_event(defines.events.on_gui_selection_state_changed, GUI.handle_selection_state_changed)
-
--- 当玩家按 E 或 ESC 关闭窗口时触发
 script.on_event(defines.events.on_gui_closed, GUI.handle_close)
--- ============================================================================
--- 克隆/传送事件处理
--- ============================================================================
-script.on_event(defines.events.on_entity_cloned, function(event)
-    local new_entity = event.destination
-    local old_entity = event.source
+script.on_event(defines.events.on_entity_cloned, Builder.on_cloned)
+script.on_event(defines.events.on_player_setup_blueprint, Builder.on_setup_blueprint)
+script.on_event(defines.events.on_entity_settings_pasted, Builder.on_settings_pasted)
+script.on_event(defines.events.on_runtime_mod_setting_changed, Maintenance.on_settings_changed)
 
-    if not (new_entity and new_entity.valid) then
-        return
-    end
 
-    -- 分支 B: RiftRail 主体
-    if new_entity.name ~= "rift-rail-entity" then
-        return
-    end
-
-    local old_unit_number = old_entity.unit_number
-    local old_data = storage.rift_rails and storage.rift_rails[old_unit_number]
-
-    if not old_data then
-        return
-    end
-
-    local new_data = flib_util.table.deepcopy(old_data)
-    local new_unit_number = new_entity.unit_number
-
-    new_data.unit_number = new_unit_number
-    new_data.shell = new_entity
-    new_data.surface = new_entity.surface
-
-    -- 使用“精准且容错的定位”重建 children 列表
-    local old_children_list = new_data.children
-    new_data.children = {}
-    local new_center_pos = new_entity.position
-
-    if old_children_list then
-        for _, old_child_data in pairs(old_children_list) do
-            -- 增加安全检查，确保旧数据是有效的
-            if old_child_data.relative_pos and old_child_data.entity and old_child_data.entity.valid then
-                -- 1. 获取子实体的名字，用于精准点名
-                local child_name = old_child_data.entity.name
-
-                -- 2. 计算子实体在新地表上的精确预期坐标
-                local expected_pos = {
-                    x = new_center_pos.x + old_child_data.relative_pos.x,
-                    y = new_center_pos.y + old_child_data.relative_pos.y,
-                }
-
-                -- 3. 在这个精确位置的稍大范围内，按名字查找克隆体
-                -- 为 'lamp' 使用更大的搜索半径，以应对克隆时的坐标漂移
-                local search_radius = 0.5 -- 默认使用高精度半径
-                if child_name == "rift-rail-lamp" then
-                    search_radius = 1.5 -- 只为灯放宽到 1.5
-                end
-
-                local found_clone = new_entity.surface.find_entities_filtered({
-                    name = child_name,
-                    position = expected_pos,
-                    radius = search_radius, -- 使用动态半径
-                    limit = 1,
-                })
-
-                if found_clone and found_clone[1] then
-                    table.insert(new_data.children, {
-                        entity = found_clone[1],
-                        relative_pos = old_child_data.relative_pos,
-                    })
-                else
-                    if RiftRail.DEBUG_MODE_ENABLED then
-                        log_debug("RiftRail Clone Error: 在位置 " .. serpent.line(expected_pos) .. " 附近未能找到名为 " .. child_name .. " 的子实体克隆体。")
-                    end
-                end
-            end
-        end
-    end
-
-    -- 清除旧的坐标缓存，强制 teleport.lua 在下次使用时重新计算 ("懒加载")
-    new_data.blocker_position = nil
-
-    -- 4. 保存新数据
-    storage.rift_rails[new_unit_number] = new_data
-    if storage.rift_rail_id_map then
-        storage.rift_rail_id_map[new_data.id] = new_unit_number
-    end
-
-    -- 6. 删除旧数据
-    storage.rift_rails[old_unit_number] = nil
-    if RiftRail.DEBUG_MODE_ENABLED then
-        log_debug("[RiftRail] 克隆迁移成功: ID " .. new_data.id .. " | 实体ID " .. old_unit_number .. " -> " .. new_unit_number)
-    end
-end)
-
--- ============================================================================
--- [最终进阶版] 蓝图增强：放置器 + 车站数据注入 (安全坐标修正版)
--- ============================================================================
-script.on_event(defines.events.on_player_setup_blueprint, function(event)
-    if not event.mapping then
-        return
-    end
-
-    local player = game.get_player(event.player_index)
-    -- 智能获取蓝图
-    local blueprint = player.blueprint_to_setup
-    if not (blueprint and blueprint.valid and blueprint.is_blueprint) then
-        blueprint = player.cursor_stack
-    end
-    if not (blueprint and blueprint.valid and blueprint.is_blueprint) then
-        return
-    end
-
-    local entities = blueprint.get_blueprint_entities()
-    if not entities then
-        return
-    end
-
-    local mapping = event.mapping.get()
-    local modified = false
-    local new_entities = {}
-
-    -- 用于生成唯一的 entity_number
-    local max_entity_number = 0
-    for _, e in pairs(entities) do
-        if e.entity_number > max_entity_number then
-            max_entity_number = e.entity_number
-        end
-    end
-
-    for i, bp_entity in pairs(entities) do
-        local source_entity = mapping[bp_entity.entity_number]
-
-        if source_entity and source_entity.valid and source_entity.name == "rift-rail-entity" then
-            -- 1. 处理主建筑 -> 替换为放置器
-            modified = true
-            local data = storage.rift_rails[source_entity.unit_number]
-
-            local placer_entity = {
-                entity_number = bp_entity.entity_number,
-                name = "rift-rail-placer-entity",
-                position = bp_entity.position,
-                direction = bp_entity.direction,
-                tags = {},
-            }
-            if data then
-                placer_entity.tags.rr_name = data.name
-                placer_entity.tags.rr_mode = data.mode
-                placer_entity.tags.rr_icon = data.icon
-                placer_entity.tags.rr_prefix = data.prefix
-            end
-            table.insert(new_entities, placer_entity)
-
-            -- 2. 注入内部车站 (实现蓝图参数化)
-            if data and data.children then
-                for _, child_data in pairs(data.children) do
-                    local child = child_data.entity
-                    if child and child.valid and child.name == "rift-rail-station" then
-                        -- 计算原始相对坐标 (保留横向偏移 x=2)
-                        local offset_x = child.position.x - source_entity.position.x
-                        local offset_y = child.position.y - source_entity.position.y
-                        local dir = source_entity.direction
-
-                        -- 纵向保持 6.5 (红绿灯下方)
-                        -- 横向从 2.0 改为 3.5 (确保边缘不重叠)
-                        if dir == 0 then -- North
-                            offset_x = 2 -- 向右更远一点
-                            offset_y = 7
-                        elseif dir == 4 then -- East
-                            offset_x = -7
-                            offset_y = 2 -- 向下更远一点
-                        elseif dir == 8 then -- South
-                            offset_x = -2 -- 向左更远一点
-                            offset_y = -7
-                        elseif dir == 12 then -- West
-                            offset_x = 7
-                            offset_y = -2 -- 向上更远一点
-                        end
-
-                        max_entity_number = max_entity_number + 1
-
-                        local station_bp_entity = {
-                            entity_number = max_entity_number,
-                            name = "rift-rail-station",
-                            position = {
-                                x = bp_entity.position.x + offset_x,
-                                y = bp_entity.position.y + offset_y,
-                            },
-                            direction = child.direction,
-                            station = child.backer_name,
-                        }
-
-                        table.insert(new_entities, station_bp_entity)
-                        if RiftRail.DEBUG_MODE_ENABLED then
-                            log_debug("[Control] 蓝图注入车站: 偏移修正 (" .. offset_x .. ", " .. offset_y .. ")")
-                        end
-                        break
-                    end
-                end
-            end
-
-            -- [重要] 允许车站通过过滤器
-        elseif not (source_entity and source_entity.valid and source_entity.name:find("rift-rail-")) or (source_entity.name == "rift-rail-station") then
-            table.insert(new_entities, bp_entity)
-        end
-    end
-
-    if modified then
-        blueprint.set_blueprint_entities(new_entities)
-    end
-end)
--- ============================================================================
--- 复制粘贴设置 (Shift+右键 -> Shift+左键)
--- ============================================================================
-script.on_event(defines.events.on_entity_settings_pasted, function(event)
-    local source = event.source
-    local dest = event.destination
-    local player = game.get_player(event.player_index)
-
-    -- 1. 验证：必须是从我们的建筑复制到我们的建筑
-    if not (source.valid and dest.valid) then
-        return
-    end
-    if source.name ~= "rift-rail-entity" or dest.name ~= "rift-rail-entity" then
-        return
-    end
-
-    -- 2. 获取数据
-    local source_data = storage.rift_rails[source.unit_number]
-    local dest_data = storage.rift_rails[dest.unit_number]
-
-    if source_data and dest_data then
-        -- 3. 复制基础配置 (名字、图标)
-        dest_data.name = source_data.name
-        dest_data.icon = source_data.icon -- 这是一个 table，直接引用没问题，因为后续通常是读操作
-        dest_data.prefix = source_data.prefix
-
-        -- 4. 应用模式 (Entry/Exit/Neutral)
-        -- 我们调用 Logic.set_mode，这样它会自动处理碰撞器的生成/销毁，以及打印提示信息
-        -- 注意：这里传入 player_index，所以玩家会收到 "模式已切换为入口" 的提示，反馈感很好
-        Logic.set_mode(event.player_index, dest_data.id, source_data.mode)
-
-        -- 5. 刷新车站显示名称 (backer_name)
-        if dest_data.children then
-            for _, child_data in pairs(dest_data.children) do
-                -- 先从数据结构中取出实体对象
-                local child = child_data.entity
-                if child and child.valid and child.name == "rift-rail-station" then
-                    -- 移除强制空格，保持与 Logic/Builder 一致
-                    local master_icon = "[item=rift-rail-placer]"
-                    local user_icon_str = ""
-                    if dest_data.icon then
-                        user_icon_str = "[" .. dest_data.icon.type .. "=" .. dest_data.icon.name .. "]"
-                    end
-                    -- dest_data.name 此时已包含必要的空格（如果有），直接拼接
-                    child.backer_name = master_icon .. (dest_data.prefix or "") .. user_icon_str .. dest_data.name
-                    break
-                end
-            end
-        end
-
-        -- 手动播放原版粘贴音效
-        -- 这会让 Shift+左键 时也能听到熟悉的“咔嚓”声
-        player.play_sound({ path = "utility/entity_settings_pasted" })
-
-        -- 6. Debug 信息
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_debug("设置已粘贴: " .. source_data.name .. " -> " .. dest_data.name)
-        end
-    end
-end)
--- ============================================================================
--- 监听设置变更：处理紧急修复指令
--- ============================================================================
-script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
-    -- 只有当开关被打开时才执行
-    if event.setting == "rift-rail-reset-colliders" and settings.global["rift-rail-reset-colliders"].value then
-        Util.rebuild_all_colliders()
-        -- 执行完后自动把开关关掉
-        settings.global["rift-rail-reset-colliders"] = { value = false }
-        game.print({ "messages.rift-rail-colliders-reset" })
-    end
-
-    -- 监听卸载清理开关
-    if event.setting == "rift-rail-uninstall-cleanup" and settings.global["rift-rail-uninstall-cleanup"].value then
-        -- 1. 遍历所有建筑数据
-        local count_ltn = 0
-
-        if storage.rift_rails then
-            for _, portaldata in pairs(storage.rift_rails) do
-                -- 清理 LTN 连接
-                if portaldata.ltn_enabled and LTN.on_portal_destroyed then
-                    LTN.on_portal_destroyed(portaldata)
-                    portaldata.ltn_enabled = false
-                    count_ltn = count_ltn + 1
-                end
-            end
-        end
-
-        -- 2. 检查是否有正在传送的列车 (仅做安全提示)
-        local active_count = storage.active_teleporter_list and #storage.active_teleporter_list or 0
-        if active_count > 0 then
-            game.print({ "messages.rift-rail-warning-active-teleport-during-cleanup", active_count })
-            if RiftRail.DEBUG_MODE_ENABLED then
-                log_debug("警告: 在清理期间检测到 " .. active_count .. " 个活跃传送进程。")
-            end
-        end
-
-        -- 3. 自复位开关
-        settings.global["rift-rail-uninstall-cleanup"] = { value = false }
-
-        -- 4. 反馈结果
-        game.print({ "messages.rift-rail-uninstall-complete", count_ltn })
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_debug("卸载清理完成: LTN=" .. count_ltn)
-        end
-    end
-    -- 监听调试模式的变更
-    if event.setting == "rift-rail-debug-mode" then
-        RiftRail.DEBUG_MODE_ENABLED = settings.global["rift-rail-debug-mode"].value
-    end
-end)
-
--- ============================================================================
 -- 延迟加载事件注册
--- ============================================================================
-
 -- on_init: 只在创建新游戏时运行
 script.on_init(function()
     State.ensure_storage() -- 会创建空的 rift_rails 和 id_map
