@@ -916,13 +916,10 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     if not geo then
         return
     end -- 保护性检查
-    local spawn_pos = Util.add_offset(exit_portaldata.shell.position, geo.spawn_offset)
 
-    -- 动态生成出口检测区域 (使用配置表)
-    local check_area = {
-        left_top = Util.add_offset(spawn_pos, geo.check_area_rel.lt),
-        right_bottom = Util.add_offset(spawn_pos, geo.check_area_rel.rb),
-    }
+    -- 【极限优化】直接从缓存读取绝对世界坐标，0 计算，0 内存分配！
+    local spawn_pos = exit_portaldata.cached_spawn_pos
+    local check_area = exit_portaldata.cached_check_area
 
     -- 如果前面有车 (exit_car)，说明正在传送中，不需要检查堵塞 (我们是接在它后面的)
     -- 只有当 exit_car 为空 (第一节) 时才检查堵塞
@@ -931,6 +928,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         local count = exit_portaldata.surface.count_entities_filtered({
             area = check_area,
             type = { "locomotive", "cargo-wagon", "fluid-wagon", "artillery-wagon" },
+            limit = 1, -- 只需要知道是否有车，不需要确切数量
         })
         if count > 0 then
             is_clear = false

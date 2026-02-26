@@ -16,6 +16,7 @@ function Migrations.init(deps)
     log_debug = deps.log_debug
     CybersynSE = deps.CybersynSE
     LTN = deps.LTN
+    Util = deps.Util
 end
 
 -- ============================================================================
@@ -186,8 +187,7 @@ function Migrations.unified_multi_pairing()
                             custom_id = portal.paired_to_id,
                             unit_number = source.shell.unit_number,
                         }
-                        log_debug("[Migration] 转换出口 ID " ..
-                        portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> source_ids (带缓存)")
+                        log_debug("[Migration] 转换出口 ID " .. portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> source_ids (带缓存)")
                     end
 
                     -- [关键] 清空出口的配对指针，标志着它正式转为多对一被动模式
@@ -230,8 +230,7 @@ function Migrations.unified_multi_pairing()
                             custom_id = portal.paired_to_id,
                             unit_number = target.shell.unit_number,
                         }
-                        log_debug("[Migration] 转换入口 ID " ..
-                        portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> target_ids (带缓存)")
+                        log_debug("[Migration] 转换入口 ID " .. portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> target_ids (带缓存)")
                     end
 
                     -- [关键] 清空旧字段，完成数据结构升级
@@ -378,6 +377,29 @@ function Migrations.final_cybersyn_purge()
 end
 
 -- ============================================================================
+-- [迁移任务 11] v0.10.0-v0.10.1 绝对坐标缓存生成
+-- ============================================================================
+
+-- 为所有现存建筑生成绝对坐标缓存
+function Migrations.calculate_teleport_cache()
+    if not storage.rift_rail_teleport_cache_calculated then
+        if storage.rift_rails then
+            for _, portaldata in pairs(storage.rift_rails) do
+                if portaldata.shell and portaldata.shell.valid then
+                    -- 如果还没有缓存，就算一次并存入
+                    if not portaldata.cached_check_area then
+                        local spawn_pos, check_area = Util.calculate_teleport_cache(portaldata.shell.position, portaldata.shell.direction)
+                        portaldata.cached_spawn_pos = spawn_pos
+                        portaldata.cached_check_area = check_area
+                    end
+                end
+            end
+        end
+    end
+    storage.rift_rail_teleport_cache_calculated = true
+end
+
+-- ============================================================================
 -- 主入口：按顺序执行所有迁移任务
 -- ============================================================================
 function Migrations.run_all()
@@ -397,6 +419,7 @@ function Migrations.run_all()
 
     -- cybersyn兼容移除
     Migrations.final_cybersyn_purge()
+    Migrations.calculate_teleport_cache()
 end
 
 return Migrations
