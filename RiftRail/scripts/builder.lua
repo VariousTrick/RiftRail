@@ -11,6 +11,7 @@ function Builder.init(deps)
     flib_util = deps.flib_util
     State = deps.State
     Logic = deps.Logic
+    Util = deps.Util
     if deps.log_debug then
         log_debug = deps.log_debug
     end
@@ -344,6 +345,8 @@ function Builder.on_built(event)
             end
         end
     end
+
+    local cached_spawn, cached_area = Util.calculate_teleport_cache(shell.position, shell.direction)
 
     storage.rift_rails[shell.unit_number] = {
         id = custom_id,

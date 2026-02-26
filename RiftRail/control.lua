@@ -59,6 +59,7 @@ if Builder.init then
         flib_util = flib_util,
         State = State,
         Logic = Logic,
+        Util = Util,
     })
 end
 

@@ -342,6 +342,11 @@ function Util.rebuild_all_colliders()
                             relative_pos = offset,
                         })
 
+                        -- 重建碰撞器的同时，必须重建它家的坐标缓存！
+                        local cached_spawn, cached_area = Util.calculate_teleport_cache(portaldata.shell.position, portaldata.shell.direction)
+                        portaldata.cached_spawn_pos = cached_spawn
+                        portaldata.cached_check_area = cached_area
+
                         -- 成功创建，标记完成
                         portaldata.collider_needs_rebuild = false
                     else
