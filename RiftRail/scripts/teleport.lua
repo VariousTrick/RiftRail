@@ -397,7 +397,6 @@ local function apply_entry_pulse(entry_portaldata, exit_portaldata)
     -- 3. 施加 10 速度迫使列车“靠近/吸入”传送门
     train.speed = target_speed * 10 * entry_sign
 
-    game.print("施加入口脉冲: 目标速度=" .. target_speed .. ", 方向=" .. (entry_sign == 1 and "正向" or "反向") .. ", 实际速度=" .. train.speed)
     if RiftRail.DEBUG_MODE_ENABLED then
         log_tp("入口脉冲已施加: 速度=" .. train.speed)
     end
@@ -671,14 +670,6 @@ local function select_target_exit(entry_portaldata)
         return nil
     end
 
-    -- 如果已缓存出口，优先使用 (这是正在传送中的状态，必须保持锁定)
-    if entry_portaldata.selected_exit_id then
-        local cached_portal = State.get_portaldata_by_id(entry_portaldata.selected_exit_id)
-        if cached_portal and cached_portal.shell and cached_portal.shell.valid then
-            return cached_portal
-        end
-    end
-
     -- [防御性检查 2] 确保 target_ids 是一个有效的表
     local targets = entry_portaldata.target_ids
     if type(targets) ~= "table" then
@@ -762,8 +753,8 @@ local function initialize_teleport_session(entry_portal, exit_portal)
     -- 1. 抢占互斥锁
     exit_portal.locking_entry_id = entry_portal.unit_number
 
-    -- 缓存出口，后续车厢不再重新选择
-    entry_portal.selected_exit_id = exit_portal.id
+    -- 直接把出口的物理身份证写死在记事本上
+    entry_portal.locked_exit_unit_number = exit_portal.unit_number
 
     -- 2. 迁移车厢引用
     entry_portal.entry_car = entry_portal.waiting_car
@@ -857,63 +848,68 @@ end
 ---@param exit_portaldata PortalData 出口数据 / Exit portal data
 local function finalize_sequence(entry_portaldata, exit_portaldata)
     if RiftRail.DEBUG_MODE_ENABLED then
-        log_tp("传送结束: 清理状态 (入口ID: " .. entry_portaldata.id .. ", 出口ID: " .. exit_portaldata.id .. ")")
+        local exit_id = exit_portaldata and exit_portaldata.id or "N/A(已摧毁)"
+        log_tp("传送结束: 清理状态 (入口ID: " .. entry_portaldata.id .. ", 出口ID: " .. exit_id .. ")")
     end
 
     -- 1. 在销毁引导车前读取列车索引
-    local final_train = nil
-    local actual_index_before_cleanup = nil
-    if exit_portaldata.exit_car and exit_portaldata.exit_car.valid then
-        final_train = exit_portaldata.exit_car.train
+    if exit_portaldata then
+        local final_train = nil
+        local actual_index_before_cleanup = nil
+        if exit_portaldata.exit_car and exit_portaldata.exit_car.valid then
+            final_train = exit_portaldata.exit_car.train
+            if final_train and final_train.valid then
+                actual_index_before_cleanup = read_train_schedule_index(final_train)
+            end
+        end
+
+        -- 2. 销毁引导车（会导致列车对象失效并重新创建）
+        local leader_destroyed = false
+        if exit_portaldata.leadertrain and exit_portaldata.leadertrain.valid then
+            exit_portaldata.leadertrain.destroy()
+            exit_portaldata.leadertrain = nil
+            leader_destroyed = true -- 标记：列车已经被物理截断
+        end
+
+        -- 仅当引导车被销毁，导致旧火车对象失效时，才重新获取！
+        if leader_destroyed and exit_portaldata.exit_car and exit_portaldata.exit_car.valid then
+            final_train = exit_portaldata.exit_car.train
+        end
+
         if final_train and final_train.valid then
-            actual_index_before_cleanup = read_train_schedule_index(final_train)
+            if RiftRail.DEBUG_MODE_ENABLED then
+                log_tp("【销毁后】准备恢复: actual_index=" .. tostring(actual_index_before_cleanup) .. ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index))
+            end
+            -- 使用统一函数恢复状态 (参数 true 代表同时恢复速度)
+            restore_train_state(final_train, exit_portaldata, true, actual_index_before_cleanup)
+
+            -- 触发“抵达”事件
+            raise_arrived_event(entry_portaldata, exit_portaldata, final_train)
         end
+
+        -- 5. 重置状态变量
+
+        exit_portaldata.entry_car = nil             -- 清理入口车厢引用，防止 on_tick 中的过期访问
+        exit_portaldata.exit_car = nil              -- 清理出口车厢引用，防止 on_tick 中的过期访问
+        exit_portaldata.old_train_id = nil          -- 清理旧车ID缓存
+        exit_portaldata.cached_geo = nil            -- 清理几何缓存，强制下次重新计算
+        exit_portaldata.cached_teleport_speed = nil -- 清理缓存速度
+        exit_portaldata.saved_schedule_index = nil  -- 清理时刻表索引缓存
+        exit_portaldata.locking_entry_id = nil      -- 释放互斥锁,允许其他入口使用
+        exit_portaldata.placement_interval = nil    -- 清理放置间隔缓存
+        exit_portaldata.saved_manual_mode = nil     -- 清理手动/自动模式缓存
     end
-
-    -- 2. 销毁引导车（会导致列车对象失效并重新创建）
-    if exit_portaldata.leadertrain and exit_portaldata.leadertrain.valid then
-        exit_portaldata.leadertrain.destroy()
-        exit_portaldata.leadertrain = nil
-    end
-
-    -- 3. 销毁后重新获取新的列车对象
-    if exit_portaldata.exit_car and exit_portaldata.exit_car.valid then
-        final_train = exit_portaldata.exit_car.train
-    end
-
-    if final_train and final_train.valid then
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_tp("【销毁后】准备恢复: actual_index=" .. tostring(actual_index_before_cleanup) .. ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index))
-        end
-        -- 使用统一函数恢复状态 (参数 true 代表同时恢复速度)
-        restore_train_state(final_train, exit_portaldata, true, actual_index_before_cleanup)
-
-        -- 触发“抵达”事件
-        raise_arrived_event(entry_portaldata, exit_portaldata, final_train)
-    end
-
-    -- 5. 重置状态变量
-    entry_portaldata.entry_car = nil            -- 清理入口车厢引用，防止 on_tick 中的过期访问
-    entry_portaldata.exit_car = nil             -- 清理入口车厢引用，防止 on_tick 中的过期访问
-    entry_portaldata.selected_exit_id = nil     -- 清理已选出口缓存，允许下次重新选择
-    entry_portaldata.gui_map = nil              -- 清理 GUI 观看者映射表
-    exit_portaldata.entry_car = nil             -- 清理入口车厢引用，防止 on_tick 中的过期访问
-    exit_portaldata.exit_car = nil              -- 清理出口车厢引用，防止 on_tick 中的过期访问
-    exit_portaldata.old_train_id = nil          -- 清理旧车ID缓存
-    exit_portaldata.cached_geo = nil            -- 清理几何缓存，强制下次重新计算
-    exit_portaldata.cached_teleport_speed = nil -- 清理缓存速度
-    exit_portaldata.saved_schedule_index = nil  -- 清理时刻表索引缓存
-    exit_portaldata.locking_entry_id = nil      -- 释放互斥锁,允许其他入口使用
-    exit_portaldata.placement_interval = nil    -- 清理放置间隔缓存
-    exit_portaldata.saved_manual_mode = nil     -- 清理手动/自动模式缓存
-
-    -- 6. 【关键】标记需要重建入口碰撞器
+    
+    if entry_portaldata then
+        entry_portaldata.entry_car = nil               -- 清理入口车厢引用，防止 on_tick 中的过期访问
+        entry_portaldata.exit_car = nil                -- 清理入口车厢引用，防止 on_tick 中的过期访问
+        entry_portaldata.locked_exit_unit_number = nil -- 清理物理死锁，允许下次传送重新排队选择
+        entry_portaldata.gui_map = nil                 -- 清理 GUI 观看者映射表
+    
+    -- 6. 标记需要重建入口碰撞器
     -- 我们不在这里直接创建，而是交给 on_tick 去计算正确的坐标并创建
-    if entry_portaldata.shell and entry_portaldata.shell.valid then
         entry_portaldata.collider_needs_rebuild = true
-
-        -- [保险措施] 确保它在活跃列表中，这样 on_tick 才会去处理它
-        -- 使用辅助函数
+        -- 确保它在活跃列表中，这样 on_tick 才会去处理它
         add_to_active(entry_portaldata)
     end
 end
@@ -1246,8 +1242,16 @@ end
 -- =================================================================================
 ---@param portaldata PortalData 传送门数据 / Portal data
 function Teleport.sync_momentum(portaldata)
-    -- 使用目标选择器
-    local exit_portaldata = select_target_exit(portaldata)
+
+    -- 直接从入口的记事本里读取锁定的出口 ID
+    local exit_unit_number = portaldata.locked_exit_unit_number
+    if not exit_unit_number then
+        return
+    end
+
+    local exit_portaldata = State.get_portaldata_by_unit_number(exit_unit_number)
+
+    -- 检查出口是否还有效
     if not (exit_portaldata and exit_portaldata.shell and exit_portaldata.shell.valid) then
         return
     end
@@ -1354,12 +1358,30 @@ local function process_teleport_sequence(portaldata, tick)
     end
 
     if portaldata.entry_car then
-        -- 还有车厢，继续传送
-        -- 使用目标选择器
-        local exit_portaldata = select_target_exit(portaldata)
+        -- 直接通过物理 ID 拿数据
+        local exit_unit_number = portaldata.locked_exit_unit_number
+        local exit_portaldata = nil
+
+        if exit_unit_number then
+            exit_portaldata = State.get_portaldata_by_unit_number(exit_unit_number)
+        end
+
+        -- 如果在传送中途，出口实体没了
+        if not (exit_portaldata and exit_portaldata.shell and exit_portaldata.shell.valid) then
+            if RiftRail.DEBUG_MODE_ENABLED then
+                log_tp("🚨 致命警告: 传送中途出口被摧毁！强行切断传送！")
+            end
+            -- 强行中断，清理现场，把剩下的车厢留在入口
+            -- 注意，这里 exit_portaldata 可能是 nil，finalize_sequence 会安全处理
+            finalize_sequence(portaldata, exit_portaldata)
+            return
+        end
+
+        -- 还有车厢，且出口安全，继续传送
         Teleport.process_transfer_step(portaldata, exit_portaldata)
-    else
-        -- 没有后续车厢，传送结束
+    end
+
+    if not portaldata.entry_car then
         if RiftRail.DEBUG_MODE_ENABLED then
             log_tp("传送序列正常结束，关闭状态。")
         end
