@@ -928,7 +928,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         if RiftRail.DEBUG_MODE_ENABLED then
             log_tp("错误: 出口失效，传送中断。")
         end
-        finalize_sequence(entry_portaldata, entry_portaldata) -- 自身清理
+        finalize_sequence(entry_portaldata, nil) -- 自身清理
         return
     end
 
