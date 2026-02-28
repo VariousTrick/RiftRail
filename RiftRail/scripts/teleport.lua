@@ -898,6 +898,7 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         exit_portaldata.locking_entry_id = nil      -- 释放互斥锁,允许其他入口使用
         exit_portaldata.placement_interval = nil    -- 清理放置间隔缓存
         exit_portaldata.saved_manual_mode = nil     -- 清理手动/自动模式缓存
+        exit_portaldata.cached_place_query = nil    -- 清理 can_place 查询缓存，防止过期数据干扰下一次传送
     end
     
     if entry_portaldata then
@@ -978,13 +979,26 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
 
     -- 动态拼接检测
     -- 询问引擎：当前位置是否已经空出来，可以放置新车厢了？
-    -- 如果前车还没被引导车拉远，这里会返回 false
-    local can_place = exit_portaldata.surface.can_place_entity({
-        name = car.name,
-        position = spawn_pos,
-        direction = geo.direction,
-        force = car.force,
-    })
+    -- 获取或初始化查询复用表 (全局只分配一次内存)
+    -- 1. 如果还没有缓存表，创建一个，并填入【永恒不变】的数据
+    if not exit_portaldata.cached_place_query then
+        exit_portaldata.cached_place_query = {
+            -- 这些数据一旦定下来，这就辈子都不会变了
+            position = spawn_pos,
+            direction = geo.direction
+        }
+    end
+
+    local query = exit_portaldata.cached_place_query
+
+    -- 2.只有当【原型名称(即模型)】或者【阵营】变了，才更新表(不用type检查，因为不能识别不同模组的车辆类型差异)
+    if query.name ~= car.name or query.force ~= car.force then
+        query.name = car.name
+        query.force = car.force
+    end
+
+    -- 3. 扔给引擎去查
+    local can_place = exit_portaldata.surface.can_place_entity(query)
 
     if not can_place then
         return -- 位置没空出来，跳过本次循环，等待下一帧
