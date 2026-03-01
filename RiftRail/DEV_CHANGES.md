@@ -3,6 +3,21 @@
 > 说明：模组未发布阶段使用本文件记录每一次改动。
 > 规则：新改动统一追加到最上方（时间倒序），每次包含日期、改动文件、改动内容。
 
+## 2026-03-01（AW桥接参数改为实体对象）
+
+### 改动摘要
+- 将 AW 兼容桥接调用参数从 `unit_number` 改为 `LuaEntity`，以支持 AW 侧完整更新反向映射。
+
+### 具体改动
+- `scripts/compat/aw.lua`
+  - `remote.call("AssemblyWagon", "transfer_binding", ...)` 参数由
+    - `old_car.unit_number, new_car.unit_number`
+    改为
+    - `old_car, new_car`。
+
+### 备注
+- 该调整用于配合 AssemblyWagon 新增的 `transfer_binding(old_wagon, new_wagon)` 接口实现。
+
 ## 2026-03-01（Informatron兼容文件归档到compat）
 
 ### 改动摘要

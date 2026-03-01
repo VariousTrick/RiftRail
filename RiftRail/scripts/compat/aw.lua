@@ -29,7 +29,7 @@ function AW.on_car_replaced(old_car, new_car)
         return
     end
 
-    local ok, err = pcall(remote.call, "AssemblyWagon", "transfer_binding", old_car.unit_number, new_car.unit_number)
+    local ok, err = pcall(remote.call, "AssemblyWagon", "transfer_binding", old_car, new_car)
 
     if not ok and RiftRail and RiftRail.DEBUG_MODE_ENABLED then
         log_debug("[RiftRail:Compat:AW] transfer_binding 调用失败: " .. tostring(err))
