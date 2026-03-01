@@ -3,6 +3,19 @@
 > 说明：模组未发布阶段使用本文件记录每一次改动。
 > 规则：新改动统一追加到最上方（时间倒序），每次包含日期、改动文件、改动内容。
 
+## 2026-03-01（Informatron兼容文件归档到compat）
+
+### 改动摘要
+- 将 Informatron 适配脚本移动到 `scripts/compat` 目录，统一兼容模块结构。
+- 同步更新 `control.lua` 中的加载路径，保持运行逻辑不变。
+
+### 具体改动
+- `scripts/compat/informatron.lua`
+  - 由原 `scripts/informatron.lua` 迁移而来（仅路径调整）。
+
+- `control.lua`
+  - `require("scripts.informatron")` 改为 `require("scripts.compat.informatron")`。
+
 ## 2026-03-01（compat目录重构 + AW兼容接入）
 
 ### 改动摘要

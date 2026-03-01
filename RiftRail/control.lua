@@ -49,7 +49,7 @@ local Migrations = require("scripts.migrations")
 local Maintenance = require("scripts.maintenance")
 -- 仅当玩家安装并启用了 informatron 模组时，才加载并注册说明书接口
 if script.active_mods["informatron"] then
-    local InformatronSetup = require("scripts.informatron")
+    local InformatronSetup = require("scripts.compat.informatron")
     InformatronSetup.setup_interface()
 end
 
