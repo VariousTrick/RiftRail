@@ -135,7 +135,6 @@ end
 local sync_portal_ltn_state
 local compute_desired_routes
 local update_routing_table_for_portal
-local find_portal_by_unit_number
 local check_if_connected_before_sync
 local check_if_connected_after_sync
 local build_connection_message
@@ -147,23 +146,6 @@ local p_get_current_pools
 local p_join_pool
 local p_leave_pool
 local p_commit_all_ltn_connections
-
---- 辅助函数：通过 unit_number 查找传送门数据
----@param unit_number number 传送门的 unit_number
----@return table|nil 传送门数据
-find_portal_by_unit_number = function(unit_number)
-    if not storage.rift_rails then
-        return nil
-    end
-
-    for _, portal_data in pairs(storage.rift_rails) do
-        if portal_data.unit_number == unit_number then
-            return portal_data
-        end
-    end
-
-    return nil
-end
 
 --- 计算一个传送门"应该拥有"的所有路径
 ---@param portal_data table 传送门数据
