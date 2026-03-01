@@ -70,6 +70,7 @@ local State = nil
 local Util = nil
 local Schedule = nil
 local LtnCompat = nil
+local AwCompat = nil
 
 -- 1. 定义一个空的日志函数占位符
 local log_debug = function() end
@@ -84,6 +85,7 @@ function Teleport.init(deps)
     end
     -- 接收兼容模块
     LtnCompat = deps.LtnCompat
+    AwCompat = deps.AwCompat
     -- 接收事件ID表
     if deps.Events then
         Events = deps.Events
@@ -1069,6 +1071,10 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         end
         -- finalize_sequence(entry_portaldata, exit_portaldata)
         return
+    end
+
+    if AwCompat and AwCompat.on_car_replaced then
+        AwCompat.on_car_replaced(car, new_car)
     end
 
     -- 转移时刻表与保存索引
