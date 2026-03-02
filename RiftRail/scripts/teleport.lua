@@ -659,14 +659,69 @@ local function get_circuit_go_to_id(train)
     end
     return nil
 end
+
+-- =================================================================================
+-- 辅助函数：从入口电路网络读取目标ID信号 (riftrail-go-to-id)
+-- =================================================================================
+---@param entry_portaldata PortalData 入口数据 / Entry portal data
+---@return integer|nil 目标传送门ID / Target portal ID
+local function get_entry_circuit_go_to_id(entry_portaldata)
+    if not entry_portaldata then
+        return nil
+    end
+
+    local signal_source = find_child_entity(entry_portaldata, "rift-rail-station")
+    if not (signal_source and signal_source.valid) then
+        signal_source = entry_portaldata.shell
+    end
+
+    if not (signal_source and signal_source.valid and signal_source.get_signal) then
+        return nil
+    end
+
+    local signal_id = {
+        type = "virtual",
+        name = "riftrail-go-to-id",
+    }
+
+    local value = signal_source.get_signal(signal_id, defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green)
+    if value and value ~= 0 then
+        return value
+    end
+
+    return nil
+end
+
+---@param entry_portaldata PortalData 入口数据 / Entry portal data
+---@param target_id integer|nil 目标出口ID / Target exit id
+---@return PortalData|nil 目标出口数据 / Target exit portal data
+local function resolve_valid_target(entry_portaldata, target_id)
+    if not (entry_portaldata and target_id) then
+        return nil
+    end
+
+    local targets = entry_portaldata.target_ids
+    if not (targets and targets[target_id]) then
+        return nil
+    end
+
+    local target_portal = State.get_portaldata_by_id(target_id)
+    if not (target_portal and target_portal.shell and target_portal.shell.valid) then
+        return nil
+    end
+
+    return target_portal
+end
 -- =================================================================================
 -- 目标选择器 (v4.0 - 统一使用 riftrail-go-to-id 信号)
 -- =================================================================================
--- 优先级 1: go-to-id 信号 (无论来自LTN还是玩家手动设置)
--- 优先级 2: 默认返回第一个可用出口 (兜底)
+-- 优先级 1: 列车时刻表中的 go-to-id 信号
+-- 优先级 2: 入口电路网络中的 go-to-id 信号
+-- 优先级 3: 默认返回第一个可用出口 (兜底)
 ---@param entry_portaldata PortalData 入口数据 / Entry portal data
 ---@return PortalData|nil 目标出口数据 / Target exit portal data
 local function select_target_exit(entry_portaldata)
+
     -- [防御性检查 1] 确保入口数据存在
     if not entry_portaldata then
         return nil
@@ -687,34 +742,58 @@ local function select_target_exit(entry_portaldata)
     -- [极速通道] 检查是否只有一个目标
     -- 此时 first_id 必定存在，我们检查是否有第二个
     if not next(targets, first_id) then
-        local target_portal = State.get_portaldata_by_id(first_id)
-        if target_portal and target_portal.shell and target_portal.shell.valid then
-            return target_portal
-        else
-            return nil
-        end
+        return resolve_valid_target(entry_portaldata, first_id)
+    end
+
+    -- 多出口优先使用缓存出口
+    local cached_target = resolve_valid_target(entry_portaldata, entry_portaldata.waiting_target_exit_id)
+    if cached_target then
+        return cached_target
     end
 
     -- A. 获取列车对象
     local train = nil
     if entry_portaldata.waiting_car and entry_portaldata.waiting_car.valid then
         train = entry_portaldata.waiting_car.train
-    elseif entry_portaldata.entry_car and entry_portaldata.entry_car.valid then
+    end
+    if not train and entry_portaldata.entry_car and entry_portaldata.entry_car.valid then
         train = entry_portaldata.entry_car.train
     end
 
-    -- [优先级 1] riftrail-go-to-id 信号 (无论来自LTN还是玩家)
+    -- [优先级 1] 列车时刻表信号
+    local train_target_id = nil
+    local train_target_portal = nil
     if train then
-        local target_id = get_circuit_go_to_id(train)
-        if target_id and targets[target_id] then
-            local target_portal = State.get_portaldata_by_id(target_id)
-            if target_portal and target_portal.shell and target_portal.shell.valid then
-                if RiftRail.DEBUG_MODE_ENABLED and entry_portaldata.waiting_car then
-                    log_tp("智能路由: 识别到信号 riftrail-go-to-id = " .. target_id .. "，精准导向出口。")
-                end
-                return target_portal
+        train_target_id = get_circuit_go_to_id(train)
+        train_target_portal = resolve_valid_target(entry_portaldata, train_target_id)
+        if train_target_portal then
+            if RiftRail.DEBUG_MODE_ENABLED and entry_portaldata.waiting_car then
+                log_tp("智能路由: 识别到信号 riftrail-go-to-id = " .. train_target_id .. "，精准导向出口。")
             end
+            return train_target_portal
         end
+
+        if train_target_id then
+            game.print({ "messages.rift-rail-error-invalid-go-to-id-train", train_target_id, entry_portaldata.id })
+        end
+    end
+
+    -- [优先级 2] 入口电路信号（列车信号不存在或无效时尝试）
+    local entry_target_id = nil
+    if not train_target_portal then
+        entry_target_id = get_entry_circuit_go_to_id(entry_portaldata)
+    end
+
+    local entry_target_portal = resolve_valid_target(entry_portaldata, entry_target_id)
+    if entry_target_portal then
+        if RiftRail.DEBUG_MODE_ENABLED and entry_portaldata.waiting_car then
+            log_tp("智能路由: 列车信号无效，命中入口信号 riftrail-go-to-id = " .. entry_target_id .. "，导向对应出口。")
+        end
+        return entry_target_portal
+    end
+
+    if entry_target_id then
+        game.print({ "messages.rift-rail-error-invalid-go-to-id-entry", entry_target_id, entry_portaldata.id })
     end
 
     -- 2. [优先级 中] 默认出口 (含老存档自动迁移)
@@ -735,13 +814,13 @@ local function select_target_exit(entry_portaldata)
         if first_id then
             entry_portaldata.default_exit_id = first_id
             def_id = first_id
-            default_valid = true
+            default_valid = resolve_valid_target(entry_portaldata, def_id) ~= nil
         end
     end
 
     -- 3. 返回默认出口
     if default_valid then
-        return State.get_portaldata_by_id(def_id)
+        return resolve_valid_target(entry_portaldata, def_id)
     end
 
     return nil
@@ -761,6 +840,7 @@ local function initialize_teleport_session(entry_portal, exit_portal)
     -- 2. 迁移车厢引用
     entry_portal.entry_car = entry_portal.waiting_car
     entry_portal.waiting_car = nil
+    entry_portal.waiting_target_exit_id = nil
 
     -- 3. 激活传送状态
     entry_portal.is_teleporting = true
@@ -782,6 +862,7 @@ local function process_waiting_logic(portaldata)
     -- 车厢无效 -> 清理并退出
     if not (portaldata.waiting_car and portaldata.waiting_car.valid) then
         portaldata.waiting_car = nil
+        portaldata.waiting_target_exit_id = nil
         return
     end
 
@@ -790,8 +871,10 @@ local function process_waiting_logic(portaldata)
     local exit_portal = select_target_exit(portaldata)
     if not exit_portal then
         portaldata.waiting_car = nil
+        portaldata.waiting_target_exit_id = nil
         return
     end
+    portaldata.waiting_target_exit_id = exit_portal.id
 
     -- 互斥锁繁忙 -> 退出 (等待下一帧)
     -- 规则: 锁不为空 且 锁不是我
@@ -1250,6 +1333,8 @@ function Teleport.on_collider_died(event)
     end
     -- 不再立即传送，而是挂入等待队列
     portaldata.waiting_car = car
+    local preselected_exit = select_target_exit(portaldata)
+    portaldata.waiting_target_exit_id = preselected_exit and preselected_exit.id or nil
     if RiftRail.DEBUG_MODE_ENABLED then
         log_tp("排队挂号: 入口 " .. portaldata.id .. " 等待传送车厢 " .. car.unit_number)
     end

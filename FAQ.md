@@ -21,9 +21,9 @@ If you strictly require Cybersyn integration, you must downgrade your mod versio
 
 **Q: If an Entry is connected to multiple Exits, where does the train go?**
 **A:** The portal decides the destination based on the following priority:
-1.  **Circuit Control (Highest):** If the train schedule has a wait condition `riftrail-go-to-id > [Number]`, the train will teleport to the Exit with that specific **Unit Number ID**.
-2.  **LTN Auto-Routing:** If it is an LTN train, Rift Rail will calculate the distance to the destination station and teleport to the **closest** connected Exit on that surface.
-3.  **Default (Fallback):** If no instructions are given, it will teleport to the **first available** Exit in the connection list.
+1.  **Train Schedule Signal (Highest):** If the train schedule includes `riftrail-go-to-id = [ID]` (the comparator does not affect routing; only the numeric value is read), and that ID points to a valid connected Exit, Rift Rail teleports to that Exit.
+2.  **Entry Circuit Signal:** If step 1 does not resolve to a valid Exit, Rift Rail reads `riftrail-go-to-id` from the Entry-side circuit network and tries to route to that Exit.
+3.  **Default (Fallback):** If neither signal resolves to a valid Exit, Rift Rail uses the configured default Exit; if unavailable, it teleports to the first available connected Exit.
 
 **Q: How do I find the "Unit Number ID" of a portal?**
 **A:** Open the GUI of any portal; the ID is usually displayed in the title bar or debug info.
@@ -64,9 +64,9 @@ If you strictly require Cybersyn integration, you must downgrade your mod versio
 
 **问：如果连了多个出口，火车会去哪一个？**
 **答：** 传送门会按照以下优先级决定去向：
-1.  **信号控制（最高优先级）：** 如果列车时刻表的等待条件中包含 `riftrail-go-to-id > [数字]`，列车将精准传送到 ID 为该数字的出口。
-2.  **LTN 自动路由：** 如果是 LTN 列车，系统会自动计算出口与目的地的距离，并传送到同一地表上**距离最近**的那个已连接出口。
-3.  **默认（保底）：** 如果没有任何指令，列车将默认传送到连接列表中的**第一个**可用出口。
+1.  **列车时刻表信号（最高优先级）：** 如果列车时刻表中包含 `riftrail-go-to-id = [数字]`（比较符号不影响结果，只读取数值），且该 ID 对应已连接且有效的出口，列车将精准传送到该出口。
+2.  **入口电路信号：** 如果步骤 1 未命中有效出口，系统会读取入口侧电路网络中的 `riftrail-go-to-id` 并尝试匹配出口。
+3.  **默认（保底）：** 如果以上信号都未命中有效出口，系统会使用默认出口；若默认出口不可用，则传送到连接列表中的**第一个**可用出口。
 
 **问：我怎么知道传送门的“ID”是多少？**
 **答：** 打开任意传送门的 GUI，ID 通常会显示在标题栏或调试信息中。
