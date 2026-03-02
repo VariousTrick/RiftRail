@@ -43,12 +43,13 @@ local Logic = require("scripts.logic")
 local Schedule = require("scripts.schedule")
 local Util = require("scripts.util")
 local Teleport = require("scripts.teleport")
-local LTN = require("scripts.ltn_compat")
+local LTN = require("scripts.compat.ltn")
+local AWCompat = require("scripts.compat.aw")
 local Migrations = require("scripts.migrations")
 local Maintenance = require("scripts.maintenance")
 -- 仅当玩家安装并启用了 informatron 模组时，才加载并注册说明书接口
 if script.active_mods["informatron"] then
-    local InformatronSetup = require("scripts.informatron")
+    local InformatronSetup = require("scripts.compat.informatron")
     InformatronSetup.setup_interface()
 end
 
@@ -79,6 +80,10 @@ if Util.init then
     Util.init({ log_debug = log_debug })
 end
 
+if AWCompat and AWCompat.init then
+    AWCompat.init({ log_debug = log_debug })
+end
+
 -- 注入 Teleport 依赖
 if Teleport.init then
     Teleport.init({
@@ -87,6 +92,7 @@ if Teleport.init then
         Schedule = Schedule,
         log_debug = log_debug,
         LtnCompat = LTN,
+        AwCompat = AWCompat,
         Events = RiftRail.Events,
     })
 end
