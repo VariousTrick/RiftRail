@@ -4,6 +4,18 @@
 > 规则：新改动统一追加到最上方（时间倒序），每次包含日期、改动文件、改动内容。
 > 补充：本文件从 v0.11.7 之后开始维护；当前 2026-03-02 的全部条目均归入 v0.11.8 发布内容。
 
+## 2026-03-04（v0.11.9 开发中：Kux-SlimInserters 兼容修复）
+
+### 改动摘要
+- 修复与 `Kux-SlimInserters` 并用时，`rift-rail-core` 可选区域被缩小导致核心点击困难、GUI 难以打开的问题。
+- 在 `data-final-fixes` 中增加条件恢复逻辑：仅当检测到 `Kux-SlimInserters` 时恢复核心 `selection_box`。
+
+### 具体改动
+- `RiftRail/data-final-fixes.lua`
+  - 新增 `KUX_SLIM_INSERTERS_INSTALLED` 检测（`mods["Kux-SlimInserters"]`）。
+  - 若已安装该模组，则将 `data.raw["container"]["rift-rail-core"].selection_box` 恢复为 `{{-2,-2},{2,2}}`。
+  - 保留调试日志输出，便于在启用 `rift-rail-debug-mode` 时追踪兼容修复是否生效。
+
 ## 2026-03-04（v0.11.9 开发中：日语本地化首版与术语修正）
 
 ### 改动摘要
