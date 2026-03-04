@@ -100,31 +100,39 @@ local function log_tp(msg)
 end
 
 -- =================================================================================
--- 统一列车时刻表索引读取函数（处理不同列车状态）
+-- 统一列车时刻表索引读取函数（直接读取真实指针）
 -- =================================================================================
 ---@param train LuaTrain 要读取的列车 / The train to read
----@param phase_name string 阶段名（可选）/ Phase name (optional)
 ---@return integer|nil 当前时刻表索引 / Current schedule index
-local function read_train_schedule_index(train, phase_name)
-    if not (train and train.valid and train.schedule) then
+local function read_train_schedule_index(train)
+    if not (train and train.valid) then
         return nil
     end
 
-    local index
-    local state = train.state
-
-    if state == defines.train_state.wait_station then
-        -- 列车正在等待，读取下一个索引
-        index = train.schedule.current + 1
-        if index > #train.schedule.records then
-            index = 1
-        end
-    elseif state == defines.train_state.on_the_path or state == defines.train_state.wait_signal or state == defines.train_state.arrive_signal or state == defines.train_state.arrive_station then
-        -- 这些状态都使用当前索引
-        index = train.schedule.current
+    local schedule = train.schedule
+    if not schedule then
+        return nil
     end
 
-    return index
+    local records = schedule.records
+    if not records then
+        return nil
+    end
+
+    local current = schedule.current
+    if not current then
+        return nil
+    end
+
+    if type(records) ~= "table" or #records == 0 then
+        return nil
+    end
+
+    if type(current) ~= "number" or current < 1 or current > #records then
+        return nil
+    end
+
+    return current
 end
 
 -- =================================================================================
@@ -891,8 +899,8 @@ end
 ---@param train LuaTrain 要恢复的列车 / Train to restore
 ---@param portaldata PortalData 传送门数据 / Portal data
 ---@param apply_speed boolean 是否恢复速度 / Whether to restore speed
----@param target_index integer|nil 目标索引 / Target index
-local function restore_train_state(train, portaldata, apply_speed, target_index)
+---@param preferred_index integer|nil 优先恢复索引 / Preferred index
+local function restore_train_state(train, portaldata, apply_speed, preferred_index)
     if not (train and train.valid) then
         return
     end
@@ -902,8 +910,8 @@ local function restore_train_state(train, portaldata, apply_speed, target_index)
     end
 
     -- A. 恢复时刻表索引 (副作用：列车变为自动模式)
-    -- 优先使用传入的 target_index，其次使用 saved_schedule_index
-    local index_to_restore = target_index or portaldata.saved_schedule_index
+    -- 优先使用传入的 preferred_index，其次使用 saved_schedule_index
+    local index_to_restore = preferred_index or portaldata.saved_schedule_index
     if index_to_restore then
         train.go_to_station(index_to_restore)
     end
