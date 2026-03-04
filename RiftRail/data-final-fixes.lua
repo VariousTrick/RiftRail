@@ -9,6 +9,18 @@ local function log_debug(msg)
     end
 end
 
+-- Kux-SlimInserters 会在 data-updates 阶段批量缩小 container 的 selection_box。
+-- rift-rail-core 基于 wooden-chest（container），会被连带影响，导致点击核心时难以打开 GUI。
+-- 仅在检测到 Kux-SlimInserters 时恢复 rift-rail-core 的原始可选区域。
+local KUX_SLIM_INSERTERS_INSTALLED = (mods and mods["Kux-SlimInserters"]) ~= nil
+if KUX_SLIM_INSERTERS_INSTALLED then
+    local core = data.raw["container"] and data.raw["container"]["rift-rail-core"]
+    if core then
+        core.selection_box = { { -2, -2 }, { 2, 2 } }
+        log_debug("兼容修复: 检测到 Kux-SlimInserters，已恢复 rift-rail-core.selection_box")
+    end
+end
+
 -- 检测是否安装了 LTN（可选，主要用于日志），清除逻辑无论是否安装都安全
 local LTN_INSTALLED = (mods and mods["LogisticTrainNetwork"]) ~= nil
 if LTN_INSTALLED then
@@ -19,7 +31,6 @@ if LTN_INSTALLED then
         end
     end
 end
-
 
 if data.raw.recipe["rift-rail-placer-recycling"] then
     data.raw.recipe["rift-rail-placer-recycling"] = nil
