@@ -4,7 +4,7 @@
 
 ## ⏳ To Do (Unfinished Tasks)
 
--   [ ] Add a "Select Target" interface to replace the old "Link" button.
+-   [ ] Develop a complete GUI overhaul (Targeting v1.0.0).
 -   [ ] Research and implement technology unlocks for Many-to-One and One-to-Many features.
 -   [ ] Add sound and visual effects for teleportation events.
 -   [ ] Add an optional setting to make teleportation consume electricity.
@@ -15,6 +15,10 @@
 -   [ ] Add a debug/performance profiling mode to display the current "active list" count for UPS monitoring.
 -   [ ] Add in-game Tips & Tricks/Factoriopedia entries for the "UPS Optimization Guide".
 -   [ ] Add visual status indicators (e.g., lights) for portals to show idle/active states.
+-   [ ] Apply different textures, building coatings, or core styles based on the current planet (Space Age integration).
+-   [ ] Replace current AI-generated textures with high-quality custom art (Milestone for v1.0.0 release).
+-   [ ] Introduce technology upgrades to increase the maximum allowed paired targets (currently hardcoded to 5).
+
 
 ---
 
@@ -52,17 +56,19 @@
 
 ## ⏳ 未完成 (To Do)
 
--   [ ] 新增“选择目标”界面，以取代旧的“配对”按钮。
+-   [ ] 制作一套全新的 GUI（迈向 1.0.0 版本）。
 -   [ ] 研究并实装用于解锁“多对一”和“一对多”功能的科技。
 -   [ ] 为传送事件添加音效和视觉特效。
--   [ ] 添加一个可选设置，使传送消耗电力。
+-   [ ] 添加一个可选设置，使传送消耗电力或其他资源。
 -   [ ] 在 GUI 中为“累计传送列车”添加一个统计计数器。
 -   [ ] (高级) 在地图视图上绘制已连接传送门之间的连线。
 -   [ ] (高级) 在小地图上显示传送网络拓扑。
 -   [ ] 新增蓝图保存配对关系功能，支持在复制粘贴时自动恢复传送门之间的连接。
 -   [ ] 添加调试/性能监控模式，在界面上显示当前“活跃列表”中的传送门数量，方便监控 UPS 状态。
--   [ ] 在游戏内“提示与技巧”或“异星百科”中添加“性能与 UPS 优化指北”。
 -   [ ] 为传送门添加工作状态指示灯（如空闲、激活等视觉反馈）。
+-   [ ] 在不同的星球使用不同的贴图、建筑涂装或核心样式（支持 SA 太空时代）。
+-   [ ] 用高质量的自定义贴图替换目前的 AI 生成贴图（完成此项即可发布 1.0.0 正式版）。
+-   [ ] 引入科技升级，用于提升建筑可配对的目标数量上限（目前硬编码限制为 5）。
 
 ---
 
@@ -84,12 +90,14 @@
 -   [x] 针对 Space Age (SA) 环境调整了传送门配方平衡（卫星数量增加至 2 个）。
 -   [x] 新增了第二个演示场景，专门用于演示传送门的配对逻辑与操作流程。
 -   [x] 优化了文件结构以及各模组环境（SA, SE, K2, SE+K2）的配方平衡（特别感谢 Ldmf 提交的代码与贡献！）。
+-   [x] 添加了对信息稽器人模组的支持，可以在其中查看模组使用说明。
+-   [x] 添加了游戏原生的“提示与技巧 (Tips & Tricks)”系统集成。
 
 ---
 
 ## 🛠️ 持续维护 (Ongoing)
 
--   [ ] 保持中英文本地化的同步。
+-   [ ] 保持本地化文件的同步。
 -   [ ] 新增对其他语言的支持（多语言本地化）。
 -   [ ] 响应社区反馈并修复 Bug。
 -   [ ] 持续监控 UPS 消耗。
