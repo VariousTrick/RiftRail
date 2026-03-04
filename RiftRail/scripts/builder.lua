@@ -631,6 +631,8 @@ function Builder.on_cloned(event)
     local cached_spawn, cached_area = Util.calculate_teleport_cache(new_entity.position, new_entity.direction)
     new_data.cached_spawn_pos = cached_spawn
     new_data.cached_check_area = cached_area
+    -- 深拷贝会带出旧门的 can_place 查询表；克隆后强制失效，交给 teleport 懒加载重建
+    new_data.cached_place_query = nil
 
     -- 保存新数据，清理旧数据
     storage.rift_rails[new_unit_number] = new_data

@@ -974,10 +974,9 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
 
         -- 5. 重置状态变量
 
-        exit_portaldata.entry_car = nil             -- 清理入口车厢引用，防止 on_tick 中的过期访问
+        -- 注意：exit_portaldata 不维护 entry_car，避免写入无效字段
         exit_portaldata.exit_car = nil              -- 清理出口车厢引用，防止 on_tick 中的过期访问
         exit_portaldata.old_train_id = nil          -- 清理旧车ID缓存
-        exit_portaldata.cached_geo = nil            -- 清理几何缓存，强制下次重新计算
         exit_portaldata.cached_teleport_speed = nil -- 清理缓存速度
         exit_portaldata.saved_schedule_index = nil  -- 清理时刻表索引缓存
         exit_portaldata.locking_entry_id = nil      -- 释放互斥锁,允许其他入口使用
@@ -988,7 +987,7 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
     
     if entry_portaldata then
         entry_portaldata.entry_car = nil               -- 清理入口车厢引用，防止 on_tick 中的过期访问
-        entry_portaldata.exit_car = nil                -- 清理入口车厢引用，防止 on_tick 中的过期访问
+        entry_portaldata.exit_car = nil                -- 清理入口侧“上一节已生成替身”标记，供下一次会话重新判定首节
         entry_portaldata.locked_exit_unit_number = nil -- 清理物理死锁，允许下次传送重新排队选择
         entry_portaldata.gui_map = nil                 -- 清理 GUI 观看者映射表
     
@@ -1068,7 +1067,8 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     -- 1. 如果还没有缓存表，创建一个，并填入【永恒不变】的数据
     if not exit_portaldata.cached_place_query then
         exit_portaldata.cached_place_query = {
-            -- 这些数据一旦定下来，这就辈子都不会变了
+            -- 该查询表只在“当前门坐标/朝向”下稳定有效；
+            -- 如果建筑被克隆/重建，需要失效并懒加载重建。
             position = spawn_pos,
             direction = geo.direction
         }
@@ -1117,7 +1117,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         exit_portaldata.saved_manual_mode = car.train.manual_mode                                       -- 保存手动/自动模式
         exit_portaldata.old_train_id = car.train.id                                                     -- 保存旧车ID
         exit_portaldata.saved_schedule_index = car.train.schedule and car.train.schedule.current or nil -- 保存时刻表索引
-        exit_portaldata.cached_teleport_speed = settings.global["rift-rail-teleport-speed"].value       -- 缓存设定中的列车速度，供 sync_momentum 使用
+        exit_portaldata.cached_teleport_speed = settings.global["rift-rail-teleport-speed"].value       -- 缓存设定中的列车速度，供 maintain_exit_speed 使用
         exit_portaldata.placement_interval = settings.global["rift-rail-placement-interval"].value      -- 缓存设定中的放置间隔，供 process_teleport_sequence 使用
     end
 
@@ -1199,8 +1199,8 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     car.destroy()
 
     -- 更新链表指针
-    entry_portaldata.exit_car = new_car -- 记录刚传过去的这节 (虽然没什么用，但保持一致)
-    exit_portaldata.exit_car = new_car -- 记录出口的最前头 (用于拉动)
+    entry_portaldata.exit_car = new_car -- 记录入口侧最近生成的出口替身（用于首节判定与流程状态）
+    exit_portaldata.exit_car = new_car  -- 记录出口的最前头 (用于拉动)
 
     -- 准备下一节
     -- =========================================================================
@@ -1346,7 +1346,7 @@ end
 -- 持续动力 (每 tick 调用)
 -- =================================================================================
 ---@param portaldata PortalData 传送门数据 / Portal data
-function Teleport.sync_momentum(portaldata)
+function Teleport.maintain_exit_speed(portaldata)
 
     -- 直接从入口的记事本里读取锁定的出口 ID
     local exit_unit_number = portaldata.locked_exit_unit_number
@@ -1362,37 +1362,32 @@ function Teleport.sync_momentum(portaldata)
     end
 
     local car_exit = exit_portaldata.exit_car
+    if not (car_exit and car_exit.valid) then
+        return
+    end
 
-    if car_exit and car_exit.valid then
-        local train_exit = car_exit.train
+    local train_exit = car_exit.train
+    if not (train_exit and train_exit.valid) then
+        return
+    end
 
-        if train_exit and train_exit.valid then
-            -- 1. 维持出口动力 (已重构为距离比对法)
-            -- 直接锁定为设定速度
-            -- 这是一个强制行为，确保列车不会因为传送而掉速或超速。
-            -- 同时这会产生“弹射/吸入”效果，最大化吞吐量。
-            local target_speed = exit_portaldata.cached_teleport_speed or settings.global["rift-rail-teleport-speed"].value
+    -- 1. 维持出口动力 (已重构为距离比对法)
+    -- 直接锁定为设定速度
+    -- 这是一个强制行为，确保列车不会因为传送而掉速或超速。
+    -- 同时这会产生“弹射/吸入”效果，最大化吞吐量。
+    local target_speed = exit_portaldata.cached_teleport_speed or settings.global["rift-rail-teleport-speed"].value
 
-            -- 计算出口列车所需的速度方向
-            -- 以出口传送门的位置为参考点
-            local required_sign = calculate_speed_sign(train_exit, exit_portaldata)
+    -- 计算出口列车所需的速度方向
+    -- 以出口传送门的位置为参考点
+    local required_sign = calculate_speed_sign(train_exit, exit_portaldata)
 
-            -- 每60tick(1秒)打印一次，监控计算结果
-            if RiftRail.DEBUG_MODE_ENABLED then
-                if game.tick % 60 == portaldata.unit_number % 60 then
-                    log_tp("【Speed Exit】ReqSign=" .. required_sign .. " | TrainSpeed=" .. train_exit.speed)
-                end
-            end
+    -- 应用速度前增加状态检查
+    local should_push = train_exit.manual_mode or (train_exit.state == defines.train_state.on_the_path)
 
-            -- 应用速度前增加状态检查
-            local should_push = train_exit.manual_mode or (train_exit.state == defines.train_state.on_the_path)
-
-            if should_push then
-                -- 直接赋值，不管它现在是快了还是慢了
-                -- 这样既解决了掉速卡顿，也解决了超速断裂
-                train_exit.speed = target_speed * required_sign
-            end
-        end
+    if should_push then
+        -- 直接赋值，不管它现在是快了还是慢了
+        -- 这样既解决了掉速卡顿，也解决了超速断裂
+        train_exit.speed = target_speed * required_sign
     end
 end
 
@@ -1522,7 +1517,7 @@ function Teleport.on_tick(event)
                 process_teleport_sequence(portaldata, event.tick)
                 -- 动力同步需持续进行 (再次检查状态防止序列刚结束)
                 if portaldata.is_teleporting then
-                    Teleport.sync_momentum(portaldata)
+                    Teleport.maintain_exit_speed(portaldata)
                 end
             end
 
