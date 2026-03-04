@@ -4,6 +4,24 @@
 > 规则：新改动统一追加到最上方（时间倒序），每次包含日期、改动文件、改动内容。
 > 补充：本文件从 v0.11.7 之后开始维护；当前 2026-03-02 的全部条目均归入 v0.11.8 发布内容。
 
+## 2026-03-04（v0.11.9 开发中：索引命名可读性整理）
+
+### 改动摘要
+- 不改动任何传送逻辑，仅优化索引参数命名，降低“目标索引/回退索引”语义歧义。
+- 保持调用链与行为完全一致，仅在函数签名和注释层面做可读性增强。
+- `read_train_schedule_index(...)` 改为仅读取真实 `schedule.current`，不再按列车状态分支推断索引。
+
+### 具体改动
+- `RiftRail/scripts/teleport.lua`
+  - `read_train_schedule_index(train)`：
+    - 移除 `wait_station / on_the_path / wait_signal / arrive_*` 的状态分支。
+    - 统一返回真实时刻表指针 `train.schedule.current`。
+    - 增加记录表与索引范围校验，异常时返回 `nil`。
+  - `restore_train_state(train, portaldata, apply_speed, ...)`：
+    - 参数名由 `target_index` 调整为 `preferred_index`。
+    - 对应注释同步更新为“优先恢复索引”。
+    - 函数内部变量计算保持不变：仍为“优先参数，其次 `saved_schedule_index`”。
+
 ## 2026-03-04（v0.11.9 开发中：传送缓存与出口速度维护重构）
 
 ### 改动摘要
