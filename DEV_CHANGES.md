@@ -4,6 +4,28 @@
 > 规则：新改动统一追加到最上方（时间倒序），每次包含日期、改动文件、改动内容。
 > 补充：本文件从 v0.11.7 之后开始维护；当前 2026-03-02 的全部条目均归入 v0.11.8 发布内容。
 
+## 2026-03-04（v0.11.9 开发中：日语本地化首版与术语修正）
+
+### 改动摘要
+- 新增 `ja` 本地化目录并完成首版文本，覆盖 `strings / informatron / tips` 三类文件。
+- 日语文案保持 `Rift Rail` 英文名不变，同时统一保留原有占位符与富文本标记格式。
+- 根据审阅反馈修正术语自然度与残留拼写问题（如 `Entry（送信）/Exit（受信）` 改为 `入口/出口`）。
+
+### 具体改动
+- `RiftRail/locale/ja/strings.cfg`
+  - 新建日语版 `strings` 文案（与 `en` 键集合保持一致）。
+  - 调整模式命名：`rift-rail-mode-entry=入口`、`rift-rail-mode-exit=出口`。
+  - 清理错误拼接残留：`rift-rail-error-station-missing` 行内重复脏串已移除。
+
+- `RiftRail/locale/ja/informatron.cfg`
+  - 新建日语版 Informatron 页面文案。
+
+- `RiftRail/locale/ja/tips.cfg`
+  - 新建日语版 Tips 文案。
+
+- `doc/unused-locale-keys-2026-03-04.md`
+  - 生成未使用本地化键扫描报告（用于清理决策与后续审查）。
+
 ## 2026-03-04（v0.11.9 开发中：索引命名可读性整理）
 
 ### 改动摘要
