@@ -4,6 +4,33 @@
 > 规则：新改动统一追加到最上方（时间倒序），每次包含日期、改动文件、改动内容。
 > 补充：本文件从 v0.11.7 之后开始维护；当前 2026-03-02 的全部条目均归入 v0.11.8 发布内容。
 
+## 2026-03-04（v0.11.9 开发中：传送缓存与出口速度维护重构）
+
+### 改动摘要
+- 删除传送结束阶段的两处冗余/误导清理：`exit_portaldata.entry_car` 与 `exit_portaldata.cached_geo`。
+- 保留 `cached_place_query` 的运行期复用，并在建筑克隆后强制失效，避免深拷贝带入旧坐标查询参数。
+- 修正文案注释，明确 `cached_place_query` 只在当前门坐标/朝向下有效。
+- 修正 `entry_portaldata.exit_car` 的注释语义，明确其用于入口侧流程状态判定。
+- 将出口速度函数改为卫语句结构并重命名为 `maintain_exit_speed`，同时移除每 60 tick 的调试打印。
+
+### 具体改动
+- `RiftRail/scripts/teleport.lua`
+  - `finalize_sequence(...)`：
+    - 删除 `exit_portaldata.entry_car = nil`（exit 侧无该活跃字段）。
+    - 删除 `exit_portaldata.cached_geo = nil`（几何缓存由懒加载维护）。
+    - 更新 `entry_portaldata.exit_car` 清理注释，明确是“上一节已生成替身”状态标记。
+  - `process_transfer_step(...)`：
+    - 更新 `cached_place_query` 初始化注释，明确克隆/重建后需失效再懒加载。
+    - 更新 `entry_portaldata.exit_car = new_car` 注释，去除“没什么用”的误导描述。
+    - 将出口速度缓存注释中的函数名更新为 `maintain_exit_speed`。
+  - `sync_momentum(...)` -> `maintain_exit_speed(...)`：
+    - 重构为卫语句，提前返回无效 `exit_portal/car/train` 分支，减少嵌套。
+    - 删除每 60 tick 调试日志打印，保留核心速度维护逻辑。
+
+- `RiftRail/scripts/builder.lua`
+  - `on_cloned(event)`：
+    - 在重建 `cached_spawn_pos/cached_check_area` 后，新增 `new_data.cached_place_query = nil`，防止深拷贝脏缓存。
+
 ## 2026-03-02（v0.11.8：多出口路由逻辑更新，加入入口信号与缓存优先）
 
 ### 改动摘要
