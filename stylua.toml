@@ -15,5 +15,5 @@ quote_style = "AutoPreferDouble"
 collapse_simple_statement = "Never"
 
 # 空行处理：保留最少的空行，保持紧凑但清晰
-column_width = 300
+column_width = 2000
 line_endings = "Unix"

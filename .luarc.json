@@ -1,11 +1,30 @@
 {
     "$schema": "https://raw.githubusercontent.com/sumneko/vscode-lua/master/setting/schema.json",
+    "Lua.runtime.version": "Lua 5.2",
+    "Lua.workspace.library": [
+        "types"
+    ],
+    "Lua.workspace.checkThirdParty": false,
+    "Lua.diagnostics.globals": [
+        "RiftRail",
+        "script",
+        "game",
+        "defines",
+        "settings",
+        "storage",
+        "remote",
+        "data",
+        "mods"
+    ],
+    "Lua.diagnostics.disable": [
+        "need-check-nil"
+    ],
     "Lua.format.enable": true,
     "Lua.format.defaultConfig": {
         "indent_style": "space",
         "indent_size": "4",
         "quote_style": "double",
-        "max_line_length": "300",
+        "max_line_length": "2000",
 
         "-- [需求1] 强制拆分单行代码 (if/function等) --": "",
         "keep_simple_control_block_one_line": false,
@@ -13,8 +32,8 @@
         "keep_simple_block_one_line": false,
 
         "-- [需求2 & 3] 对齐设置 --": "",
-        "align_continuous_assign_statement": false,     
-        "align_continuous_rect_table_field": false,
+        "align_continuous_assign_statement": true,
+        "align_continuous_rect_table_field": true,
         
         "align_continuous_inline_comment": true
     }

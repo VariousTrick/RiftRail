@@ -1,6 +1,7 @@
 -- scripts/teleport.lua
 -- 【Rift Rail - 传送核心模块】
 -- 功能：处理火车传送的完整运行时逻辑
+---@diagnostic disable: need-check-nil, param-type-mismatch
 
 local Teleport = {}
 -- =================================================================================
@@ -381,7 +382,6 @@ end
 -- =========================================================================
 ---@param entry_portaldata PortalData 入口数据 / Entry portal data
 ---@param exit_portaldata PortalData 出口数据 / Exit portal data
----@return number 施加的速度值 / Applied speed value
 local function apply_entry_pulse(entry_portaldata, exit_portaldata)
     local entry_car = entry_portaldata.entry_car
     if not (entry_car and entry_car.valid) then
@@ -414,8 +414,8 @@ end
 -- =================================================================================
 -- 【纯函数】计算车厢在出口生成的朝向 (Orientation 0.0-1.0)
 -- =================================================================================
----@param entry_shell_dir integer 入口传送门朝向 / Entry portal direction
----@param exit_geo_dir integer 出口传送门朝向 / Exit portal direction
+---@param entry_shell_dir integer|defines.direction 入口传送门朝向 / Entry portal direction
+---@param exit_geo_dir integer|defines.direction 出口传送门朝向 / Exit portal direction
 ---@param current_ori number 当前车厢朝向 / Current carriage orientation
 ---@return number 目标朝向 / Target orientation
 ---@return boolean 是否顺向 / Is nose-in
@@ -621,7 +621,7 @@ end
 -- 【辅助函数】确保几何数据缓存有效 (去重逻辑)
 -- =================================================================================
 ---@param portaldata PortalData 传送门数据 / Portal data
----@return table 有效的几何配置表 / Valid geometry config
+---@return table|nil 有效的几何配置表 / Valid geometry config
 local function ensure_geometry_cache(portaldata)
     if not (portaldata and portaldata.shell and portaldata.shell.valid) then
         return nil
@@ -938,7 +938,7 @@ end
 -- 结束传送：清理状态，恢复数据
 -- =================================================================================
 ---@param entry_portaldata PortalData 入口数据 / Entry portal data
----@param exit_portaldata PortalData 出口数据 / Exit portal data
+---@param exit_portaldata PortalData|nil 出口数据 / Exit portal data
 local function finalize_sequence(entry_portaldata, exit_portaldata)
     if RiftRail.DEBUG_MODE_ENABLED then
         local exit_id = exit_portaldata and exit_portaldata.id or "N/A(已摧毁)"

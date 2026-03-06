@@ -54,8 +54,8 @@ end
 -- =========================================================================
 -- 核心物品栏转移函数 (重构版：使用 set_stack)
 -- 功能：将一个物品栏的内容 1:1 克隆到另一个，完美保留位置布局、耐久度和元数据。
----@param source_inv 源物品栏
----@param destination_inv 目标物品栏
+---@param source_inv LuaInventory 源物品栏
+---@param destination_inv LuaInventory 目标物品栏
 -- =========================================================================
 function Util.clone_inventory_contents(source_inv, destination_inv)
     if not (source_inv and destination_inv) then
@@ -87,8 +87,8 @@ end
 -- =========================================================================
 -- 燃烧室内容转移函数
 -- 功能：转移燃料、燃烧进度和废料。
----@param source_entity 源实体
----@param destination_entity 目标实体
+---@param source_entity LuaEntity 源实体
+---@param destination_entity LuaEntity 目标实体
 -- =========================================================================
 function Util.clone_burner_state(source_entity, destination_entity)
     if not (source_entity and source_entity.valid and destination_entity and destination_entity.valid) then
