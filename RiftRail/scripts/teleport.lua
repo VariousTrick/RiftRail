@@ -986,9 +986,9 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         exit_portaldata.exit_car = nil              -- 清理出口车厢引用，防止 on_tick 中的过期访问
         exit_portaldata.old_train_id = nil          -- 清理旧车ID缓存
         exit_portaldata.cached_teleport_speed = nil -- 清理缓存速度
+        exit_portaldata.cached_speed_sign = nil     -- 清理速度方向缓存
         exit_portaldata.saved_schedule_index = nil  -- 清理时刻表索引缓存
         exit_portaldata.locking_entry_id = nil      -- 释放互斥锁,允许其他入口使用
-        exit_portaldata.placement_interval = nil    -- 清理放置间隔缓存
         exit_portaldata.saved_manual_mode = nil     -- 清理手动/自动模式缓存
         exit_portaldata.cached_place_query = nil    -- 清理 can_place 查询缓存，防止过期数据干扰下一次传送
     end
@@ -998,6 +998,7 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         entry_portaldata.exit_car = nil                -- 清理入口侧“上一节已生成替身”标记，供下一次会话重新判定首节
         entry_portaldata.locked_exit_unit_number = nil -- 清理物理死锁，允许下次传送重新排队选择
         entry_portaldata.gui_map = nil                 -- 清理 GUI 观看者映射表
+        entry_portaldata.placement_interval = nil      -- 清理入口放置间隔缓存（process_teleport_sequence 读取入口侧）
     
     -- 6. 标记需要重建入口碰撞器
     -- 我们不在这里直接创建，而是交给 on_tick 去计算正确的坐标并创建
@@ -1126,7 +1127,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         exit_portaldata.old_train_id = car.train.id                                                     -- 保存旧车ID
         exit_portaldata.saved_schedule_index = car.train.schedule and car.train.schedule.current or nil -- 保存时刻表索引
         exit_portaldata.cached_teleport_speed = settings.global["rift-rail-teleport-speed"].value       -- 缓存设定中的列车速度，供 maintain_exit_speed 使用
-        exit_portaldata.placement_interval = settings.global["rift-rail-placement-interval"].value      -- 缓存设定中的放置间隔，供 process_teleport_sequence 使用
+        entry_portaldata.placement_interval = settings.global["rift-rail-placement-interval"].value     -- 缓存设定中的放置间隔，供 process_teleport_sequence 使用（入口侧读取）
     end
 
     -- 计算目标朝向
@@ -1243,6 +1244,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     if exit_portaldata.exit_car and exit_portaldata.exit_car.valid then
         local merged_train = exit_portaldata.exit_car.train
         if merged_train and merged_train.valid then
+            exit_portaldata.cached_speed_sign = calculate_speed_sign(merged_train, exit_portaldata)
             local target_index = index_before_spawn or exit_portaldata.saved_schedule_index
             if RiftRail.DEBUG_MODE_ENABLED then
                 log_tp("【创建后】准备恢复: index_before_spawn=" .. tostring(index_before_spawn) .. ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index) .. ", 使用target=" .. tostring(target_index))
@@ -1385,9 +1387,12 @@ function Teleport.maintain_exit_speed(portaldata)
     -- 同时这会产生“弹射/吸入”效果，最大化吞吐量。
     local target_speed = exit_portaldata.cached_teleport_speed or settings.global["rift-rail-teleport-speed"].value
 
-    -- 计算出口列车所需的速度方向
-    -- 以出口传送门的位置为参考点
-    local required_sign = calculate_speed_sign(train_exit, exit_portaldata)
+    -- 读取出口速度方向缓存；仅在缓存缺失时兜底计算一次
+    local required_sign = exit_portaldata.cached_speed_sign
+    if not required_sign then
+        required_sign = calculate_speed_sign(train_exit, exit_portaldata)
+        exit_portaldata.cached_speed_sign = required_sign
+    end
 
     -- 应用速度前增加状态检查
     local should_push = train_exit.manual_mode or (train_exit.state == defines.train_state.on_the_path)
@@ -1509,6 +1514,14 @@ function Teleport.on_tick(event)
         -- 顶层判断：数据无效直接清理
         if not (portaldata and portaldata.shell and portaldata.shell.valid) then
             if portaldata and portaldata.unit_number then
+                local locked_exit_unit_number = portaldata.locked_exit_unit_number
+                if locked_exit_unit_number then
+                    local exit_portaldata = State.get_portaldata_by_unit_number(locked_exit_unit_number)
+                    if exit_portaldata and exit_portaldata.locking_entry_id == portaldata.unit_number then
+                        exit_portaldata.locking_entry_id = nil
+                    end
+                    portaldata.locked_exit_unit_number = nil
+                end
                 storage.active_teleporters[portaldata.unit_number] = nil
             end
             table.remove(list, i)

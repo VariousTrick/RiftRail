@@ -4,6 +4,40 @@
 > 规则：新改动统一追加到最上方（时间倒序），每次包含日期、改动文件、改动内容。
 > 补充：本文件从 v0.11.7 之后开始维护；当前 2026-03-02 的全部条目均归入 v0.11.8 发布内容。
 
+## 2026-03-06（v0.11.10 开发中：入口拆除时的出口锁泄漏修复）
+
+### 改动摘要
+- 修复入口传送门在传送中被拆除后，出口 `locking_entry_id` 可能残留导致后续长期无法抢锁的问题。
+- 采用最小改动策略：仅在 `on_tick` 的“无效 portal 清理”分支增加一次临终解锁。
+
+### 具体改动
+- `RiftRail/scripts/teleport.lua`
+  - `Teleport.on_tick(event)`：当活跃列表中的入口 `portaldata` 已失效时，若其记录了 `locked_exit_unit_number`，则尝试定位出口并在 `locking_entry_id == 该入口unit_number` 时释放锁，随后再执行原有活跃列表清理。
+
+## 2026-03-06（v0.11.10 开发中：修正放置间隔缓存读写对象不一致）
+
+### 改动摘要
+- 修正 `placement_interval` 缓存写在出口、读取在入口导致缓存不命中的问题。
+- 保持现有流程不变，仅统一为“入口侧写入 + 入口侧读取 + 会话结束清理”。
+
+### 具体改动
+- `RiftRail/scripts/teleport.lua`
+  - `process_transfer_step(...)`：首节车时将 `placement_interval` 写入 `entry_portaldata`（与 `process_teleport_sequence(...)` 读取对象一致）。
+  - `finalize_sequence(...)`：将 `placement_interval` 清理从 `exit_portaldata` 调整为 `entry_portaldata`。
+
+## 2026-03-06（v0.11.10 开发中：出口速度方向缓存更新时机优化）
+
+### 改动摘要
+- 将出口速度方向计算从 `maintain_exit_speed` 的每 tick 重算，调整为“拼接成功后更新缓存，tick 内直接读取缓存”。
+- 结合实测结论（拼接会触发 `train_id` 变化），采用单一触发点策略，不再引入额外的 `train_id` 变化判断分支。
+- 保留“缓存缺失时兜底重算”以覆盖极端首帧/异常路径，保证稳定性。
+
+### 具体改动
+- `RiftRail/scripts/teleport.lua`
+  - `process_transfer_step(...)`：在新车厢创建并拼接完成后，写入 `exit_portaldata.cached_speed_sign`。
+  - `maintain_exit_speed(...)`：优先读取 `cached_speed_sign`，不再每 tick 调用 `calculate_speed_sign(...)`；仅在缓存为空时兜底计算一次并回填。
+  - `finalize_sequence(...)`：新增 `exit_portaldata.cached_speed_sign = nil` 清理，避免跨会话残留。
+
 ## 2026-03-04（v0.11.9 开发中：Kux-SlimInserters 兼容修复）
 
 ### 改动摘要
