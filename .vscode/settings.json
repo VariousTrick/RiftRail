@@ -5,5 +5,8 @@
     "editor.formatOnType": true,
     "[lua]": {
         "editor.defaultFormatter": "JohnnyMorganz.stylua"
-    }
+    },
+    "Lua.codeLens.enable": true,
+    "editor.codeLens": true,
+    "editor.fontFamily": "'Sarasa Mono SC', 'JetBrainsMono Nerd Font', monospace"
 }
