@@ -4,6 +4,7 @@
 local has_sa = mods["space-age"]
 local has_se = mods["space-exploration"]
 local has_k2 = mods["Krastorio2"]
+local has_cs2 = mods["cybersyn2"]
 local has_se_k2 = has_se and has_k2
 local has_RiftRail = mods["RiftRail"]
 
@@ -25,6 +26,10 @@ end
 
 if has_RiftRail then
     require("updates/easy-mode") -- add Easy Mode integration
+end
+
+if has_RiftRail and has_cs2 then
+    require("updates.cs2") -- register RiftRail as CS2 route plugin
 end
 
 

@@ -4,6 +4,49 @@
 > 规则：新改动统一追加到最上方（时间倒序），每次包含日期、改动文件、改动内容。
 > 补充：本文件从 v0.11.7 之后开始维护；当前 2026-03-02 的全部条目均归入 v0.11.8 发布内容。
 
+## 2026-03-09（v0.12.0 开发中：CS2 兼容骨架接入）
+
+### 改动摘要
+- 接入 Cybersyn2 route plugin 骨架，实现 `topology / reachable / route` 三类回调。
+- 增加 RiftRail 传送完成后的 CS2 handback 闭环：在 `TrainArrived` 事件中按旧车 ID 归还 delivery。
+- 完成运行时接线：`control -> compat.cs2 -> logic/remote`，并在拓扑变化操作后触发 CS2 拓扑重建（带节流）。
+- 完成 data 阶段注册：在检测到 `cybersyn2` 时将 RiftRail 回调写入 `mod-data["cybersyn2"].data.route_plugins`。
+
+### 具体改动
+- `RiftRail/scripts/compat/cs2.lua`（新文件）
+  - 新增 `CS2.init(...)`。
+  - 新增 `train_topology_callback(origin_surface_index)`：按 `cs2_enabled` 的 Entry/Exit 连接返回可达 surface 集合。
+  - 新增 `reachable_callback(...)`：对不可跨地表路径执行 veto（返回 `true`）。
+  - 新增 `route_callback(...)`：跨地表时接管列车，插入前往入口站的调度并记录 handoff 上下文。
+  - 新增 `on_train_arrived(event)`：使用 `old_train_id` 定位待归还 delivery，调用 `remote.call("cybersyn2", "route_plugin_handoff", ...)`。
+  - 新增 `on_topology_changed()`：节流调用 `remote.call("cybersyn2", "rebuild_train_topologies")`。
+
+- `RiftRail/control.lua`
+  - 新增 `require("scripts.compat.cs2")` 并初始化 `CS2Compat`。
+  - 将 `CS2Compat` 注入 `Logic.init(...)` 与 `Remote.init(...)`。
+  - 新增 `RiftRail.Events.TrainArrived` 监听并转发至 `CS2Compat.on_train_arrived`。
+
+- `RiftRail/scripts/remote.lua`
+  - `RiftRail` remote interface 新增：
+    - `cs2_train_topology_callback`
+    - `cs2_reachable_callback`
+    - `cs2_route_callback`
+  - 以上回调均转发到 `CS2Compat`。
+
+- `RiftRail/scripts/logic.lua`
+  - `Logic.init(...)` 新增 `CS2` 依赖注入。
+  - 在 `set_mode / pair_portals / unpair_portals_specific / set_cs2_enabled` 后触发 `CS2.on_topology_changed()`。
+
+- `RiftRail/data-updates.lua`
+  - 新增 `has_cs2 = mods["cybersyn2"]` 检测。
+  - 在 `has_RiftRail and has_cs2` 时加载 `updates.cs2`。
+
+- `RiftRail/updates/cs2.lua`（新文件）
+  - 向 `cybersyn2` 的 `route_plugins` 注册 RiftRail 三个回调：
+    - `train_topology_callback = { "RiftRail", "cs2_train_topology_callback" }`
+    - `reachable_callback = { "RiftRail", "cs2_reachable_callback" }`
+    - `route_callback = { "RiftRail", "cs2_route_callback" }`
+
 ## 2026-03-09（v0.12.0 开发中：旧存档 CS2 字段补齐迁移）
 
 ### 改动摘要

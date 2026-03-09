@@ -5,6 +5,7 @@ local Logic = {}
 local State = nil
 local GUI = nil
 local LTN = nil
+local CS2 = nil
 
 local log_debug = function() end
 
@@ -32,6 +33,7 @@ function Logic.init(deps)
     GUI = deps.GUI
     log_debug = deps.log_debug
     LTN = deps.LTN
+    CS2 = deps.CS2
 end
 
 -- ============================================================================
@@ -346,6 +348,10 @@ function Logic.set_mode(player_index, portal_id, mode, skip_sync)
     -- 在多对一结构中，不再允许自动修改配对对象的模式
 
     refresh_all_guis()
+
+    if CS2 and CS2.on_topology_changed then
+        CS2.on_topology_changed()
+    end
 end
 
 -- ============================================================================
@@ -485,6 +491,10 @@ function Logic.pair_portals(player_index, source_id, target_id)
     end
 
     refresh_all_guis()
+
+    if CS2 and CS2.on_topology_changed then
+        CS2.on_topology_changed()
+    end
 end
 
 -- ============================================================================
@@ -595,7 +605,12 @@ function Logic.set_cs2_enabled(player_index, portal_id, enabled)
     end
 
     my_data.cs2_enabled = enabled
+
     refresh_all_guis()
+
+    if CS2 and CS2.on_topology_changed then
+        CS2.on_topology_changed()
+    end
 end
 
 -- ============================================================================
@@ -732,6 +747,10 @@ function Logic.unpair_portals_specific(player_index, source_id, target_id)
     end
 
     refresh_all_guis()
+
+    if CS2 and CS2.on_topology_changed then
+        CS2.on_topology_changed()
+    end
 end
 
 -- ============================================================================

@@ -6,6 +6,7 @@ local State
 local Logic
 local Builder
 local GUI
+local CS2
 local log_debug
 
 function Remote.init(params)
@@ -14,6 +15,7 @@ function Remote.init(params)
     Logic = params.Logic
     Builder = params.Builder
     GUI = params.GUI
+    CS2 = params.CS2
     log_debug = params.log_debug
 
     -- ============================================================================
@@ -27,6 +29,24 @@ function Remote.init(params)
         end,
         get_train_arrived_event = function()
             return RiftRail.Events.TrainArrived
+        end,
+        cs2_train_topology_callback = function(origin_surface_index)
+            if CS2 and CS2.train_topology_callback then
+                return CS2.train_topology_callback(origin_surface_index)
+            end
+            return nil
+        end,
+        cs2_reachable_callback = function(...)
+            if CS2 and CS2.reachable_callback then
+                return CS2.reachable_callback(...)
+            end
+            return nil
+        end,
+        cs2_route_callback = function(...)
+            if CS2 and CS2.route_callback then
+                return CS2.route_callback(...)
+            end
+            return nil
         end,
         update_portal_name = function(player_index, portal_id, new_name)
             Logic.update_name(player_index, portal_id, new_name)
