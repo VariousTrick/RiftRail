@@ -4,7 +4,20 @@
 > 规则：新改动统一追加到最上方（时间倒序），每次包含日期、改动文件、改动内容。
 > 补充：本文件从 v0.11.7 之后开始维护；当前 2026-03-02 的全部条目均归入 v0.11.8 发布内容。
 
-## 2026-03-09（v0.11.10 开发中：新增 CS2 按钮与本地开关链路）
+## 2026-03-09（v0.12.0 开发中：旧存档 CS2 字段补齐迁移）
+
+### 改动摘要
+- 为旧存档中的传送门数据补充 `cs2_enabled` 字段，默认值为 `false`。
+- 迁移为一次性任务，在 `on_configuration_changed` 路径执行并写入完成标记，避免重复运行。
+
+### 具体改动
+- `RiftRail/scripts/migrations.lua`
+  - 新增 `Migrations.patch_cs2_enabled_default()`。
+  - 遍历 `storage.rift_rails`，对缺失 `cs2_enabled` 的旧数据补齐 `false`。
+  - 新增标志位 `storage.rift_rail_cs2_toggle_migrated`。
+  - 在 `Migrations.run_all()` 中接入该迁移任务。
+
+## 2026-03-09（v0.12.0 开发中：新增 CS2 按钮与本地开关链路）
 
 ### 改动摘要
 - 在传送门 GUI 中新增 CS2 开关，位置位于 LTN 开关上方，仅在安装 `cybersyn2` 时显示。
