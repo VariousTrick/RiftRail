@@ -4,6 +4,39 @@
 > 规则：新改动统一追加到最上方（时间倒序），每次包含日期、改动文件、改动内容。
 > 补充：本文件从 v0.11.7 之后开始维护；当前 2026-03-02 的全部条目均归入 v0.11.8 发布内容。
 
+## 2026-03-09（v0.11.10 开发中：新增 CS2 按钮与本地开关链路）
+
+### 改动摘要
+- 在传送门 GUI 中新增 CS2 开关，位置位于 LTN 开关上方，仅在安装 `cybersyn2` 时显示。
+- 打通 CS2 开关的本地状态链路：`GUI -> Remote -> Logic`，用于保存 `cs2_enabled` 并刷新界面。
+- 新增英/日/简中本地化条目，覆盖 CS2 开关标签、状态与提示文案。
+- 本次不包含 CS2 路由/拓扑/handoff 兼容逻辑，仅实现按钮与按钮功能。
+
+### 具体改动
+- `RiftRail/scripts/gui.lua`
+  - 新增 `rift_rail_cs2_switch` 开关组件，显示条件为 `script.active_mods["cybersyn2"]`。
+  - 将 CS2 区块放置于 LTN 区块上方。
+  - 在 `handle_switch_state_changed` 中新增 `rift_rail_cs2_switch` 分支，调用 `remote.call("RiftRail", "set_cs2_enabled", ...)`。
+
+- `RiftRail/scripts/remote.lua`
+  - `RiftRail` remote interface 新增 `set_cs2_enabled(player_index, portal_id, enabled)`，转发到 `Logic.set_cs2_enabled`。
+
+- `RiftRail/scripts/logic.lua`
+  - 新增 `Logic.set_cs2_enabled(...)`，负责保存 `portaldata.cs2_enabled` 并刷新 GUI。
+  - 在连接归零自动复位逻辑中加入 `portaldata.cs2_enabled = false`。
+
+- `RiftRail/scripts/builder.lua`
+  - 新建传送门数据时新增默认字段 `cs2_enabled = false`。
+
+- `RiftRail/locale/en/strings.cfg`
+  - 新增 `rift-rail-cs2-label / connected / disconnected / tooltip`。
+
+- `RiftRail/locale/ja/strings.cfg`
+  - 新增 `rift-rail-cs2-label / connected / disconnected / tooltip`。
+
+- `RiftRail/locale/zh-CN/strings.cfg`
+  - 新增 `rift-rail-cs2-label / connected / disconnected / tooltip`。
+
 ## 2026-03-06（v0.11.10 开发中：入口拆除时的出口锁泄漏修复）
 
 ### 改动摘要

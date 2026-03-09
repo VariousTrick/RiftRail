@@ -83,9 +83,10 @@ local function check_and_reset_logistics(portaldata)
     -- 如果连接数已清零，则强制关闭开关
     if connection_count == 0 then
         portaldata.cybersyn_enabled = false
+        portaldata.cs2_enabled = false
         portaldata.ltn_enabled = false
         if RiftRail.DEBUG_MODE_ENABLED then
-            log_debug("[Logic] Portal " .. portaldata.id .. " 连接数为零，已关闭 Cybersyn 和 LTN 开关")
+            log_debug("[Logic] Portal " .. portaldata.id .. " 连接数为零，已关闭 Cybersyn / CS2 / LTN 开关")
         end
     end
 end
@@ -580,6 +581,20 @@ function Logic.set_ltn_enabled(player_index, portal_id, enabled)
         end
     end
 
+    refresh_all_guis()
+end
+
+-- ============================================================================
+-- 7.1 CS2 开关控制
+-- ============================================================================
+function Logic.set_cs2_enabled(player_index, portal_id, enabled)
+    local player = game.get_player(player_index)
+    local my_data = State.get_portaldata_by_id(portal_id)
+    if not (player and my_data) then
+        return
+    end
+
+    my_data.cs2_enabled = enabled
     refresh_all_guis()
 end
 

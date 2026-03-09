@@ -52,6 +52,10 @@ function Remote.init(params)
             Logic.set_ltn_enabled(player_index, portal_id, enabled)
         end,
 
+        set_cs2_enabled = function(player_index, portal_id, enabled)
+            Logic.set_cs2_enabled(player_index, portal_id, enabled)
+        end,
+
         -- 玩家传送逻辑：传送到当前建筑外部，而非配对目标
         teleport_player = function(player_index, portal_id)
             Logic.teleport_player(player_index, portal_id)
