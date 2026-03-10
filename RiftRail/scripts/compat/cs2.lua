@@ -18,6 +18,8 @@ end
 local function ensure_storage()
     storage.rr_cs2_handoff_by_old_train_id = storage.rr_cs2_handoff_by_old_train_id or {}
     storage.rr_cs2_old_train_by_delivery_id = storage.rr_cs2_old_train_by_delivery_id or {}
+    -- 保存跨地表卸货站信息（station名称、轨道坐标等）
+    storage.rr_cs2_dropoff_info_by_train_id = storage.rr_cs2_dropoff_info_by_train_id or {}
 end
 
 local function get_station(portaldata)
@@ -174,6 +176,69 @@ function CS2.init(deps)
     ensure_storage()
 end
 
+-- 在新地表的列车上恢复卸货站时刻表。
+-- 这个函数由 teleport.lua 在第一节车厢生成并恢复状态之后调用。
+-- 插入顺序：临时轨道坐标（首位）→ 卸货站实名（第二位）→ 车库仍在末尾。
+-- 返回新的时刻表目标索引（1），如果没有需要恢复的信息则返回 nil。
+function CS2.restore_dropoff_schedule(new_train, old_train_id)
+    if not (new_train and new_train.valid and old_train_id) then
+        return nil
+    end
+
+    ensure_storage()
+    local dropoff_info = storage.rr_cs2_dropoff_info_by_train_id[old_train_id]
+    if not dropoff_info then
+        return nil
+    end
+
+    local schedule = new_train.get_schedule()
+    if not schedule then
+        cs2_log("警告：restore_dropoff_schedule 无法获取时刻表 old_train=" .. old_train_id)
+        return nil
+    end
+
+    -- 先插入实名车站到第1位（随后临时轨道插到第1位会把它推到第2位）
+    if dropoff_info.station_name then
+        local ok = schedule.add_record({
+            station = dropoff_info.station_name,
+            index = { schedule_index = 1 },
+            temporary = true,
+            wait_conditions = {
+                { type = "empty", compare_type = "and" },
+            },
+        })
+        if ok then
+            cs2_log("恢复卸货站实名 station=" .. dropoff_info.station_name .. " old_train=" .. old_train_id)
+        else
+            cs2_log("警告：恢复卸货站实名失败 station=" .. dropoff_info.station_name .. " old_train=" .. old_train_id)
+        end
+    end
+
+    -- 再插入临时轨道坐标到第1位（把实名车站推到第2位）
+    if dropoff_info.connected_rail and dropoff_info.connected_rail.valid then
+        local ok = schedule.add_record({
+            rail = dropoff_info.connected_rail,
+            rail_direction = dropoff_info.connected_rail_direction,
+            index = { schedule_index = 1 },
+            temporary = true,
+        })
+        if ok then
+            cs2_log("恢复卸货站临时轨道 old_train=" .. old_train_id)
+        else
+            cs2_log("警告：恢复卸货站临时轨道失败 old_train=" .. old_train_id)
+        end
+    end
+
+    -- 跳转到第1位（临时轨道），让列车立即开往卸货站
+    schedule.go_to_station(1)
+
+    -- 清理已使用的信息
+    storage.rr_cs2_dropoff_info_by_train_id[old_train_id] = nil
+
+    cs2_log("卸货站时刻表恢复完成，已跳转到索引1 old_train=" .. old_train_id)
+    return 1
+end
+
 -- Returns a SET<table<uint, boolean>> of surfaces reachable from origin surface.
 function CS2.train_topology_callback(origin_surface_index)
     if not cs2_active() then
@@ -276,6 +341,20 @@ function CS2.route_callback(delivery_id, action, _, train_id, luatrain, train_st
     local old_train_id = luatrain.id
 
     ensure_storage()
+    
+    -- 保存卸货站信息：station名称、轨道坐标、轨道方向
+    -- 这些信息在on_train_arrived时会被用来在新地表上添加卸货站时刻表
+    local dropoff_info = nil
+    if stop_entity and stop_entity.valid then
+        dropoff_info = {
+            station_name = stop_entity.backer_name,
+            connected_rail = stop_entity.connected_rail,
+            connected_rail_direction = stop_entity.connected_rail_direction,
+            surface_index = stop_entity.surface.index,
+        }
+        storage.rr_cs2_dropoff_info_by_train_id[old_train_id] = dropoff_info
+    end
+
     storage.rr_cs2_handoff_by_old_train_id[old_train_id] = {
         delivery_id = delivery_id,
         action = action,
@@ -289,6 +368,7 @@ function CS2.route_callback(delivery_id, action, _, train_id, luatrain, train_st
                 .. " old_luatrain=" .. tostring(old_train_id)
                 .. " cstrain=" .. tostring(train_id)
             .. " route=" .. entry.id .. "->" .. exit_portal.id
+                .. (dropoff_info and (" -> " .. dropoff_info.station_name) or "")
     )
 
     return true
@@ -312,9 +392,57 @@ function CS2.on_train_arrived(event)
         return
     end
 
+    cs2_log(
+        "传送完成：开始恢复卸货站时刻表 old_train=" .. old_train_id
+            .. " new_train=" .. new_train.id
+            .. " delivery=" .. handoff.delivery_id
+    )
+
+    -- 第一步：恢复卸货站的时刻表（临时轨道坐标 + station记录）
+    -- 这个步骤必须在新列车到达新地表后进行，不能在传送前做，否则会因为跨地表的轨道而报错
+    local dropoff_info = storage.rr_cs2_dropoff_info_by_train_id[old_train_id]
+    if dropoff_info then
+        local schedule = new_train.get_schedule()
+        if schedule then
+            -- 添加卸货站的临时轨道坐标记录
+            if dropoff_info.connected_rail and dropoff_info.connected_rail.valid then
+                local add_record_ok = schedule.add_record({
+                    rail = dropoff_info.connected_rail,
+                    rail_direction = dropoff_info.connected_rail_direction,
+                })
+                if add_record_ok then
+                    cs2_log("成功添加卸货站轨道坐标 delivery=" .. handoff.delivery_id)
+                else
+                    cs2_log("警告：添加卸货站轨道坐标失败 delivery=" .. handoff.delivery_id)
+                end
+            end
+
+            -- 添加卸货站station名称记录
+            if dropoff_info.station_name then
+                local add_record_ok = schedule.add_record({
+                    station = dropoff_info.station_name,
+                    wait_conditions = {
+                        {
+                            type = "empty",
+                            compare_type = "and",
+                        },
+                    },
+                })
+                if add_record_ok then
+                    cs2_log("成功添加卸货站记录 station=" .. dropoff_info.station_name .. " delivery=" .. handoff.delivery_id)
+                else
+                    cs2_log("警告：添加卸货站记录失败 station=" .. dropoff_info.station_name .. " delivery=" .. handoff.delivery_id)
+                end
+            end
+        end
+
+        storage.rr_cs2_dropoff_info_by_train_id[old_train_id] = nil
+    end
+
     storage.rr_cs2_handoff_by_old_train_id[old_train_id] = nil
     storage.rr_cs2_old_train_by_delivery_id[handoff.delivery_id] = nil
 
+    -- 第二步：调用route_plugin_handoff将列车归还给CS2
     local ok, err = pcall(
         remote.call,
         "cybersyn2",
@@ -335,7 +463,7 @@ function CS2.on_train_arrived(event)
         return
     end
 
-    cs2_log("handoff 归还成功 delivery=" .. handoff.delivery_id .. " old_train=" .. old_train_id)
+    cs2_log("handoff 归还成功 delivery=" .. handoff.delivery_id .. " old_train=" .. old_train_id .. " new_train=" .. new_train.id)
 end
 
 function CS2.on_topology_changed()
