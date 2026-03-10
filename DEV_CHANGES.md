@@ -19,6 +19,9 @@
     - 下一实名站（由 CS2 传入 `stop_entity.backer_name`）。
   - 删除 `restore_dropoff_schedule(...)` 与 `rr_cs2_dropoff_info_by_train_id` 缓存路径。
   - `on_train_arrived(...)` 仅执行“先清理临时站，再 handoff”，不再二次补站。
+  - 进一步对齐 SE 车组生命周期：
+    - 接管时暂时解绑 `luatrain.group`，并覆盖为“两站过渡调度（入口 -> 下一实名站）”。
+    - 传送完成后先 `new_train.schedule = nil`，恢复原车组，再 `route_plugin_handoff` 交还 CS2。
 
 - `RiftRail/scripts/teleport.lua`
   - 移除 `CS2Compat.restore_dropoff_schedule(...)` 的第一节回填调用。
