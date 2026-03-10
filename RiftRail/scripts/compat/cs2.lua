@@ -170,6 +170,33 @@ local function route_train_to_entry(luatrain, station_name, exit_id)
     return true
 end
 
+-- 清理列车时刻表中的临时站点。
+-- 用于在最终 handoff 前移除 RiftRail 过渡阶段添加的临时记录，
+-- 让 CS2 在 handoff 后只重建一套临时调度，避免重复。
+local function clear_temporary_records(luatrain)
+    if not (luatrain and luatrain.valid) then
+        return 0
+    end
+
+    local schedule = luatrain.get_schedule()
+    if not schedule then
+        return 0
+    end
+
+    local removed = 0
+    local record_count = schedule.get_record_count()
+    for i = record_count, 1, -1 do
+        local rec = schedule.get_record({ schedule_index = i })
+        if rec and rec.temporary then
+            if schedule.remove_record({ schedule_index = i }) then
+                removed = removed + 1
+            end
+        end
+    end
+
+    return removed
+end
+
 function CS2.init(deps)
     State = deps.State
     log_debug = deps.log_debug or log_debug
@@ -392,52 +419,19 @@ function CS2.on_train_arrived(event)
         return
     end
 
-    cs2_log(
-        "传送完成：开始恢复卸货站时刻表 old_train=" .. old_train_id
-            .. " new_train=" .. new_train.id
-            .. " delivery=" .. handoff.delivery_id
-    )
-
-    -- 第一步：恢复卸货站的时刻表（临时轨道坐标 + station记录）
-    -- 这个步骤必须在新列车到达新地表后进行，不能在传送前做，否则会因为跨地表的轨道而报错
-    local dropoff_info = storage.rr_cs2_dropoff_info_by_train_id[old_train_id]
-    if dropoff_info then
-        local schedule = new_train.get_schedule()
-        if schedule then
-            -- 添加卸货站的临时轨道坐标记录
-            if dropoff_info.connected_rail and dropoff_info.connected_rail.valid then
-                local add_record_ok = schedule.add_record({
-                    rail = dropoff_info.connected_rail,
-                    rail_direction = dropoff_info.connected_rail_direction,
-                })
-                if add_record_ok then
-                    cs2_log("成功添加卸货站轨道坐标 delivery=" .. handoff.delivery_id)
-                else
-                    cs2_log("警告：添加卸货站轨道坐标失败 delivery=" .. handoff.delivery_id)
-                end
-            end
-
-            -- 添加卸货站station名称记录
-            if dropoff_info.station_name then
-                local add_record_ok = schedule.add_record({
-                    station = dropoff_info.station_name,
-                    wait_conditions = {
-                        {
-                            type = "empty",
-                            compare_type = "and",
-                        },
-                    },
-                })
-                if add_record_ok then
-                    cs2_log("成功添加卸货站记录 station=" .. dropoff_info.station_name .. " delivery=" .. handoff.delivery_id)
-                else
-                    cs2_log("警告：添加卸货站记录失败 station=" .. dropoff_info.station_name .. " delivery=" .. handoff.delivery_id)
-                end
-            end
-        end
-
-        storage.rr_cs2_dropoff_info_by_train_id[old_train_id] = nil
+    -- 第一步：清理过渡时刻表中的临时站，避免 handoff 后和 CS2 新建的临时站叠加。
+    local removed = clear_temporary_records(new_train)
+    if removed > 0 then
+        cs2_log(
+            "传送完成：已清理过渡临时站 count=" .. removed
+                .. " old_train=" .. old_train_id
+                .. " new_train=" .. new_train.id
+                .. " delivery=" .. handoff.delivery_id
+        )
     end
+
+    -- 安全兜底：无论是否已在第一节用掉，都清理一次缓存。
+    storage.rr_cs2_dropoff_info_by_train_id[old_train_id] = nil
 
     storage.rr_cs2_handoff_by_old_train_id[old_train_id] = nil
     storage.rr_cs2_old_train_by_delivery_id[handoff.delivery_id] = nil
