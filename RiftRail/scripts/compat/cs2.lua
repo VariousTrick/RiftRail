@@ -50,21 +50,37 @@ local function get_train_surface_and_position(train_stock, luatrain)
     return nil, nil
 end
 
+-- 读取当前时刻表最后一个站名。
+-- 对 CS2 车组列车来说，这个站通常就是基础车库站。
+local function get_last_station_name(luatrain)
+    if not (luatrain and luatrain.valid) then
+        return nil
+    end
+
+    local schedule = luatrain.get_schedule()
+    if not schedule then
+        return nil
+    end
+
+    local record_count = schedule.get_record_count()
+    if record_count < 1 then
+        return nil
+    end
+
+    local last_record = schedule.get_record({ schedule_index = record_count })
+    if last_record and last_record.station and last_record.station ~= "" then
+        return last_record.station
+    end
+
+    return nil
+end
+
 local function is_cs2_enabled_entry(portaldata)
-    return portaldata
-        and portaldata.mode == "entry"
-        and portaldata.cs2_enabled
-        and portaldata.shell
-        and portaldata.shell.valid
-        and portaldata.target_ids
+    return portaldata and portaldata.mode == "entry" and portaldata.cs2_enabled and portaldata.shell and portaldata.shell.valid and portaldata.target_ids
 end
 
 local function is_cs2_enabled_exit(portaldata)
-    return portaldata
-        and portaldata.mode == "exit"
-        and portaldata.cs2_enabled
-        and portaldata.shell
-        and portaldata.shell.valid
+    return portaldata and portaldata.mode == "exit" and portaldata.cs2_enabled and portaldata.shell and portaldata.shell.valid
 end
 
 local function has_direct_route(from_surface_index, to_surface_index)
@@ -76,9 +92,7 @@ local function has_direct_route(from_surface_index, to_surface_index)
         if is_cs2_enabled_entry(entry) and entry.surface.index == from_surface_index then
             for target_id, _ in pairs(entry.target_ids) do
                 local exit_portal = State.get_portaldata_by_id(target_id)
-                if is_cs2_enabled_exit(exit_portal)
-                    and exit_portal.surface.index == to_surface_index
-                then
+                if is_cs2_enabled_exit(exit_portal) and exit_portal.surface.index == to_surface_index then
                     return true
                 end
             end
@@ -101,9 +115,7 @@ local function find_best_route(from_surface_index, to_surface_index, start_pos)
         if is_cs2_enabled_entry(entry) and entry.surface.index == from_surface_index then
             for target_id, _ in pairs(entry.target_ids) do
                 local exit_portal = State.get_portaldata_by_id(target_id)
-                if is_cs2_enabled_exit(exit_portal)
-                    and exit_portal.surface.index == to_surface_index
-                then
+                if is_cs2_enabled_exit(exit_portal) and exit_portal.surface.index == to_surface_index then
                     local dist = 0
                     if start_pos then
                         local dx = start_pos.x - entry.shell.position.x
@@ -128,8 +140,7 @@ local function route_train_to_entry(luatrain, station_name, exit_id, continuatio
         return false
     end
 
-    local schedule = luatrain.get_schedule()
-    if not schedule then
+    if not continuation_station_name or continuation_station_name == "" then
         return false
     end
 
@@ -145,67 +156,23 @@ local function route_train_to_entry(luatrain, station_name, exit_id, continuatio
         },
     }
 
-    local record_count = schedule.get_record_count()
-    local insert_index = record_count > 0 and record_count or 1
-
-    local ok = schedule.add_record({
-        station = station_name,
-        index = { schedule_index = insert_index },
-        temporary = true,
-        wait_conditions = wait_conditions,
-    })
-
-    if not ok then
-        return false
-    end
-
-    -- 在传送入口下方追加“下一实名站”，让第一节车厢到出口后有明确下一站可走，
-    -- 避免在整列尚未传送完成前出现车头堵住出口的问题。
-    if continuation_station_name and continuation_station_name ~= "" then
-        local continuation_ok = schedule.add_record({
-            station = continuation_station_name,
-            index = { schedule_index = insert_index + 1 },
-            temporary = true,
-        })
-        if not continuation_ok then
-            return false
-        end
-    end
-
-    if schedule.current >= insert_index then
-        luatrain.go_to_station(insert_index)
-    else
-        luatrain.go_to_station(insert_index)
-    end
+    -- 对齐 SE 方案：接管时直接覆盖为两站过渡调度（入口 -> 下一实名站）。
+    luatrain.schedule = {
+        records = {
+            {
+                station = station_name,
+                temporary = true,
+                wait_conditions = wait_conditions,
+            },
+            {
+                station = continuation_station_name,
+                temporary = true,
+            },
+        },
+        current = 1,
+    }
 
     return true
-end
-
--- 清理列车时刻表中的临时站点。
--- 用于在最终 handoff 前移除 RiftRail 过渡阶段添加的临时记录，
--- 让 CS2 在 handoff 后只重建一套临时调度，避免重复。
-local function clear_temporary_records(luatrain)
-    if not (luatrain and luatrain.valid) then
-        return 0
-    end
-
-    local schedule = luatrain.get_schedule()
-    if not schedule then
-        return 0
-    end
-
-    local removed = 0
-    local record_count = schedule.get_record_count()
-    for i = record_count, 1, -1 do
-        local rec = schedule.get_record({ schedule_index = i })
-        if rec and rec.temporary then
-            if schedule.remove_record({ schedule_index = i }) then
-                removed = removed + 1
-            end
-        end
-    end
-
-    return removed
 end
 
 function CS2.init(deps)
@@ -264,10 +231,7 @@ function CS2.reachable_callback(_, _, _, _, train_home_surface_index, from_stop_
         return true
     end
 
-    if train_home_surface_index
-        and train_home_surface_index ~= to_surface_index
-        and not has_direct_route(to_surface_index, train_home_surface_index)
-    then
+    if train_home_surface_index and train_home_surface_index ~= to_surface_index and not has_direct_route(to_surface_index, train_home_surface_index) then
         return true
     end
 
@@ -309,12 +273,35 @@ function CS2.route_callback(delivery_id, action, _, train_id, luatrain, train_st
         return nil
     end
 
+    local exit_station = get_station(exit_portal)
+
     local continuation_station_name = nil
     if stop_entity and stop_entity.valid then
         continuation_station_name = stop_entity.backer_name
+    elseif action == "complete" then
+        -- complete 场景无 stop_entity：优先使用时刻表末站（通常是车库）作为过渡 continuation。
+        continuation_station_name = get_last_station_name(luatrain)
+
+        -- 兜底：如果异常读不到车库名，回退到出口站，避免直接中断接管。
+        if not continuation_station_name and exit_station and exit_station.valid then
+            continuation_station_name = exit_station.backer_name
+            cs2_log("complete 未读到车库站名，回退使用出口站 continuation=" .. tostring(continuation_station_name))
+        end
+    end
+
+    if not continuation_station_name then
+        return nil
+    end
+
+    local previous_group = luatrain.group
+    if previous_group then
+        luatrain.group = nil
     end
 
     if not route_train_to_entry(luatrain, station.backer_name, exit_portal.id, continuation_station_name) then
+        if previous_group then
+            luatrain.group = previous_group
+        end
         return nil
     end
 
@@ -325,18 +312,12 @@ function CS2.route_callback(delivery_id, action, _, train_id, luatrain, train_st
     storage.rr_cs2_handoff_by_old_train_id[old_train_id] = {
         delivery_id = delivery_id,
         action = action,
+        previous_group = previous_group,
         tick = game and game.tick or 0,
     }
     storage.rr_cs2_old_train_by_delivery_id[delivery_id] = old_train_id
 
-    cs2_log(
-        "接管 delivery=" .. delivery_id
-            .. " action=" .. tostring(action)
-                .. " old_luatrain=" .. tostring(old_train_id)
-                .. " cstrain=" .. tostring(train_id)
-            .. " route=" .. entry.id .. "->" .. exit_portal.id
-                .. (continuation_station_name and (" -> " .. continuation_station_name) or "")
-    )
+    cs2_log("接管 delivery=" .. delivery_id .. " action=" .. tostring(action) .. " old_luatrain=" .. tostring(old_train_id) .. " cstrain=" .. tostring(train_id) .. " route=" .. entry.id .. "->" .. exit_portal.id .. (continuation_station_name and (" -> " .. continuation_station_name) or ""))
 
     return true
 end
@@ -359,38 +340,23 @@ function CS2.on_train_arrived(event)
         return
     end
 
-    -- 第一步：清理过渡时刻表中的临时站，避免 handoff 后和 CS2 新建的临时站叠加。
-    local removed = clear_temporary_records(new_train)
-    if removed > 0 then
-        cs2_log(
-            "传送完成：已清理过渡临时站 count=" .. removed
-                .. " old_train=" .. old_train_id
-                .. " new_train=" .. new_train.id
-                .. " delivery=" .. handoff.delivery_id
-        )
+    -- 对齐 SE 方案：传送完毕先清空过渡调度，再恢复原车组，然后交还 CS2。
+    new_train.schedule = nil
+    if handoff.previous_group then
+        new_train.group = handoff.previous_group
     end
+
+    cs2_log("传送完成：已清空过渡调度并恢复车组 old_train=" .. old_train_id .. " new_train=" .. new_train.id .. " delivery=" .. handoff.delivery_id)
 
     storage.rr_cs2_handoff_by_old_train_id[old_train_id] = nil
     storage.rr_cs2_old_train_by_delivery_id[handoff.delivery_id] = nil
 
     -- 第二步：调用route_plugin_handoff将列车归还给CS2
-    local ok, err = pcall(
-        remote.call,
-        "cybersyn2",
-        "route_plugin_handoff",
-        handoff.delivery_id,
-        new_train
-    )
+    local ok, err = pcall(remote.call, "cybersyn2", "route_plugin_handoff", handoff.delivery_id, new_train)
 
     if not ok then
         cs2_log("handoff 归还失败 delivery=" .. handoff.delivery_id .. " err=" .. tostring(err))
-        pcall(
-            remote.call,
-            "cybersyn2",
-            "fail_delivery",
-            handoff.delivery_id,
-            "RIFTRAIL_HANDOFF_FAILED"
-        )
+        pcall(remote.call, "cybersyn2", "fail_delivery", handoff.delivery_id, "RIFTRAIL_HANDOFF_FAILED")
         return
     end
 
