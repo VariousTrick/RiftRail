@@ -4,6 +4,29 @@
 > 规则：新改动统一追加到最上方（时间倒序），每次包含日期、改动文件、改动内容。
 > 补充：本文件从 v0.11.7 之后开始维护；当前 2026-03-02 的全部条目均归入 v0.11.8 发布内容。
 
+## 2026-03-10（v0.12.0 开发中：CS2 传送流程收敛为 SE 同款闭环）
+
+### 改动摘要
+- 将 CS2 跨地表接管逻辑收敛为“入口传送站 + 下一实名站”的过渡调度。
+- 移除第一节车厢阶段的临时回填钩子，避免与最终 handoff 流程形成混合路径。
+- 保留“传送完成后清理过渡临时站，再 `route_plugin_handoff` 交还 CS2”的闭环，避免重复生成临时站。
+
+### 具体改动
+- `RiftRail/scripts/compat/cs2.lua`
+  - `route_train_to_entry(...)` 新增 `continuation_station_name` 参数。
+  - 接管时按顺序写入：
+    - 入口传送站（带 `riftrail-go-to-id` 条件）。
+    - 下一实名站（由 CS2 传入 `stop_entity.backer_name`）。
+  - 删除 `restore_dropoff_schedule(...)` 与 `rr_cs2_dropoff_info_by_train_id` 缓存路径。
+  - `on_train_arrived(...)` 仅执行“先清理临时站，再 handoff”，不再二次补站。
+
+- `RiftRail/scripts/teleport.lua`
+  - 移除 `CS2Compat.restore_dropoff_schedule(...)` 的第一节回填调用。
+  - 移除 `CS2Compat` 依赖注入接收字段。
+
+- `RiftRail/control.lua`
+  - `Teleport.init(...)` 移除 `CS2Compat` 注入参数。
+
 ## 2026-03-09（v0.12.0 开发中：CS2 兼容骨架接入）
 
 ### 改动摘要

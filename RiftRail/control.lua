@@ -101,7 +101,6 @@ if Teleport.init then
         log_debug = log_debug,
         LtnCompat = LTN,
         AwCompat = AWCompat,
-        CS2Compat = CS2Compat,
         Events = RiftRail.Events,
     })
 end

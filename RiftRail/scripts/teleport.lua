@@ -72,7 +72,6 @@ local Util = nil
 local Schedule = nil
 local LtnCompat = nil
 local AwCompat = nil
-local CS2Compat = nil
 
 -- 1. 定义一个空的日志函数占位符
 local log_debug = function() end
@@ -88,7 +87,6 @@ function Teleport.init(deps)
     -- 接收兼容模块
     LtnCompat = deps.LtnCompat
     AwCompat = deps.AwCompat
-    CS2Compat = deps.CS2Compat
     -- 接收事件ID表
     if deps.Events then
         Events = deps.Events
@@ -1252,18 +1250,6 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
                 log_tp("【创建后】准备恢复: index_before_spawn=" .. tostring(index_before_spawn) .. ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index) .. ", 使用target=" .. tostring(target_index))
             end
             restore_train_state(merged_train, exit_portaldata, false, target_index)
-
-            -- 第一节车厢传送完毕后，立即为新列车恢复CS2卸货站时刻表。
-            -- 必须在此处（新地表、restore之后、apply_entry_pulse之前）执行，
-            -- 原因：临时轨道坐标属于目标地表，在传送完成后才能安全添加。
-            if is_first_car and CS2Compat and CS2Compat.restore_dropoff_schedule then
-                local old_id = exit_portaldata.old_train_id
-                local new_index = CS2Compat.restore_dropoff_schedule(merged_train, old_id)
-                if new_index then
-                    -- 更新保存的索引，防止后续车厢拼接时restore_train_state将其覆盖
-                    exit_portaldata.saved_schedule_index = new_index
-                end
-            end
         end
     end
 
