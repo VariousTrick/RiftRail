@@ -5,16 +5,17 @@ local log_debug = function(_) end
 
 local REBUILD_DEBOUNCE_TICKS = 120
 
+-- 判断 CS2 运行时接口是否可用（模组存在且 remote 接口可调用）。
 local function cs2_active()
     return (script.active_mods["cybersyn2"] ~= nil) and (remote.interfaces["cybersyn2"] ~= nil)
 end
 
+-- 统一 CS2 调试日志前缀。
 local function cs2_log(msg)
-    if RiftRail and RiftRail.DEBUG_MODE_ENABLED then
-        log_debug("[CS2] " .. msg)
-    end
+    log_debug("[CS2] " .. msg)
 end
 
+-- 初始化/补齐 CS2 相关持久化存储字段。
 local function ensure_storage()
     storage.rr_cs2_handoff_by_old_train_id = storage.rr_cs2_handoff_by_old_train_id or {}
     storage.rr_cs2_old_train_by_delivery_id = storage.rr_cs2_old_train_by_delivery_id or {}
@@ -24,6 +25,7 @@ local function ensure_storage()
     end
 end
 
+-- 从传送门 children 中提取站台实体（rift-rail-station）。
 local function get_station(portaldata)
     if not (portaldata and portaldata.children) then
         return nil
@@ -37,6 +39,7 @@ local function get_station(portaldata)
     return nil
 end
 
+-- 获取列车当前地表与位置，优先使用 train_stock，失败时回退到 luatrain 车组。
 local function get_train_surface_and_position(train_stock, luatrain)
     if train_stock and train_stock.valid and train_stock.surface then
         return train_stock.surface.index, train_stock.position
@@ -79,14 +82,17 @@ local function get_last_station_name(luatrain)
     return nil
 end
 
+-- 判断 portal 是否是启用 CS2 的有效入口。
 local function is_cs2_enabled_entry(portaldata)
     return portaldata and portaldata.mode == "entry" and portaldata.cs2_enabled and portaldata.shell and portaldata.shell.valid and portaldata.target_ids
 end
 
+-- 判断 portal 是否是启用 CS2 的有效出口。
 local function is_cs2_enabled_exit(portaldata)
     return portaldata and portaldata.mode == "exit" and portaldata.cs2_enabled and portaldata.shell and portaldata.shell.valid
 end
 
+-- 获取（或创建）from->to 的路由桶。
 local function get_or_create_route_bucket(cache, from_surface_index, to_surface_index)
     cache.by_surface[from_surface_index] = cache.by_surface[from_surface_index] or {}
     local by_to_surface = cache.by_surface[from_surface_index]
@@ -99,6 +105,7 @@ local function get_or_create_route_bucket(cache, from_surface_index, to_surface_
     return by_to_surface[to_surface_index]
 end
 
+-- 向缓存写入一条 entry->exit 的路由边。
 local function append_edge_to_cache(cache, entry, exit_portal)
     local from_surface_index = entry.surface.index
     local to_surface_index = exit_portal.surface.index
@@ -130,6 +137,7 @@ local function append_edge_to_cache(cache, entry, exit_portal)
     table.insert(bucket.flat_edges, edge)
 end
 
+-- 将某个入口的所有可用边写入缓存（仅写入 CS2 已启用的出口）。
 local function append_enabled_edges_for_entry(cache, entry)
     if not is_cs2_enabled_entry(entry) then
         return
@@ -166,6 +174,7 @@ local function rebuild_route_cache()
     storage.rr_cs2_route_cache_dirty = false
 end
 
+-- 按 dirty 标记惰性重建缓存，避免每次查询都全量构建。
 local function ensure_route_cache()
     ensure_storage()
     if storage.rr_cs2_route_cache_dirty then
@@ -173,6 +182,7 @@ local function ensure_route_cache()
     end
 end
 
+-- 基于平铺边重建入口抽屉结构（用于增量删除后的结构恢复）。
 local function rebuild_drawers_from_flat_edges(bucket, from_surface_index)
     local by_entry = {}
 
@@ -231,6 +241,7 @@ local function remove_portal_edges_from_cache(cache, portal_id)
     end
 end
 
+-- 以“出口”为中心补边：重建所有指向该出口的 entry->exit 路由边。
 local function append_enabled_edges_for_exit(cache, exit_portal)
     if not is_cs2_enabled_exit(exit_portal) then
         return
@@ -258,6 +269,7 @@ local function append_enabled_edges_for_exit(cache, exit_portal)
     end
 end
 
+-- 处理单个 portal 的 cs2 开关变更：先删旧边，再按当前状态补边。
 local function refresh_cache_for_toggled_portal(portal_id)
     ensure_route_cache()
 
@@ -276,6 +288,7 @@ local function refresh_cache_for_toggled_portal(portal_id)
     storage.rr_cs2_route_cache_dirty = false
 end
 
+-- 请求 CS2 重建拓扑（带节流，避免高频抖动）。
 local function request_cs2_topology_rebuild()
     local tick = (game and game.tick) or 0
     local last = storage.rr_cs2_last_topology_rebuild_tick or 0
@@ -287,10 +300,13 @@ local function request_cs2_topology_rebuild()
 
     local ok, err = pcall(remote.call, "cybersyn2", "rebuild_train_topologies")
     if not ok then
-        cs2_log("重建拓扑失败: " .. tostring(err))
+        if RiftRail and RiftRail.DEBUG_MODE_ENABLED then
+            cs2_log("重建拓扑失败: " .. tostring(err))
+        end
     end
 end
 
+-- 向方向对集合加入唯一 surface 对（去重）。
 local function add_surface_pair(pairs, pair_set, from_surface_index, to_surface_index)
     if not (from_surface_index and to_surface_index) then
         return
@@ -353,6 +369,7 @@ local function collect_impacted_surface_pairs(portal)
     return impacted_pairs
 end
 
+-- 获取 from->to 的缓存桶（内部会确保缓存可用）。
 local function get_route_bucket(from_surface_index, to_surface_index)
     ensure_route_cache()
 
@@ -364,6 +381,7 @@ local function get_route_bucket(from_surface_index, to_surface_index)
     return by_to_surface[to_surface_index]
 end
 
+-- 计算点到目标位置的平方距离；当目标为空时返回 0（complete 场景）。
 local function calc_dist_sq_to_pos(x, y, pos)
     if not pos then
         return 0
@@ -374,6 +392,7 @@ local function calc_dist_sq_to_pos(x, y, pos)
     return (dx * dx) + (dy * dy)
 end
 
+-- 在候选边中选择全局最优路径（entry 距离 + exit 距离），并使用稳定 tie-break。
 local function select_best_edge(bucket, start_pos, target_pos)
     if not (bucket and bucket.flat_edges and #bucket.flat_edges > 0) then
         return nil
@@ -420,6 +439,7 @@ local function select_best_edge(bucket, start_pos, target_pos)
     return best_edge
 end
 
+-- 判断两个地表之间是否存在至少一条可用直连路由。
 local function has_direct_route(from_surface_index, to_surface_index)
     if not (from_surface_index and to_surface_index) then
         return false
@@ -429,6 +449,7 @@ local function has_direct_route(from_surface_index, to_surface_index)
     return bucket ~= nil and bucket.flat_edges ~= nil and #bucket.flat_edges > 0
 end
 
+-- 查找最佳 entry/exit；若命中陈旧缓存则强制重建后再试一次。
 local function find_best_route(from_surface_index, to_surface_index, start_pos, target_pos)
     if not (from_surface_index and to_surface_index) then
         return nil, nil
@@ -463,6 +484,7 @@ local function find_best_route(from_surface_index, to_surface_index, start_pos, 
     return nil, nil
 end
 
+-- 将列车时刻表改写为“入口临时站 -> 下一实名站”的两站过渡调度。
 local function route_train_to_entry(luatrain, station_name, exit_id, continuation_station_name)
     if not (luatrain and luatrain.valid and station_name) then
         return false
@@ -503,6 +525,7 @@ local function route_train_to_entry(luatrain, station_name, exit_id, continuatio
     return true
 end
 
+-- 初始化 CS2 兼容模块依赖与缓存。
 function CS2.init(deps)
     State = deps.State
     log_debug = deps.log_debug or log_debug
@@ -510,7 +533,7 @@ function CS2.init(deps)
     rebuild_route_cache()
 end
 
--- Returns a SET<table<uint, boolean>> of surfaces reachable from origin surface.
+-- 返回从起始地表可达的目标地表集合（SET 结构）。
 function CS2.train_topology_callback(origin_surface_index)
     if not cs2_active() then
         return nil
@@ -537,7 +560,7 @@ function CS2.train_topology_callback(origin_surface_index)
     return nil
 end
 
--- Return true to veto reachability.
+-- 可达性 veto 回调：返回 true 表示不可达（阻止 CS2 生成该方向任务）。
 function CS2.reachable_callback(_, _, _, _, train_home_surface_index, from_stop_entity, to_stop_entity)
     if not cs2_active() then
         return nil
@@ -565,6 +588,7 @@ function CS2.reachable_callback(_, _, _, _, train_home_surface_index, from_stop_
     return nil
 end
 
+-- 路由回调：跨地表时接管列车，写入过渡调度并登记 handoff 上下文。
 function CS2.route_callback(delivery_id, action, _, train_id, luatrain, train_stock, train_home_surface_index, _, stop_entity)
     if not cs2_active() then
         return nil
@@ -582,8 +606,10 @@ function CS2.route_callback(delivery_id, action, _, train_id, luatrain, train_st
     local target_surface_index = nil
     local target_pos = nil
     if action == "complete" then
+        -- complete 阶段没有 stop_entity，目标地表应为车组 home。
         target_surface_index = train_home_surface_index
     elseif stop_entity and stop_entity.valid then
+        -- deliver 阶段用目标站实体地表与坐标参与全局最优选路。
         target_surface_index = stop_entity.surface.index
         target_pos = stop_entity.position
     end
@@ -614,7 +640,9 @@ function CS2.route_callback(delivery_id, action, _, train_id, luatrain, train_st
         -- 兜底：如果异常读不到车库名，回退到出口站，避免直接中断接管。
         if not continuation_station_name and exit_station and exit_station.valid then
             continuation_station_name = exit_station.backer_name
-            cs2_log("complete 未读到车库站名，回退使用出口站 continuation=" .. tostring(continuation_station_name))
+            if RiftRail and RiftRail.DEBUG_MODE_ENABLED then
+                cs2_log("complete 未读到车库站名，回退使用出口站 continuation=" .. tostring(continuation_station_name))
+            end
         end
     end
 
@@ -646,11 +674,14 @@ function CS2.route_callback(delivery_id, action, _, train_id, luatrain, train_st
     }
     storage.rr_cs2_old_train_by_delivery_id[delivery_id] = old_train_id
 
-    cs2_log("接管 delivery=" .. delivery_id .. " action=" .. tostring(action) .. " old_luatrain=" .. tostring(old_train_id) .. " cstrain=" .. tostring(train_id) .. " route=" .. entry.id .. "->" .. exit_portal.id .. (continuation_station_name and (" -> " .. continuation_station_name) or ""))
+    if RiftRail and RiftRail.DEBUG_MODE_ENABLED then
+        cs2_log("接管 delivery=" .. delivery_id .. " action=" .. tostring(action) .. " old_luatrain=" .. tostring(old_train_id) .. " cstrain=" .. tostring(train_id) .. " route=" .. entry.id .. "->" .. exit_portal.id .. (continuation_station_name and (" -> " .. continuation_station_name) or ""))
+    end
 
     return true
 end
 
+-- TrainArrived 事件处理：恢复车组后，将新列车归还给 CS2。
 function CS2.on_train_arrived(event)
     if not cs2_active() then
         return
@@ -675,7 +706,9 @@ function CS2.on_train_arrived(event)
         new_train.group = handoff.previous_group
     end
 
-    cs2_log("传送完成：已清空过渡调度并恢复车组 old_train=" .. old_train_id .. " new_train=" .. new_train.id .. " delivery=" .. handoff.delivery_id)
+    if RiftRail and RiftRail.DEBUG_MODE_ENABLED then
+        cs2_log("传送完成：已清空过渡调度并恢复车组 old_train=" .. old_train_id .. " new_train=" .. new_train.id .. " delivery=" .. handoff.delivery_id)
+    end
 
     storage.rr_cs2_handoff_by_old_train_id[old_train_id] = nil
     storage.rr_cs2_old_train_by_delivery_id[handoff.delivery_id] = nil
@@ -684,14 +717,19 @@ function CS2.on_train_arrived(event)
     local ok, err = pcall(remote.call, "cybersyn2", "route_plugin_handoff", handoff.delivery_id, new_train)
 
     if not ok then
-        cs2_log("handoff 归还失败 delivery=" .. handoff.delivery_id .. " err=" .. tostring(err))
+        if RiftRail and RiftRail.DEBUG_MODE_ENABLED then
+            cs2_log("handoff 归还失败 delivery=" .. handoff.delivery_id .. " err=" .. tostring(err))
+        end
         pcall(remote.call, "cybersyn2", "fail_delivery", handoff.delivery_id, "RIFTRAIL_HANDOFF_FAILED")
         return
     end
 
-    cs2_log("handoff 归还成功 delivery=" .. handoff.delivery_id .. " old_train=" .. old_train_id .. " new_train=" .. new_train.id)
+    if RiftRail and RiftRail.DEBUG_MODE_ENABLED then
+        cs2_log("handoff 归还成功 delivery=" .. handoff.delivery_id .. " old_train=" .. old_train_id .. " new_train=" .. new_train.id)
+    end
 end
 
+-- 拓扑变化入口：标记缓存脏并触发一次重建与 CS2 拓扑刷新。
 function CS2.on_topology_changed()
     if not cs2_active() then
         return
@@ -734,6 +772,7 @@ function CS2.get_one_way_pairs_for_portal(portal_id)
     return result
 end
 
+-- 处理单个 portal 的 CS2 开关事件：增量更新缓存并请求 CS2 重建拓扑。
 function CS2.on_portal_cs2_toggle(portal_id)
     if not cs2_active() then
         return
