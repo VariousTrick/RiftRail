@@ -876,7 +876,7 @@ local function insert_portal_sequence(train, station_name, exit_id, insert_index
         -- teleport.lua 会在列车进站停稳的瞬间（撞击 collider）读取这个信号
         table.insert(wait_conds, {
             type = "circuit",
-            compare_type = "or",
+            compare_type = "and",
             condition = {
                 first_signal = { type = "virtual", name = "riftrail-go-to-id" },
                 comparator = "=",
