@@ -497,7 +497,7 @@ local function route_train_to_entry(luatrain, station_name, exit_id, continuatio
     local wait_conditions = {
         {
             type = "circuit",
-            compare_type = "or",
+            compare_type = "and",
             condition = {
                 first_signal = { type = "virtual", name = "riftrail-go-to-id" },
                 comparator = "=",
