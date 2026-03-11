@@ -1,11 +1,14 @@
 ### **Q: What logistics mods are supported?**
-**A:** Rift Rail currently features native integration with **LTN (Logistic Train Network)**.
-*   **Note on Cybersyn:** Support for Cybersyn has been **removed** in v0.10 due to architecture conflicts.
+**A:** Rift Rail currently features native integration with **LTN (Logistic Train Network)** and **Cybersyn 2 (CS2)**.
+*   **CS2** support was re-introduced in v0.12 via the CS2 route plugin API.
+*   **Classic Cybersyn (v1):** Support was removed in v0.10 due to architecture conflicts and will not be restored.
 
 ---
 **Q: Where is Cybersyn support?**
-**A:** Native compatibility with Cybersyn has been **permanently removed** starting from version 0.10.2 due to architecture conflicts.
-If you strictly require Cybersyn integration, you must downgrade your mod version:
+**A:** **Cybersyn 2 (CS2)** is natively supported as of v0.12. See the CS2 setup section below.
+
+**Classic Cybersyn (v1)** compatibility was permanently removed in v0.10.2 due to fundamental architecture conflicts and will not be restored.
+If you strictly require classic Cybersyn integration, you must downgrade your mod version:
 *   **v0.10.1:** Last version with **N-to-M** (Many-to-Many) Cybersyn support.
 *   **v0.8.2:** Last version with **1-to-1** Cybersyn support.
 
@@ -42,16 +45,34 @@ If you strictly require Cybersyn integration, you must downgrade your mod versio
 4.  **Universal Network (ID -1):** All Rift Rail portals are now permanently set to **Network ID -1**. They function as universal bridges for all LTN networks. The option to assign specific Network IDs to portals has been removed to simplify configuration.
 
 ---
+### **Cybersyn 2 (CS2) Setup**
+
+**Q: How do I set up cross-surface CS2 deliveries?**
+**A:** As of v0.12, Rift Rail natively supports Cybersyn 2. The setup is similar to LTN. To create a working route between Surface A and Surface B:
+
+1.  **Requirement: Two-Way Path:** The CS2 dispatcher needs a valid return path to dispatch trains. Build routes in **both directions**.
+    *   Build `Entry A -> Exit B` (e.g., Nauvis to Vulcanus).
+    *   Build `Entry C -> Exit D` (e.g., Vulcanus to Nauvis).
+2.  **Enable Switches:** Open the GUI for **all 4 portals** and turn on the **"CS2" switch**.
+3.  **Manual Activation:** Each switch **only affects the specific building you clicked**. You must enable it on both the Entry and Exit sides individually.
+4.  **Automatic Route Selection:** When multiple portals are available, Rift Rail automatically selects the globally optimal path by minimizing the combined distance of the train's approach to the entry and the exit's proximity to the destination stop. No manual configuration is needed.
+
+**⚠️ Tip:** If you enable a CS2 switch but only a one-way route exists (e.g., A→B without a B→A return), the mod will warn you in chat. Build the return route to clear the warning.
+
+---
 ### **问：目前支持哪些物流模组？**
-**答：** Rift Rail 目前与 **LTN (Logistic Train Network)** 拥有原生集成。
-*   **关于 Cybersyn：** 由于架构冲突，我们在 v0.10 版本中已**移除**了对 Cybersyn 的支持。
+**答：** Rift Rail 目前与 **LTN (Logistic Train Network)** 和 **Cybersyn 2 (CS2)** 拥有原生集成。
+*   **CS2** 支持已于 v0.12 通过 CS2 的 route plugin 接口重新加入。
+*   **经典 Cybersyn (v1)：** 由于架构冲突，v0.10 版本已移除支持，不会恢复。
 
 ---
 **问：Cybersyn 兼容功能去哪了？**
-**答：** 由于底层架构冲突，我们从 v0.10.2 版本开始已**永久移除**了对 Cybersyn 的原生兼容。
-如果您必须使用 Cybersyn 集成，请降级您的模组版本：
-*   **v0.10.1:** 支持 **多对多 (N-to-M)** Cybersyn 兼容的最后一个版本。
-*   **v0.8.2:** 支持 **一对一 (1-to-1)** Cybersyn 兼容的最后一个版本。
+**答：** **Cybersyn 2 (CS2)** 自 v0.12 起已获原生支持，请参阅下方 CS2 设置章节。
+
+**经典 Cybersyn (v1)** 的兼容性已于 v0.10.2 因底层架构冲突被**永久移除**，不会恢复。
+如果您必须使用经典 Cybersyn 集成，请降级模组版本：
+*   **v0.10.1：** 支持 **多对多 (N-to-M)** Cybersyn 兼容的最后一个版本。
+*   **v0.8.2：** 支持 **一对一 (1-to-1)** Cybersyn 兼容的最后一个版本。
 
 **⚠️ 警告：** 以上均为已停止维护的旧版本。作者**绝对不会**处理任何与 Cybersyn 相关的错误反馈，也不会对旧版本进行任何修复。请自行承担使用风险。
 
@@ -83,3 +104,18 @@ If you strictly require Cybersyn integration, you must downgrade your mod versio
 2.  **开启开关：** 打开这 **4 个建筑** 的 GUI，全部开启 **"LTN" 开关**。
 3.  **手动激活：** 与旧版本不同，现在的开关**只影响您点击的那个建筑**。您必须分别在入口侧和出口侧都手动开启。
 4.  **通用网络 (ID -1)：** 所有 Rift Rail 传送门现在固定使用 **网络 ID -1**。它们充当所有 LTN 网络的通用桥梁。为了简化配置，自定义传送门网络 ID 的功能已被移除。
+
+---
+### **CS2 (Cybersyn 2) 跨地表设置**
+
+**问：如何设置跨地表 CS2 运输？**
+**答：** 自 v0.12 起，Rift Rail 重新原生支持 Cybersyn 2。设置方式与 LTN 类似。要建立地表 A 和地表 B 之间的 CS2 通路：
+
+1.  **硬性要求：双向往返**。CS2 调度器需要有效的往返路径才能派单。必须**双向建立路线**。
+    *   建立 `入口 A -> 出口 B`（例如：Nauvis 到 Vulcanus）。
+    *   建立 `入口 C -> 出口 D`（例如：Vulcanus 到 Nauvis）。
+2.  **开启开关：** 打开这 **4 个建筑** 的 GUI，全部开启 **"CS2" 开关**。
+3.  **手动激活：** 开关**只影响您点击的那个建筑**，入口侧和出口侧都必须分别手动开启。
+4.  **全局最优路由：** 当存在多个可用传送门时，Rift Rail 会自动综合"列车到入口的距离"与"出口到目标站的距离"，选择全局最短路径，无需手动配置。
+
+**⚠️ 提示：** 如果您开启 CS2 开关后只存在单向路径（例如 A→B 有，B→A 没有），模组会在聊天栏提醒您补建回程路线。
