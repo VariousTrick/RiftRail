@@ -1,7 +1,7 @@
 local CS2 = {}
 
 local State = nil
-local log_debug = function() end
+local log_debug = function(_) end
 
 local REBUILD_DEBOUNCE_TICKS = 120
 
@@ -18,6 +18,10 @@ end
 local function ensure_storage()
     storage.rr_cs2_handoff_by_old_train_id = storage.rr_cs2_handoff_by_old_train_id or {}
     storage.rr_cs2_old_train_by_delivery_id = storage.rr_cs2_old_train_by_delivery_id or {}
+    storage.rr_cs2_route_cache = storage.rr_cs2_route_cache or { by_surface = {} }
+    if storage.rr_cs2_route_cache_dirty == nil then
+        storage.rr_cs2_route_cache_dirty = true
+    end
 end
 
 local function get_station(portaldata)
@@ -83,56 +87,318 @@ local function is_cs2_enabled_exit(portaldata)
     return portaldata and portaldata.mode == "exit" and portaldata.cs2_enabled and portaldata.shell and portaldata.shell.valid
 end
 
+local function get_or_create_route_bucket(cache, from_surface_index, to_surface_index)
+    cache.by_surface[from_surface_index] = cache.by_surface[from_surface_index] or {}
+    local by_to_surface = cache.by_surface[from_surface_index]
+    by_to_surface[to_surface_index] = by_to_surface[to_surface_index] or {
+        -- 入口抽屉：按 entry_id 分组，便于调试/维护。
+        by_entry = {},
+        -- 平铺边列表：高频查询时直接遍历，避免多层展开。
+        flat_edges = {},
+    }
+    return by_to_surface[to_surface_index]
+end
+
+local function append_edge_to_cache(cache, entry, exit_portal)
+    local from_surface_index = entry.surface.index
+    local to_surface_index = exit_portal.surface.index
+    local bucket = get_or_create_route_bucket(cache, from_surface_index, to_surface_index)
+
+    local entry_drawer = bucket.by_entry[entry.id]
+    if not entry_drawer then
+        entry_drawer = {
+            entry_id = entry.id,
+            entry_surface_index = from_surface_index,
+            entry_x = entry.shell.position.x,
+            entry_y = entry.shell.position.y,
+            exits = {},
+        }
+        bucket.by_entry[entry.id] = entry_drawer
+    end
+
+    -- 注意：同一出口可以被多个入口引用，必须按 (entry_id, exit_id) 保留边，不能只按 exit_id 去重。
+    local edge = {
+        entry_id = entry.id,
+        exit_id = exit_portal.id,
+        entry_x = entry.shell.position.x,
+        entry_y = entry.shell.position.y,
+        exit_x = exit_portal.shell.position.x,
+        exit_y = exit_portal.shell.position.y,
+    }
+
+    table.insert(entry_drawer.exits, edge)
+    table.insert(bucket.flat_edges, edge)
+end
+
+local function append_enabled_edges_for_entry(cache, entry)
+    if not is_cs2_enabled_entry(entry) then
+        return
+    end
+
+    for target_id, _ in pairs(entry.target_ids) do
+        local exit_portal = State.get_portaldata_by_id(target_id)
+        if is_cs2_enabled_exit(exit_portal) then
+            append_edge_to_cache(cache, entry, exit_portal)
+        end
+    end
+end
+
+-- 重建 CS2 路由缓存。
+-- 规则：入口和出口都必须开启 cs2 开关，否则不写入缓存。
+local function rebuild_route_cache()
+    ensure_storage()
+
+    local cache = { by_surface = {} }
+
+    if not storage.rift_rails then
+        storage.rr_cs2_route_cache = cache
+        storage.rr_cs2_route_cache_dirty = false
+        return
+    end
+
+    for _, entry in pairs(storage.rift_rails) do
+        if is_cs2_enabled_entry(entry) then
+            append_enabled_edges_for_entry(cache, entry)
+        end
+    end
+
+    storage.rr_cs2_route_cache = cache
+    storage.rr_cs2_route_cache_dirty = false
+end
+
+local function ensure_route_cache()
+    ensure_storage()
+    if storage.rr_cs2_route_cache_dirty then
+        rebuild_route_cache()
+    end
+end
+
+local function rebuild_drawers_from_flat_edges(bucket, from_surface_index)
+    local by_entry = {}
+
+    for _, edge in ipairs(bucket.flat_edges) do
+        local entry_drawer = by_entry[edge.entry_id]
+        if not entry_drawer then
+            entry_drawer = {
+                entry_id = edge.entry_id,
+                entry_surface_index = from_surface_index,
+                entry_x = edge.entry_x,
+                entry_y = edge.entry_y,
+                exits = {},
+            }
+            by_entry[edge.entry_id] = entry_drawer
+        end
+
+        table.insert(entry_drawer.exits, edge)
+    end
+
+    bucket.by_entry = by_entry
+end
+
+-- 精准清理：仅删除与指定 portal 相关的边与抽屉。
+local function remove_portal_edges_from_cache(cache, portal_id)
+    local empty_from_surfaces = {}
+
+    for from_surface_index, by_to_surface in pairs(cache.by_surface) do
+        local empty_to_surfaces = {}
+
+        for to_surface_index, bucket in pairs(by_to_surface) do
+            for idx = #bucket.flat_edges, 1, -1 do
+                local edge = bucket.flat_edges[idx]
+                if edge.entry_id == portal_id or edge.exit_id == portal_id then
+                    table.remove(bucket.flat_edges, idx)
+                end
+            end
+
+            if #bucket.flat_edges > 0 then
+                rebuild_drawers_from_flat_edges(bucket, from_surface_index)
+            else
+                table.insert(empty_to_surfaces, to_surface_index)
+            end
+        end
+
+        for _, to_surface_index in ipairs(empty_to_surfaces) do
+            by_to_surface[to_surface_index] = nil
+        end
+
+        if not next(by_to_surface) then
+            table.insert(empty_from_surfaces, from_surface_index)
+        end
+    end
+
+    for _, from_surface_index in ipairs(empty_from_surfaces) do
+        cache.by_surface[from_surface_index] = nil
+    end
+end
+
+local function append_enabled_edges_for_exit(cache, exit_portal)
+    if not is_cs2_enabled_exit(exit_portal) then
+        return
+    end
+
+    local seen_entry = {}
+
+    if exit_portal.source_ids then
+        for source_id, _ in pairs(exit_portal.source_ids) do
+            local entry = State.get_portaldata_by_id(source_id)
+            if is_cs2_enabled_entry(entry) and entry.target_ids[exit_portal.id] then
+                append_edge_to_cache(cache, entry, exit_portal)
+                seen_entry[source_id] = true
+            end
+        end
+    end
+
+    -- 兜底：若 source_ids 不完整，再从全量入口补齐，避免漏边。
+    if storage.rift_rails then
+        for _, entry in pairs(storage.rift_rails) do
+            if is_cs2_enabled_entry(entry) and (not seen_entry[entry.id]) and entry.target_ids[exit_portal.id] then
+                append_edge_to_cache(cache, entry, exit_portal)
+            end
+        end
+    end
+end
+
+local function refresh_cache_for_toggled_portal(portal_id)
+    ensure_route_cache()
+
+    local cache = storage.rr_cs2_route_cache
+    remove_portal_edges_from_cache(cache, portal_id)
+
+    local portal = State.get_portaldata_by_id(portal_id)
+    if is_cs2_enabled_entry(portal) then
+        -- 入口开启：重建该入口抽屉及其边。
+        append_enabled_edges_for_entry(cache, portal)
+    elseif is_cs2_enabled_exit(portal) then
+        -- 出口开启：重建所有指向该出口的边。
+        append_enabled_edges_for_exit(cache, portal)
+    end
+
+    storage.rr_cs2_route_cache_dirty = false
+end
+
+local function request_cs2_topology_rebuild()
+    local tick = (game and game.tick) or 0
+    local last = storage.rr_cs2_last_topology_rebuild_tick or 0
+    if tick - last < REBUILD_DEBOUNCE_TICKS then
+        return
+    end
+
+    storage.rr_cs2_last_topology_rebuild_tick = tick
+
+    local ok, err = pcall(remote.call, "cybersyn2", "rebuild_train_topologies")
+    if not ok then
+        cs2_log("重建拓扑失败: " .. tostring(err))
+    end
+end
+
+local function get_route_bucket(from_surface_index, to_surface_index)
+    ensure_route_cache()
+
+    local by_to_surface = storage.rr_cs2_route_cache.by_surface[from_surface_index]
+    if not by_to_surface then
+        return nil
+    end
+
+    return by_to_surface[to_surface_index]
+end
+
+local function calc_dist_sq_to_pos(x, y, pos)
+    if not pos then
+        return 0
+    end
+
+    local dx = pos.x - x
+    local dy = pos.y - y
+    return (dx * dx) + (dy * dy)
+end
+
+local function select_best_edge(bucket, start_pos, target_pos)
+    if not (bucket and bucket.flat_edges and #bucket.flat_edges > 0) then
+        return nil
+    end
+
+    local best_edge = nil
+    local best_total_dist = math.huge
+    local best_exit_dist = math.huge
+    local best_entry_dist = math.huge
+
+    for _, edge in ipairs(bucket.flat_edges) do
+        local entry_dist_sq = calc_dist_sq_to_pos(edge.entry_x, edge.entry_y, start_pos)
+        local exit_dist_sq = calc_dist_sq_to_pos(edge.exit_x, edge.exit_y, target_pos)
+        local total_dist_sq = entry_dist_sq + exit_dist_sq
+
+        local is_better = total_dist_sq < best_total_dist
+        if (not is_better) and total_dist_sq == best_total_dist then
+            -- 平分时固定比较顺序，避免路线在等价候选之间抖动。
+            if exit_dist_sq < best_exit_dist then
+                is_better = true
+            elseif exit_dist_sq == best_exit_dist then
+                if entry_dist_sq < best_entry_dist then
+                    is_better = true
+                elseif entry_dist_sq == best_entry_dist then
+                    if best_edge then
+                        if edge.entry_id < best_edge.entry_id then
+                            is_better = true
+                        elseif edge.entry_id == best_edge.entry_id and edge.exit_id < best_edge.exit_id then
+                            is_better = true
+                        end
+                    end
+                end
+            end
+        end
+
+        if is_better then
+            best_edge = edge
+            best_total_dist = total_dist_sq
+            best_exit_dist = exit_dist_sq
+            best_entry_dist = entry_dist_sq
+        end
+    end
+
+    return best_edge
+end
+
 local function has_direct_route(from_surface_index, to_surface_index)
-    if not (from_surface_index and to_surface_index and storage.rift_rails) then
+    if not (from_surface_index and to_surface_index) then
         return false
     end
 
-    for _, entry in pairs(storage.rift_rails) do
-        if is_cs2_enabled_entry(entry) and entry.surface.index == from_surface_index then
-            for target_id, _ in pairs(entry.target_ids) do
-                local exit_portal = State.get_portaldata_by_id(target_id)
-                if is_cs2_enabled_exit(exit_portal) and exit_portal.surface.index == to_surface_index then
-                    return true
-                end
-            end
-        end
-    end
-
-    return false
+    local bucket = get_route_bucket(from_surface_index, to_surface_index)
+    return bucket ~= nil and bucket.flat_edges ~= nil and #bucket.flat_edges > 0
 end
 
-local function find_best_route(from_surface_index, to_surface_index, start_pos)
-    if not (from_surface_index and to_surface_index and storage.rift_rails) then
+local function find_best_route(from_surface_index, to_surface_index, start_pos, target_pos)
+    if not (from_surface_index and to_surface_index) then
         return nil, nil
     end
 
-    local best_entry = nil
-    local best_exit = nil
-    local best_dist = math.huge
-
-    for _, entry in pairs(storage.rift_rails) do
-        if is_cs2_enabled_entry(entry) and entry.surface.index == from_surface_index then
-            for target_id, _ in pairs(entry.target_ids) do
-                local exit_portal = State.get_portaldata_by_id(target_id)
-                if is_cs2_enabled_exit(exit_portal) and exit_portal.surface.index == to_surface_index then
-                    local dist = 0
-                    if start_pos then
-                        local dx = start_pos.x - entry.shell.position.x
-                        local dy = start_pos.y - entry.shell.position.y
-                        dist = (dx * dx) + (dy * dy)
-                    end
-                    if dist < best_dist then
-                        best_dist = dist
-                        best_entry = entry
-                        best_exit = exit_portal
-                    end
-                end
-            end
-        end
+    local bucket = get_route_bucket(from_surface_index, to_surface_index)
+    local best_edge = select_best_edge(bucket, start_pos, target_pos)
+    if not best_edge then
+        return nil, nil
     end
 
-    return best_entry, best_exit
+    local best_entry = State.get_portaldata_by_id(best_edge.entry_id)
+    local best_exit = State.get_portaldata_by_id(best_edge.exit_id)
+    if is_cs2_enabled_entry(best_entry) and is_cs2_enabled_exit(best_exit) then
+        return best_entry, best_exit
+    end
+
+    -- 缓存可能在拓扑变化边缘瞬间过期，强制重建后再做一次选择。
+    rebuild_route_cache()
+    bucket = get_route_bucket(from_surface_index, to_surface_index)
+    best_edge = select_best_edge(bucket, start_pos, target_pos)
+    if not best_edge then
+        return nil, nil
+    end
+
+    best_entry = State.get_portaldata_by_id(best_edge.entry_id)
+    best_exit = State.get_portaldata_by_id(best_edge.exit_id)
+    if is_cs2_enabled_entry(best_entry) and is_cs2_enabled_exit(best_exit) then
+        return best_entry, best_exit
+    end
+
+    return nil, nil
 end
 
 local function route_train_to_entry(luatrain, station_name, exit_id, continuation_station_name)
@@ -179,6 +445,7 @@ function CS2.init(deps)
     State = deps.State
     log_debug = deps.log_debug or log_debug
     ensure_storage()
+    rebuild_route_cache()
 end
 
 -- Returns a SET<table<uint, boolean>> of surfaces reachable from origin surface.
@@ -187,19 +454,17 @@ function CS2.train_topology_callback(origin_surface_index)
         return nil
     end
 
+    ensure_route_cache()
+
     local result = {}
-    if not storage.rift_rails then
+    local by_to_surface = storage.rr_cs2_route_cache.by_surface[origin_surface_index]
+    if not by_to_surface then
         return nil
     end
 
-    for _, entry in pairs(storage.rift_rails) do
-        if is_cs2_enabled_entry(entry) and entry.surface.index == origin_surface_index then
-            for target_id, _ in pairs(entry.target_ids) do
-                local exit_portal = State.get_portaldata_by_id(target_id)
-                if is_cs2_enabled_exit(exit_portal) then
-                    result[exit_portal.surface.index] = true
-                end
-            end
+    for to_surface_index, bucket in pairs(by_to_surface) do
+        if bucket.flat_edges and #bucket.flat_edges > 0 then
+            result[to_surface_index] = true
         end
     end
 
@@ -253,17 +518,19 @@ function CS2.route_callback(delivery_id, action, _, train_id, luatrain, train_st
     end
 
     local target_surface_index = nil
+    local target_pos = nil
     if action == "complete" then
         target_surface_index = train_home_surface_index
     elseif stop_entity and stop_entity.valid then
         target_surface_index = stop_entity.surface.index
+        target_pos = stop_entity.position
     end
 
     if not target_surface_index or target_surface_index == current_surface_index then
         return nil
     end
 
-    local entry, exit_portal = find_best_route(current_surface_index, target_surface_index, start_pos)
+    local entry, exit_portal = find_best_route(current_surface_index, target_surface_index, start_pos, target_pos)
     if not (entry and exit_portal) then
         return nil
     end
@@ -368,18 +635,25 @@ function CS2.on_topology_changed()
         return
     end
 
-    local tick = (game and game.tick) or 0
-    local last = storage.rr_cs2_last_topology_rebuild_tick or 0
-    if tick - last < REBUILD_DEBOUNCE_TICKS then
+    ensure_storage()
+    storage.rr_cs2_route_cache_dirty = true
+    rebuild_route_cache()
+
+    request_cs2_topology_rebuild()
+end
+
+function CS2.on_portal_cs2_toggle(portal_id)
+    if not cs2_active() then
         return
     end
 
-    storage.rr_cs2_last_topology_rebuild_tick = tick
-
-    local ok, err = pcall(remote.call, "cybersyn2", "rebuild_train_topologies")
-    if not ok then
-        cs2_log("重建拓扑失败: " .. tostring(err))
+    if not portal_id then
+        return
     end
+
+    ensure_storage()
+    refresh_cache_for_toggled_portal(portal_id)
+    request_cs2_topology_rebuild()
 end
 
 return CS2

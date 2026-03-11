@@ -4,6 +4,27 @@
 > 规则：新改动统一追加到最上方（时间倒序），每次包含日期、改动文件、改动内容。
 > 补充：本文件从 v0.11.7 之后开始维护；当前 2026-03-02 的全部条目均归入 v0.11.8 发布内容。
 
+## 2026-03-11（v0.12.0 开发中：CS2 路由缓存增量更新）
+
+### 改动摘要
+- CS2 路由缓存新增“按 portal_id 精准增量清理/补写”能力，避免 `set_cs2_enabled` 时全量重建缓存。
+- 缓存结构保持 `from_surface -> to_surface` 大表，桶内包含 `by_entry` 入口抽屉与 `flat_edges` 平铺边索引。
+- 严格执行开关条件：入口与出口必须同时开启 `cs2_enabled` 才写入缓存；关闭后立即从缓存中清除相关边。
+
+### 具体改动
+- `RiftRail/scripts/compat/cs2.lua`
+  - 新增增量更新辅助函数：
+    - `remove_portal_edges_from_cache(...)`：按 portal_id 精准移除相关边与空抽屉。
+    - `append_enabled_edges_for_entry(...)`：入口开启时重建该入口抽屉。
+    - `append_enabled_edges_for_exit(...)`：出口开启时重建所有指向该出口的边（含 source_ids 不完整兜底扫描）。
+    - `refresh_cache_for_toggled_portal(...)`：组合“先清理后补写”的增量流程。
+  - 新增 `CS2.on_portal_cs2_toggle(portal_id)`，供开关事件直接触发增量缓存更新。
+  - 拆分并复用 `request_cs2_topology_rebuild()`，在增量/全量路径都保持 CS2 拓扑重建节流逻辑。
+
+- `RiftRail/scripts/logic.lua`
+  - `Logic.set_cs2_enabled(...)` 改为优先调用 `CS2.on_portal_cs2_toggle(my_data.id)`。
+  - 保留旧接口兜底：若无增量接口则回退到 `CS2.on_topology_changed()` 全量重建。
+
 ## 2026-03-11（v0.12.0 开发中：诊断完成 - 跨地表传送短暂 no-path 警告根因）
 
 ### 改动摘要

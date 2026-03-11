@@ -608,7 +608,11 @@ function Logic.set_cs2_enabled(player_index, portal_id, enabled)
 
     refresh_all_guis()
 
-    if CS2 and CS2.on_topology_changed then
+    if CS2 and CS2.on_portal_cs2_toggle then
+        -- 仅增量刷新与当前 portal 相关的缓存桶/抽屉，避免全表重建。
+        CS2.on_portal_cs2_toggle(my_data.id)
+    elseif CS2 and CS2.on_topology_changed then
+        -- 兼容兜底：旧实现无增量接口时仍走全量重建。
         CS2.on_topology_changed()
     end
 end
