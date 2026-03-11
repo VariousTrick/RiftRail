@@ -608,12 +608,27 @@ function Logic.set_cs2_enabled(player_index, portal_id, enabled)
 
     refresh_all_guis()
 
+    local one_way_pairs = {}
+
     if CS2 and CS2.on_portal_cs2_toggle then
         -- 仅增量刷新与当前 portal 相关的缓存桶/抽屉，避免全表重建。
         CS2.on_portal_cs2_toggle(my_data.id)
+
+        -- 仅提醒“单向可达”场景：A->B 可达，但 B->A 不可达。
+        if CS2.get_one_way_pairs_for_portal then
+            one_way_pairs = CS2.get_one_way_pairs_for_portal(my_data.id)
+        end
     elseif CS2 and CS2.on_topology_changed then
         -- 兼容兜底：旧实现无增量接口时仍走全量重建。
         CS2.on_topology_changed()
+    end
+
+    for _, pair in ipairs(one_way_pairs) do
+        local from_surface = game.surfaces[pair.from_surface_index]
+        local to_surface = game.surfaces[pair.to_surface_index]
+        local from_name = (from_surface and from_surface.name) or tostring(pair.from_surface_index)
+        local to_name = (to_surface and to_surface.name) or tostring(pair.to_surface_index)
+        player.print({ "messages.rift-rail-warning-cs2-one-way", from_name, to_name })
     end
 end
 

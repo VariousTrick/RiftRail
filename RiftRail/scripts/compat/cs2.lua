@@ -291,6 +291,68 @@ local function request_cs2_topology_rebuild()
     end
 end
 
+local function add_surface_pair(pairs, pair_set, from_surface_index, to_surface_index)
+    if not (from_surface_index and to_surface_index) then
+        return
+    end
+    if from_surface_index == to_surface_index then
+        return
+    end
+
+    local key = tostring(from_surface_index) .. ">" .. tostring(to_surface_index)
+    if pair_set[key] then
+        return
+    end
+
+    pair_set[key] = true
+    table.insert(pairs, {
+        from_surface_index = from_surface_index,
+        to_surface_index = to_surface_index,
+    })
+end
+
+-- 收集指定 portal 可能影响到的地表方向对。
+-- 用于开关操作后仅做定向提醒，不做全图扫描。
+local function collect_impacted_surface_pairs(portal)
+    local impacted_pairs = {}
+    local pair_set = {}
+
+    if not (portal and portal.surface and portal.surface.index) then
+        return impacted_pairs
+    end
+
+    local portal_surface_index = portal.surface.index
+
+    if portal.mode == "entry" and portal.target_ids then
+        for target_id, _ in pairs(portal.target_ids) do
+            local exit_portal = State.get_portaldata_by_id(target_id)
+            if exit_portal and exit_portal.surface and exit_portal.surface.index then
+                add_surface_pair(impacted_pairs, pair_set, portal_surface_index, exit_portal.surface.index)
+            end
+        end
+    elseif portal.mode == "exit" then
+        if portal.source_ids then
+            for source_id, _ in pairs(portal.source_ids) do
+                local entry = State.get_portaldata_by_id(source_id)
+                if entry and entry.surface and entry.surface.index then
+                    add_surface_pair(impacted_pairs, pair_set, entry.surface.index, portal_surface_index)
+                end
+            end
+        end
+
+        -- 兜底：某些情况下 source_ids 可能滞后，用全量入口补齐受影响方向。
+        if storage.rift_rails then
+            for _, entry in pairs(storage.rift_rails) do
+                if entry and entry.mode == "entry" and entry.surface and entry.surface.index and entry.target_ids and entry.target_ids[portal.id] then
+                    add_surface_pair(impacted_pairs, pair_set, entry.surface.index, portal_surface_index)
+                end
+            end
+        end
+    end
+
+    return impacted_pairs
+end
+
 local function get_route_bucket(from_surface_index, to_surface_index)
     ensure_route_cache()
 
@@ -640,6 +702,36 @@ function CS2.on_topology_changed()
     rebuild_route_cache()
 
     request_cs2_topology_rebuild()
+end
+
+-- 返回指定 portal 当前受影响方向中的“仅单向”路径列表：A->B 存在且 B->A 不存在。
+function CS2.get_one_way_pairs_for_portal(portal_id)
+    if not cs2_active() then
+        return {}
+    end
+    if not portal_id then
+        return {}
+    end
+
+    ensure_route_cache()
+
+    local portal = State.get_portaldata_by_id(portal_id)
+    if not portal then
+        return {}
+    end
+
+    local impacted_pairs = collect_impacted_surface_pairs(portal)
+    local result = {}
+
+    for _, pair in ipairs(impacted_pairs) do
+        local has_forward = has_direct_route(pair.from_surface_index, pair.to_surface_index)
+        local has_return = has_direct_route(pair.to_surface_index, pair.from_surface_index)
+        if has_forward and not has_return then
+            table.insert(result, pair)
+        end
+    end
+
+    return result
 end
 
 function CS2.on_portal_cs2_toggle(portal_id)

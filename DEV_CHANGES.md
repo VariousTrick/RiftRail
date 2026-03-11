@@ -4,6 +4,25 @@
 > 规则：新改动统一追加到最上方（时间倒序），每次包含日期、改动文件、改动内容。
 > 补充：本文件从 v0.11.7 之后开始维护；当前 2026-03-02 的全部条目均归入 v0.11.8 发布内容。
 
+## 2026-03-11（v0.12.0 开发中：CS2 单向路径提醒）
+
+### 改动摘要
+- 新增 CS2 单向路径检测：玩家切换传送门 CS2 开关后，若存在 A→B 但不存在 B→A 的回程路径，立即向操作玩家发出提示。
+- 仅提醒"单向可达"场景，不提醒"完全无路线"（如玩家刚刚开始建造），避免误导。
+- 提示不做持续刷屏，仅在玩家手动操作时触发一次。
+
+### 具体改动
+- `RiftRail/scripts/compat/cs2.lua`
+  - 新增 `add_surface_pair(...)`：向受影响方向对集合中安全插入唯一方向对（防重复）。
+  - 新增 `collect_impacted_surface_pairs(portal)`：按操作传送门的 mode/target_ids/source_ids 收集此次开关操作可能影响到的地表方向对，出口侧含全量入口兜底扫描。
+  - 新增 `CS2.get_one_way_pairs_for_portal(portal_id)`：基于受影响方向对，用路由缓存判断哪些方向是"有去无回"，返回单向方向对列表。
+
+- `RiftRail/scripts/logic.lua`
+  - `Logic.set_cs2_enabled(...)` 新增：调用 `CS2.get_one_way_pairs_for_portal` 取单向方向对，并对操作玩家逐条输出提示消息 `messages.rift-rail-warning-cs2-one-way`。
+
+- `RiftRail/locale/en/strings.cfg`、`locale/zh-CN/strings.cfg`、`locale/ja/strings.cfg`
+  - 新增本地化键 `rift-rail-warning-cs2-one-way`，参数：__1__=出发地表名，__2__=目标地表名。
+
 ## 2026-03-11（v0.12.0 开发中：CS2 路由缓存增量更新）
 
 ### 改动摘要
