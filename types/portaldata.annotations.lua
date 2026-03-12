@@ -52,6 +52,7 @@
 ---@field cached_place_query table|nil
 ---@field blocker_position Position|nil
 ---@field gui_map table<uint, LuaPlayer[]>|nil
+---@field restored_guis table[]|nil
 ---@field leadertrain LuaEntity|nil
 ---@field ltn_enabled boolean|nil
 ---@field cybersyn_enabled boolean|nil

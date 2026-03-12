@@ -36,7 +36,7 @@ end
 -- 负责触发“抵达”事件
 ---@see doc/API(CN).md#remote.call("RiftRail", "get_train_arrived_event")
 ---@see doc/API(EN).md#How-to-Get-Rift-Rail-Custom-Event-IDs
-local function raise_arrived_event(entry_portaldata, exit_portaldata, final_train)
+local function raise_arrived_event(entry_portaldata, exit_portaldata, final_train, restored_guis)
     if not (entry_portaldata and exit_portaldata and exit_portaldata.shell and final_train and final_train.valid) then
         return
     end
@@ -61,6 +61,7 @@ local function raise_arrived_event(entry_portaldata, exit_portaldata, final_trai
         destination_teleporter_id = exit_shell.unit_number,
         destination_surface = exit_surface,
         destination_surface_index = exit_surface.index,
+        restored_guis = restored_guis, -- 成功恢复GUI的玩家和对应新车厢列表
     })
 end
 
@@ -977,7 +978,7 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
             restore_train_state(final_train, exit_portaldata, true, actual_index_before_cleanup)
 
             -- 触发“抵达”事件
-            raise_arrived_event(entry_portaldata, exit_portaldata, final_train)
+            raise_arrived_event(entry_portaldata, exit_portaldata, final_train, entry_portaldata.restored_guis)
         end
 
         -- 5. 重置状态变量
@@ -998,6 +999,7 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         entry_portaldata.exit_car = nil                -- 清理入口侧“上一节已生成替身”标记，供下一次会话重新判定首节
         entry_portaldata.locked_exit_unit_number = nil -- 清理物理死锁，允许下次传送重新排队选择
         entry_portaldata.gui_map = nil                 -- 清理 GUI 观看者映射表
+        entry_portaldata.restored_guis = nil           -- 阅后即焚，清理恢复名单
         entry_portaldata.placement_interval = nil      -- 清理入口放置间隔缓存（process_teleport_sequence 读取入口侧）
     
     -- 6. 标记需要重建入口碰撞器
@@ -1199,6 +1201,15 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         local watchers = entry_portaldata.gui_map[old_car_id]
         if watchers then
             reopen_car_gui(watchers, new_car)
+
+            -- 记录成功恢复的玩家和对应的新车厢
+            entry_portaldata.restored_guis = entry_portaldata.restored_guis or {}
+            for _, p in ipairs(watchers) do
+                if p.valid then
+                    table.insert(entry_portaldata.restored_guis, { player = p, entity = new_car })
+                end
+            end
+
             -- 恢复后从表中移除，释放内存
             entry_portaldata.gui_map[old_car_id] = nil
         end

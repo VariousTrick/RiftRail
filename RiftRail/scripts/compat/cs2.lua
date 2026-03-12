@@ -725,8 +725,28 @@ function CS2.on_train_arrived(event)
     end
 
     if RiftRail and RiftRail.DEBUG_MODE_ENABLED then
-        cs2_log("handoff 归还成功 delivery=" .. handoff.delivery_id .. " old_train=" .. old_train_id .. " new_train=" .. new_train.id)
+        cs2_log("handoff 归还成功 delivery=" ..
+        handoff.delivery_id .. " old_train=" .. old_train_id .. " new_train=" .. new_train.id)
     end
+
+    -- GUI 闭眼睁眼刷新逻辑
+    if event.restored_guis then
+        local refresh_count = 0
+        for _, gui_data in ipairs(event.restored_guis) do
+            local p = gui_data.player
+            local e = gui_data.entity
+            -- 最终安全检查：确认玩家在线、实体健在，且玩家此时此刻依然在看着这个车厢
+            if p and p.valid and e and e.valid and p.opened == e then
+                p.opened = nil
+                p.opened = e
+                refresh_count = refresh_count + 1
+            end
+        end
+        if refresh_count > 0 and RiftRail and RiftRail.DEBUG_MODE_ENABLED then
+            cs2_log("为 " .. refresh_count .. " 名玩家刷新了 CS2 面板")
+        end
+    end
+
 end
 
 -- 拓扑变化入口：标记缓存脏并触发一次重建与 CS2 拓扑刷新。

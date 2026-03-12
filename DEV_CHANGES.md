@@ -4,6 +4,45 @@
 > 规则：新改动统一追加到最上方（时间倒序），每次包含日期、改动文件、改动内容。
 > 补充：本文件从 v0.11.7 之后开始维护；当前 2026-03-02 的全部条目均归入 v0.11.8 发布内容。
 
+## 2026-03-12（v0.12.0 开发中：CS2 传送后 GUI 刷新逻辑）
+
+### 改动摘要
+- 采用"状态驱动（State-Driven）"极简设计，解决 CS2 传送后玩家 GUI 界面过期的问题。
+- 由传送发生者（teleport.lua）记录"实时状态"（玩家正在看谁），而非"身份追踪"（谁叫什么）。
+- 传送完成后，接管方（cs2.lua）直接对着"当前看着什么"的名单进行"闭眼睁眼"刷新，零性能消耗、零耦合。
+
+### 具体改动
+- `RiftRail/scripts/teleport.lua`
+  - `process_transfer_step(...)`（~L1203）：每次生成新车厢后，将成功恢复 GUI 的玩家记录到 `entry_portaldata.restored_guis` 列表（格式：`{ player, entity }`）。
+  - `finalize_sequence(...)`（~L1005）：阅后即焚，清理 `entry_portaldata.restored_guis = nil`。
+  - `raise_arrived_event(...)` 调用（L981）：修复参数传递，加入第 4 参数 `entry_portaldata.restored_guis`，使事件携带最新玩家状态名单。
+
+- `RiftRail/scripts/compat/cs2.lua`
+  - `CS2.on_train_arrived(...)`（~L735）：已实现 GUI 刷新逻辑，对每个玩家进行"闭眼睁眼"操作：
+    ```lua
+    if event.restored_guis then
+        for _, gui_data in ipairs(event.restored_guis) do
+            local p = gui_data.player
+            local e = gui_data.entity
+            -- 最终安全检查：玩家在线、实体健在、玩家依然在看着这个车厢
+            if p and p.valid and e and e.valid and p.opened == e then
+                p.opened = nil
+                p.opened = e  -- Factorio 自动刷新 UI
+            end
+        end
+    end
+    ```
+
+### 设计优点
+1. **零性能消耗**：没人看 → 列表为空 → 跳过整个刷新逻辑。
+2. **零耦合**：teleport 和 cs2 只需通过事件传递数据，不存在消息重复或重发。
+3. **零风险**：玩家中间切了界面（`p.opened != e`）→ 判断失败 → 不会强行覆盖，尊重用户操作。
+4. **数据极简**：不追踪"谁之前叫什么"，仅记录"玩家此刻看着什么"，权责清晰。
+
+### 闭环完成
+传送流程从"发生者记录状态"到"接管者消费状态"形成单向信息流，堪称"极简优雅"的事件驱动设计。
+
+
 ## 2026-03-11（v0.12.0 开发中：CS2 单向路径提醒）
 
 ### 改动摘要
