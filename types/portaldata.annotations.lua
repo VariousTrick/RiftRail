@@ -56,3 +56,5 @@
 ---@field ltn_enabled boolean|nil
 ---@field cybersyn_enabled boolean|nil
 ---@field paired_to_id integer|nil
+---@field cached_destination_stop LuaEntity|nil|nil
+---@field cached_exit_drive_sign integer|nil
