@@ -1,4 +1,30 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.12.0
+Date: 2026-03-14
+  Major Changes:
+    - 新接入 Cybersyn 2 原生兼容：通过 CS2 route plugin API 完成跨地表调度接管（topology、reachable、route 三类回调）。
+    - CS2 传送流程收敛为与 SE 同款闭环：接管时写入入口过渡站与下一实名站，传送完成后清理临时站并 route_plugin_handoff 归还 CS2，避免重复临时站与混合路径。
+    - 跨地表路由升级为全局最优选择：由单纯入口最近，改为综合入口接近距离与出口到目标站距离，显著提升多入口场景命中质量。
+  Features:
+    - 新增传送门 CS2 开关（仅安装 cybersyn2 时显示），并打通 GUI -> Remote -> Logic 本地状态链路。
+    - 新增旧存档迁移：自动为历史传送门数据补齐 cs2_enabled 字段，默认 false，一次性执行并写入完成标记。
+    - 新增 CS2 单向路径提醒：玩家切换 CS2 开关后，若出现 A->B 可达但 B->A 不可达，立即在聊天栏提示补建回程。
+    - 新增 Informatron 的 CS2 专页（英/中/日），并同步更新 FAQ 中 Cybersyn 说明为 CS2 回归与 classic v1 退场说明。
+  Optimizations:
+    - 新增 CS2 路由缓存结构（按 from_surface -> to_surface 建桶，含 by_entry 抽屉与 flat_edges 平铺索引），降低高频查询开销。
+    - 新增按 portal_id 的增量缓存更新：切换开关时执行精准清理与补写，避免全量重建。
+    - 新增确定性 tie-break 规则（total -> exit -> entry -> entry_id -> exit_id），减少边界抖动与非确定结果。
+  Compatibility:
+    - data 阶段在检测到 cybersyn2 时自动注册 Rift Rail route plugins。
+    - 运行时接线完成 control -> compat.cs2 -> logic/remote，并在拓扑变更后触发 CS2 拓扑重建（节流）。
+    - cs2的车辆传送后如果玩家正在查看列车gui，会自动刷新列车面板。
+  Changes:
+    - complete 场景新增车库名兜底：当 stop_entity 缺失时，优先读取当前时刻表末站作为 continuation 目标，仅失败时回退并记录调试日志。
+    - 严格统一缓存写入条件：入口与出口均启用 cs2_enabled 才纳入可路由边；任一侧关闭后立即移除相关边。
+  Bugfixes:
+    - 修复单向路径检测中的局部变量命名遮蔽问题（避免覆盖 Lua 内建迭代器导致潜在运行时异常）。
+    - 修复并收敛 CS2 接管过程中的临时调度残留风险，避免传送后重复补站与状态不一致。
+---------------------------------------------------------------------------------------------------
 Version: 0.11.11
 Date: 2026-03-11
   Bugfixes:

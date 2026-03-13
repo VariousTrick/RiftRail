@@ -1,14 +1,31 @@
 local CS2 = {}
 
+-- 环境检测：如果没有安装 cybersyn2，直接返回空壳模块
+if not script.active_mods["cybersyn2"] then
+    return {
+        init = function() end,
+        train_topology_callback = function()
+            return nil
+        end,
+        reachable_callback = function()
+            return nil
+        end,
+        route_callback = function()
+            return nil
+        end,
+        on_train_arrived = function() end,
+        on_topology_changed = function() end,
+        get_one_way_pairs_for_portal = function()
+            return {}
+        end,
+        on_portal_cs2_toggle = function() end,
+    }
+end
+
 local State = nil
 local log_debug = function(_) end
 
 local REBUILD_DEBOUNCE_TICKS = 120
-
--- 判断 CS2 运行时接口是否可用（模组存在且 remote 接口可调用）。
-local function cs2_active()
-    return (script.active_mods["cybersyn2"] ~= nil) and (remote.interfaces["cybersyn2"] ~= nil)
-end
 
 -- 统一 CS2 调试日志前缀。
 local function cs2_log(msg)
@@ -535,10 +552,6 @@ end
 
 -- 返回从起始地表可达的目标地表集合（SET 结构）。
 function CS2.train_topology_callback(origin_surface_index)
-    if not cs2_active() then
-        return nil
-    end
-
     ensure_route_cache()
 
     local result = {}
@@ -562,9 +575,6 @@ end
 
 -- 可达性 veto 回调：返回 true 表示不可达（阻止 CS2 生成该方向任务）。
 function CS2.reachable_callback(_, _, _, _, train_home_surface_index, from_stop_entity, to_stop_entity)
-    if not cs2_active() then
-        return nil
-    end
 
     if not (from_stop_entity and from_stop_entity.valid and to_stop_entity and to_stop_entity.valid) then
         return nil
@@ -590,9 +600,6 @@ end
 
 -- 路由回调：跨地表时接管列车，写入过渡调度并登记 handoff 上下文。
 function CS2.route_callback(delivery_id, action, _, train_id, luatrain, train_stock, train_home_surface_index, _, stop_entity)
-    if not cs2_active() then
-        return nil
-    end
 
     if not (delivery_id and train_id and luatrain and luatrain.valid) then
         return nil
@@ -683,9 +690,6 @@ end
 
 -- TrainArrived 事件处理：恢复车组后，将新列车归还给 CS2。
 function CS2.on_train_arrived(event)
-    if not cs2_active() then
-        return
-    end
 
     ensure_storage()
 
@@ -751,9 +755,6 @@ end
 
 -- 拓扑变化入口：标记缓存脏并触发一次重建与 CS2 拓扑刷新。
 function CS2.on_topology_changed()
-    if not cs2_active() then
-        return
-    end
 
     ensure_storage()
     storage.rr_cs2_route_cache_dirty = true
@@ -764,9 +765,6 @@ end
 
 -- 返回指定 portal 当前受影响方向中的“仅单向”路径列表：A->B 存在且 B->A 不存在。
 function CS2.get_one_way_pairs_for_portal(portal_id)
-    if not cs2_active() then
-        return {}
-    end
     if not portal_id then
         return {}
     end
@@ -794,10 +792,6 @@ end
 
 -- 处理单个 portal 的 CS2 开关事件：增量更新缓存并请求 CS2 重建拓扑。
 function CS2.on_portal_cs2_toggle(portal_id)
-    if not cs2_active() then
-        return
-    end
-
     if not portal_id then
         return
     end
