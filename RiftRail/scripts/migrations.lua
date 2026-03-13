@@ -400,6 +400,33 @@ function Migrations.calculate_teleport_cache()
 end
 
 -- ============================================================================
+-- [迁移任务 12] v0.12.0 CS2 开关字段补齐
+-- ============================================================================
+-- 目的：为旧存档中的传送门数据补充 cs2_enabled 默认值
+-- 触发条件：标志位 storage.rift_rail_cs2_toggle_migrated 不存在
+function Migrations.patch_cs2_enabled_default()
+    if storage.rift_rail_cs2_toggle_migrated then
+        return
+    end
+
+    local patched_count = 0
+    if storage.rift_rails then
+        for _, portaldata in pairs(storage.rift_rails) do
+            if portaldata.cs2_enabled == nil then
+                portaldata.cs2_enabled = false
+                patched_count = patched_count + 1
+            end
+        end
+    end
+
+    storage.rift_rail_cs2_toggle_migrated = true
+
+    if patched_count > 0 then
+        log_debug("[Migration] 已为 " .. patched_count .. " 个旧传送门补齐 cs2_enabled=false")
+    end
+end
+
+-- ============================================================================
 -- 主入口：按顺序执行所有迁移任务
 -- ============================================================================
 function Migrations.run_all()
@@ -420,6 +447,7 @@ function Migrations.run_all()
     -- cybersyn兼容移除
     Migrations.final_cybersyn_purge()
     Migrations.calculate_teleport_cache()
+    Migrations.patch_cs2_enabled_default()
 end
 
 return Migrations

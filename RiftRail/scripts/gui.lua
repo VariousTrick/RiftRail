@@ -417,7 +417,27 @@ function GUI.build_or_update(player, entity)
         enabled = station_exists,
     })
 
-    -- 8. LTN 开关 (适配多对一启用条件)
+    -- 8. CS2 开关 (仅在安装 cybersyn2 时显示)
+    if script.active_mods["cybersyn2"] then
+        inner_flow.add({ type = "line", direction = "horizontal" })
+        local cs2_flow = inner_flow.add({ type = "flow", direction = "horizontal" })
+        cs2_flow.style.vertical_align = "center"
+        cs2_flow.add({ type = "label", caption = { "gui.rift-rail-cs2-label" } })
+
+        local cs2_btn_enabled = any_connection_exists
+
+        cs2_flow.add({
+            type = "switch",
+            name = "rift_rail_cs2_switch",
+            switch_state = my_data.cs2_enabled and "right" or "left",
+            right_label_caption = { "gui.rift-rail-cs2-connected" },
+            left_label_caption = { "gui.rift-rail-cs2-disconnected" },
+            tooltip = { "gui.rift-rail-cs2-tooltip" },
+            enabled = cs2_btn_enabled,
+        })
+    end
+
+    -- 9. LTN 开关 (适配多对一启用条件)
     if script.active_mods["LogisticTrainNetwork"] then
         inner_flow.add({ type = "line", direction = "horizontal" })
         local ltn_flow = inner_flow.add({ type = "flow", direction = "horizontal" })
@@ -438,7 +458,7 @@ function GUI.build_or_update(player, entity)
         })
     end
 
-    -- 9. 远程预览 (适配 Exit 模式下的来源预览)
+    -- 10. 远程预览 (适配 Exit 模式下的来源预览)
     inner_flow.add({ type = "line", direction = "horizontal" })
 
     -- 统一预览逻辑：直接使用下拉框选中的目标
@@ -477,7 +497,7 @@ function GUI.build_or_update(player, entity)
         })
     end
 
-    -- 10. 摄像头预览窗口
+    -- 11. 摄像头预览窗口
     -- 只要有目标 ID 且 玩家勾选了预览，就显示
     if preview_target_id and player_settings.show_preview then
         local partner = State.get_portaldata_by_id(preview_target_id)
@@ -703,6 +723,9 @@ function GUI.handle_switch_state_changed(event)
     elseif el_name == "rift_rail_ltn_switch" then
         local enabled = (event.element.switch_state == "right")
         remote.call("RiftRail", "set_ltn_enabled", player.index, my_data.id, enabled)
+    elseif el_name == "rift_rail_cs2_switch" then
+        local enabled = (event.element.switch_state == "right")
+        remote.call("RiftRail", "set_cs2_enabled", player.index, my_data.id, enabled)
     end
 end
 

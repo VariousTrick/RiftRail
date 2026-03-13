@@ -5,6 +5,7 @@ local Logic = {}
 local State = nil
 local GUI = nil
 local LTN = nil
+local CS2 = nil
 
 local log_debug = function() end
 
@@ -32,6 +33,7 @@ function Logic.init(deps)
     GUI = deps.GUI
     log_debug = deps.log_debug
     LTN = deps.LTN
+    CS2 = deps.CS2
 end
 
 -- ============================================================================
@@ -83,9 +85,10 @@ local function check_and_reset_logistics(portaldata)
     -- 如果连接数已清零，则强制关闭开关
     if connection_count == 0 then
         portaldata.cybersyn_enabled = false
+        portaldata.cs2_enabled = false
         portaldata.ltn_enabled = false
         if RiftRail.DEBUG_MODE_ENABLED then
-            log_debug("[Logic] Portal " .. portaldata.id .. " 连接数为零，已关闭 Cybersyn 和 LTN 开关")
+            log_debug("[Logic] Portal " .. portaldata.id .. " 连接数为零，已关闭 Cybersyn / CS2 / LTN 开关")
         end
     end
 end
@@ -345,6 +348,10 @@ function Logic.set_mode(player_index, portal_id, mode, skip_sync)
     -- 在多对一结构中，不再允许自动修改配对对象的模式
 
     refresh_all_guis()
+
+    if CS2 and CS2.on_topology_changed then
+        CS2.on_topology_changed()
+    end
 end
 
 -- ============================================================================
@@ -484,6 +491,10 @@ function Logic.pair_portals(player_index, source_id, target_id)
     end
 
     refresh_all_guis()
+
+    if CS2 and CS2.on_topology_changed then
+        CS2.on_topology_changed()
+    end
 end
 
 -- ============================================================================
@@ -581,6 +592,44 @@ function Logic.set_ltn_enabled(player_index, portal_id, enabled)
     end
 
     refresh_all_guis()
+end
+
+-- ============================================================================
+-- 7.1 CS2 开关控制
+-- ============================================================================
+function Logic.set_cs2_enabled(player_index, portal_id, enabled)
+    local player = game.get_player(player_index)
+    local my_data = State.get_portaldata_by_id(portal_id)
+    if not (player and my_data) then
+        return
+    end
+
+    my_data.cs2_enabled = enabled
+
+    refresh_all_guis()
+
+    local one_way_pairs = {}
+
+    if CS2 and CS2.on_portal_cs2_toggle then
+        -- 仅增量刷新与当前 portal 相关的缓存桶/抽屉，避免全表重建。
+        CS2.on_portal_cs2_toggle(my_data.id)
+
+        -- 仅提醒“单向可达”场景：A->B 可达，但 B->A 不可达。
+        if CS2.get_one_way_pairs_for_portal then
+            one_way_pairs = CS2.get_one_way_pairs_for_portal(my_data.id)
+        end
+    elseif CS2 and CS2.on_topology_changed then
+        -- 兼容兜底：旧实现无增量接口时仍走全量重建。
+        CS2.on_topology_changed()
+    end
+
+    for _, pair in ipairs(one_way_pairs) do
+        local from_surface = game.surfaces[pair.from_surface_index]
+        local to_surface = game.surfaces[pair.to_surface_index]
+        local from_name = (from_surface and from_surface.name) or tostring(pair.from_surface_index)
+        local to_name = (to_surface and to_surface.name) or tostring(pair.to_surface_index)
+        player.print({ "messages.rift-rail-warning-cs2-one-way", from_name, to_name })
+    end
 end
 
 -- ============================================================================
@@ -717,6 +766,10 @@ function Logic.unpair_portals_specific(player_index, source_id, target_id)
     end
 
     refresh_all_guis()
+
+    if CS2 and CS2.on_topology_changed then
+        CS2.on_topology_changed()
+    end
 end
 
 -- ============================================================================

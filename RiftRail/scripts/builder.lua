@@ -356,6 +356,7 @@ function Builder.on_built(event)
         mode = recovered_mode,
         surface = shell.surface,
         cybersyn_enabled = false,
+        cs2_enabled = false,
         prefix = prefix,
         shell = shell,
         children = children,

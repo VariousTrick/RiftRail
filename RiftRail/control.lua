@@ -44,6 +44,7 @@ local Schedule = require("scripts.schedule")
 local Util = require("scripts.util")
 local Teleport = require("scripts.teleport")
 local LTN = require("scripts.compat.ltn")
+local CS2Compat = require("scripts.compat.cs2")
 local AWCompat = require("scripts.compat.aw")
 local Migrations = require("scripts.migrations")
 local Maintenance = require("scripts.maintenance")
@@ -67,6 +68,13 @@ end
 -- 初始化 LTN 模块（仅依赖注入，实际接口运行时检查）
 if LTN.init then
     LTN.init({
+        State = State,
+        log_debug = log_debug,
+    })
+end
+
+if CS2Compat and CS2Compat.init then
+    CS2Compat.init({
         State = State,
         log_debug = log_debug,
     })
@@ -104,6 +112,7 @@ if Logic.init then
         GUI = GUI,
         log_debug = log_debug,
         LTN = LTN,
+        CS2 = CS2Compat,
     })
 end
 
@@ -128,6 +137,7 @@ if Remote.init then
         Logic = Logic,
         Builder = Builder,
         GUI = GUI,
+        CS2 = CS2Compat,
         log_debug = log_debug,
     })
 end
@@ -269,6 +279,12 @@ script.on_event(defines.events.on_entity_cloned, Builder.on_cloned)
 script.on_event(defines.events.on_player_setup_blueprint, Builder.on_setup_blueprint)
 script.on_event(defines.events.on_entity_settings_pasted, Builder.on_settings_pasted)
 script.on_event(defines.events.on_runtime_mod_setting_changed, Maintenance.on_settings_changed)
+
+script.on_event(RiftRail.Events.TrainArrived, function(event)
+    if CS2Compat and CS2Compat.on_train_arrived then
+        CS2Compat.on_train_arrived(event)
+    end
+end)
 
 
 -- 延迟加载事件注册

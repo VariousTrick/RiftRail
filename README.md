@@ -48,6 +48,9 @@
 📦 **Logistic Train Network (LTN)**
 原生支持跨地表运输。在新的多对多架构下，列车会自动选择距离其目的地最近的可用传送门。
 
+
+🤖 **Cybersyn 2 (CS2)**
+自 v0.12 起重新原生支持 Cybersyn 2。通过 CS2 的 route plugin 接口实现跨地表调度，系统会综合入口距离与出口到目标站距离，自动选择全局最优传送路径。
 *   **关于 Cybersyn：** 由于底层架构冲突，v0.10 版本已**移除**对 Cybersyn 的支持。
 
 🌐 **多对多路由**
@@ -64,11 +67,16 @@
 
 **重要提示：** 更改此设置需要重启游戏。
 
+### 💡 进阶：性能与 UPS 优化指南
+对于追求极致性能的巨型基地玩家，Rift Rail 在底层提供了深度的优化空间。通过合理的建筑摆放和参数调整，您可以将列车传送的 CPU 消耗降至最低。
 
-
-
-
-
+* **核心技巧 1：保持“同向放置”激活克隆优化**
+    对于一对配对的传送门，只要入口和出口**都是竖着放的，或者都是横着放的**，Rift Rail 就能直接调用极速的 Factorio 原生 `clone` API。此时一整列满载火车的传送**几乎不消耗任何 UPS**。
+* **注意**：请尽量避免“一个横着、一个竖着”的直角摆放，这会强制系统去计算复杂的车厢旋转坐标，从而增加 CPU 负担。
+* **核心技巧 2：平衡“传送速度”与“检测频率”**
+    您可以在模组设置中调整这两个核心参数。提高**放置检测间隔**（如 2 或 3）可大幅降低脚本 CPU 消耗，但会导致车厢连接延迟。较高的**传送时车辆速度**会增加吞吐量，但必须配合极低的检测间隔，否则会导致列车拉断。
+    * **推荐高吞吐量模式（默认）**：检测间隔 `1`，传送速度 `1.0` ~ `2.4`。
+    * **推荐终极 UPS 环保模式（千瓶基地）**：检测间隔 `3` 或 `4`，传送速度 `0.5` ~ `1.0`。搭配“直通”克隆优化，极大地降低脚本运算频率。
 
 *   特别感谢：
 *   **Ldmf**：感谢其对原版、SE、K2 和 Space Age 的配方、科技及数据结构进行的全面重构与巨大贡献。
@@ -116,6 +124,9 @@ Deep integration. Portals function correctly on spaceships and maintain connecti
 📦 **Logistic Train Network (LTN)**
 Native support for cross-surface deliveries. With the new N-to-M architecture, trains will automatically select the closest available portal to their destination.
 
+
+🤖 **Cybersyn 2 (CS2)**
+Re-introduced in v0.12 with native support. Integrates via CS2's route plugin API to enable cross-surface dispatching, with automatic global-optimal portal selection based on combined approach and exit-to-destination distances.
 *   **Note on Cybersyn:** Support for Cybersyn has been **removed** in v0.10 due to fundamental architectural conflicts.
 
 🌐 **Many-to-Many Routing**
@@ -131,6 +142,17 @@ This mod now features multiple balancing modes to fit your desired playstyle, ac
 *   **Hardcore Modes (SE, K2, Space Age):** Integrates Rift Rail deep into the endgame of major overhaul mods. You will need access to late-game resources (like Naquium or Matter) to build your first portal.
 
 **Important:** Changing this setting requires a game restart.
+
+### 💡 Advanced: Performance & UPS Tuning
+For megabase builders pushing for maximum performance, Rift Rail offers deep optimization potential. By properly aligning portals and tuning settings, you can reduce the CPU cost of train teleportation to near zero.
+
+* **Tip 1: The "Same-Axis" Clone Optimization**
+    For a paired set of portals, as long as the Entry and Exit are **both placed vertically, or both placed horizontally**, Rift Rail smartly utilizes the ultra-fast native Factorio `clone` API. Teleporting a fully loaded train this way costs **almost zero UPS**.
+* **Note**: Avoid mixing them (e.g., one vertical and one horizontal). This 90-degree setup forces the mod to calculate complex carriage rotation math and uses more CPU.
+* **Tip 2: Balancing "Teleport Speed" and "Placement Interval"**
+    You can adjust these core parameters in the Mod Settings. Increasing the **Placement Interval** (e.g., to 2 or 3) significantly reduces script CPU usage but delays carriage connection. Higher **Teleport Speeds** increase throughput but MUST be paired with lower intervals to prevent trains from snapping.
+    * **Recommended High Throughput (Default)**: Interval `1`, Speed `1.0` ~ `2.4`.
+    * **Recommended UPS-Eco (Megabases)**: Interval `3` or `4`, Speed `0.5` ~ `1.0`. Combined with the "Clone Optimization", your UPS will remain rock-solid.
 
 
 

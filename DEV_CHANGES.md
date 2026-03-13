@@ -4,6 +4,237 @@
 > 规则：新改动统一追加到最上方（时间倒序），每次包含日期、改动文件、改动内容。
 > 补充：本文件从 v0.11.7 之后开始维护；当前 2026-03-02 的全部条目均归入 v0.11.8 发布内容。
 
+## 2026-03-12（v0.12.0 开发中：CS2 传送后 GUI 刷新逻辑）
+
+### 改动摘要
+- 采用"状态驱动（State-Driven）"极简设计，解决 CS2 传送后玩家 GUI 界面过期的问题。
+- 由传送发生者（teleport.lua）记录"实时状态"（玩家正在看谁），而非"身份追踪"（谁叫什么）。
+- 传送完成后，接管方（cs2.lua）直接对着"当前看着什么"的名单进行"闭眼睁眼"刷新，零性能消耗、零耦合。
+
+### 具体改动
+- `RiftRail/scripts/teleport.lua`
+  - `process_transfer_step(...)`（~L1203）：每次生成新车厢后，将成功恢复 GUI 的玩家记录到 `entry_portaldata.restored_guis` 列表（格式：`{ player, entity }`）。
+  - `finalize_sequence(...)`（~L1005）：阅后即焚，清理 `entry_portaldata.restored_guis = nil`。
+  - `raise_arrived_event(...)` 调用（L981）：修复参数传递，加入第 4 参数 `entry_portaldata.restored_guis`，使事件携带最新玩家状态名单。
+
+- `RiftRail/scripts/compat/cs2.lua`
+  - `CS2.on_train_arrived(...)`（~L735）：已实现 GUI 刷新逻辑，对每个玩家进行"闭眼睁眼"操作：
+    ```lua
+    if event.restored_guis then
+        for _, gui_data in ipairs(event.restored_guis) do
+            local p = gui_data.player
+            local e = gui_data.entity
+            -- 最终安全检查：玩家在线、实体健在、玩家依然在看着这个车厢
+            if p and p.valid and e and e.valid and p.opened == e then
+                p.opened = nil
+                p.opened = e  -- Factorio 自动刷新 UI
+            end
+        end
+    end
+    ```
+
+### 设计优点
+1. **零性能消耗**：没人看 → 列表为空 → 跳过整个刷新逻辑。
+2. **零耦合**：teleport 和 cs2 只需通过事件传递数据，不存在消息重复或重发。
+3. **零风险**：玩家中间切了界面（`p.opened != e`）→ 判断失败 → 不会强行覆盖，尊重用户操作。
+4. **数据极简**：不追踪"谁之前叫什么"，仅记录"玩家此刻看着什么"，权责清晰。
+
+### 闭环完成
+传送流程从"发生者记录状态"到"接管者消费状态"形成单向信息流，堪称"极简优雅"的事件驱动设计。
+
+
+## 2026-03-11（v0.12.0 开发中：CS2 单向路径提醒）
+
+### 改动摘要
+- 新增 CS2 单向路径检测：玩家切换传送门 CS2 开关后，若存在 A→B 但不存在 B→A 的回程路径，立即向操作玩家发出提示。
+- 仅提醒"单向可达"场景，不提醒"完全无路线"（如玩家刚刚开始建造），避免误导。
+- 提示不做持续刷屏，仅在玩家手动操作时触发一次。
+
+### 具体改动
+- `RiftRail/scripts/compat/cs2.lua`
+  - 新增 `add_surface_pair(...)`：向受影响方向对集合中安全插入唯一方向对（防重复）。
+  - 新增 `collect_impacted_surface_pairs(portal)`：按操作传送门的 mode/target_ids/source_ids 收集此次开关操作可能影响到的地表方向对，出口侧含全量入口兜底扫描。
+  - 新增 `CS2.get_one_way_pairs_for_portal(portal_id)`：基于受影响方向对，用路由缓存判断哪些方向是"有去无回"，返回单向方向对列表。
+
+- `RiftRail/scripts/logic.lua`
+  - `Logic.set_cs2_enabled(...)` 新增：调用 `CS2.get_one_way_pairs_for_portal` 取单向方向对，并对操作玩家逐条输出提示消息 `messages.rift-rail-warning-cs2-one-way`。
+
+- `RiftRail/locale/en/strings.cfg`、`locale/zh-CN/strings.cfg`、`locale/ja/strings.cfg`
+  - 新增本地化键 `rift-rail-warning-cs2-one-way`，参数：__1__=出发地表名，__2__=目标地表名。
+
+## 2026-03-11（v0.12.0 开发中：CS2 路由缓存增量更新）
+
+### 改动摘要
+- CS2 路由缓存新增“按 portal_id 精准增量清理/补写”能力，避免 `set_cs2_enabled` 时全量重建缓存。
+- 缓存结构保持 `from_surface -> to_surface` 大表，桶内包含 `by_entry` 入口抽屉与 `flat_edges` 平铺边索引。
+- 严格执行开关条件：入口与出口必须同时开启 `cs2_enabled` 才写入缓存；关闭后立即从缓存中清除相关边。
+
+### 具体改动
+- `RiftRail/scripts/compat/cs2.lua`
+  - 新增增量更新辅助函数：
+    - `remove_portal_edges_from_cache(...)`：按 portal_id 精准移除相关边与空抽屉。
+    - `append_enabled_edges_for_entry(...)`：入口开启时重建该入口抽屉。
+    - `append_enabled_edges_for_exit(...)`：出口开启时重建所有指向该出口的边（含 source_ids 不完整兜底扫描）。
+    - `refresh_cache_for_toggled_portal(...)`：组合“先清理后补写”的增量流程。
+  - 新增 `CS2.on_portal_cs2_toggle(portal_id)`，供开关事件直接触发增量缓存更新。
+  - 拆分并复用 `request_cs2_topology_rebuild()`，在增量/全量路径都保持 CS2 拓扑重建节流逻辑。
+
+- `RiftRail/scripts/logic.lua`
+  - `Logic.set_cs2_enabled(...)` 改为优先调用 `CS2.on_portal_cs2_toggle(my_data.id)`。
+  - 保留旧接口兜底：若无增量接口则回退到 `CS2.on_topology_changed()` 全量重建。
+
+## 2026-03-11（v0.12.0 开发中：诊断完成 - 跨地表传送短暂 no-path 警告根因）
+
+### 改动摘要
+- 完整诊断了跨地表 complete 阶段出现短暂 "no-path" 警告的根本原因。
+- 确认此现象为 Factorio 引擎级别的架构约束，而非 RiftRail 代码缺陷。
+- 验证了完成阶段车库名兜底逻辑（2026-03-10 新增）确实有效解决了车厢头停靠问题。
+- 确认 CS2 GUI 面板显示"未由 Cybersyn 2 管理"为 GUI panel 的陈旧状态引用，非所有权问题。
+
+### 根因分析
+
+**No-Path Alert 触发链条：**
+1. 列车离开投递目标站 → Factorio 引擎立即运行寻路评估（基于当前时刻表）
+2. 此时刻表仅包含目标地表上的车库站（跨地表，无法到达）
+3. 寻路失败，触发 "no-path" 警告
+4. 同一帧内，CS2 的 `notify_departed` → `delivery.complete` → `query_route_plugins` 链条执行
+5. RiftRail route_plugin_callback 接管，覆写时刻表为"入口 -> 目标实名站"
+6. 寻路重新计算，恢复正常；警告解除
+
+**关键观察：**
+- 该间隙是 Factorio 同步寻路引擎 + 异步插件回调模型的必然结果
+- 不在 RiftRail 代码执行过程中，而在 Factorio 引擎代码执行时间窗口中
+- 警告持续时间约 1 tick，对功能无任何影响（投递正常完成）
+
+**改进可能性：**
+需要 Factorio 引擎层面支持"延迟寻路至插件回调后"的 API，RiftRail 插件层不可单独解决。
+
+### 测试验证
+- ✅ 已确认 SE 插件模型同样会遭遇此现象（SE 未使用 group 绑定时亦有同样间隙）
+- ✅ CS2 内部调用链同步无延迟
+- ✅ 完成阶段车库名兜底确实使用了正确的目标站
+
+### 文档更新
+已为 CS2 开发团队准备了英文技术文档，描述该现象的根因、影响范围与架构背景。
+- 目标：帮助 CS2 团队了解此为跨引擎的设计约束，非插件层缺陷
+- 格式：技术观察报告，非功能请求
+
+## 2026-03-10（v0.12.0 开发中：CS2 传送流程收敛为 SE 同款闭环）
+
+### 改动摘要
+- 将 CS2 跨地表接管逻辑收敛为“入口传送站 + 下一实名站”的过渡调度。
+- 移除第一节车厢阶段的临时回填钩子，避免与最终 handoff 流程形成混合路径。
+- 保留“传送完成后清理过渡临时站，再 `route_plugin_handoff` 交还 CS2”的闭环，避免重复生成临时站。
+
+### 具体改动
+- `RiftRail/scripts/compat/cs2.lua`
+  - `route_train_to_entry(...)` 新增 `continuation_station_name` 参数。
+  - 接管时按顺序写入：
+    - 入口传送站（带 `riftrail-go-to-id` 条件）。
+    - 下一实名站（由 CS2 传入 `stop_entity.backer_name`）。
+  - `complete` 场景新增车库名兜底：当 `stop_entity` 缺失时，优先读取当前时刻表末站作为 `continuation_station_name`（通常为车库站）；仅在读取失败时回退为出口站并输出调试日志。
+  - 删除 `restore_dropoff_schedule(...)` 与 `rr_cs2_dropoff_info_by_train_id` 缓存路径。
+  - `on_train_arrived(...)` 仅执行“先清理临时站，再 handoff”，不再二次补站。
+  - 进一步对齐 SE 车组生命周期：
+    - 接管时暂时解绑 `luatrain.group`，并覆盖为“两站过渡调度（入口 -> 下一实名站）”。
+    - 传送完成后先 `new_train.schedule = nil`，恢复原车组，再 `route_plugin_handoff` 交还 CS2。
+
+- `RiftRail/scripts/teleport.lua`
+  - 移除 `CS2Compat.restore_dropoff_schedule(...)` 的第一节回填调用。
+  - 移除 `CS2Compat` 依赖注入接收字段。
+
+- `RiftRail/control.lua`
+  - `Teleport.init(...)` 移除 `CS2Compat` 注入参数。
+
+## 2026-03-09（v0.12.0 开发中：CS2 兼容骨架接入）
+
+### 改动摘要
+- 接入 Cybersyn2 route plugin 骨架，实现 `topology / reachable / route` 三类回调。
+- 增加 RiftRail 传送完成后的 CS2 handback 闭环：在 `TrainArrived` 事件中按旧车 ID 归还 delivery。
+- 完成运行时接线：`control -> compat.cs2 -> logic/remote`，并在拓扑变化操作后触发 CS2 拓扑重建（带节流）。
+- 完成 data 阶段注册：在检测到 `cybersyn2` 时将 RiftRail 回调写入 `mod-data["cybersyn2"].data.route_plugins`。
+
+### 具体改动
+- `RiftRail/scripts/compat/cs2.lua`（新文件）
+  - 新增 `CS2.init(...)`。
+  - 新增 `train_topology_callback(origin_surface_index)`：按 `cs2_enabled` 的 Entry/Exit 连接返回可达 surface 集合。
+  - 新增 `reachable_callback(...)`：对不可跨地表路径执行 veto（返回 `true`）。
+  - 新增 `route_callback(...)`：跨地表时接管列车，插入前往入口站的调度并记录 handoff 上下文。
+  - 新增 `on_train_arrived(event)`：使用 `old_train_id` 定位待归还 delivery，调用 `remote.call("cybersyn2", "route_plugin_handoff", ...)`。
+  - 新增 `on_topology_changed()`：节流调用 `remote.call("cybersyn2", "rebuild_train_topologies")`。
+
+- `RiftRail/control.lua`
+  - 新增 `require("scripts.compat.cs2")` 并初始化 `CS2Compat`。
+  - 将 `CS2Compat` 注入 `Logic.init(...)` 与 `Remote.init(...)`。
+  - 新增 `RiftRail.Events.TrainArrived` 监听并转发至 `CS2Compat.on_train_arrived`。
+
+- `RiftRail/scripts/remote.lua`
+  - `RiftRail` remote interface 新增：
+    - `cs2_train_topology_callback`
+    - `cs2_reachable_callback`
+    - `cs2_route_callback`
+  - 以上回调均转发到 `CS2Compat`。
+
+- `RiftRail/scripts/logic.lua`
+  - `Logic.init(...)` 新增 `CS2` 依赖注入。
+  - 在 `set_mode / pair_portals / unpair_portals_specific / set_cs2_enabled` 后触发 `CS2.on_topology_changed()`。
+
+- `RiftRail/data-updates.lua`
+  - 新增 `has_cs2 = mods["cybersyn2"]` 检测。
+  - 在 `has_RiftRail and has_cs2` 时加载 `updates.cs2`。
+
+- `RiftRail/updates/cs2.lua`（新文件）
+  - 向 `cybersyn2` 的 `route_plugins` 注册 RiftRail 三个回调：
+    - `train_topology_callback = { "RiftRail", "cs2_train_topology_callback" }`
+    - `reachable_callback = { "RiftRail", "cs2_reachable_callback" }`
+    - `route_callback = { "RiftRail", "cs2_route_callback" }`
+
+## 2026-03-09（v0.12.0 开发中：旧存档 CS2 字段补齐迁移）
+
+### 改动摘要
+- 为旧存档中的传送门数据补充 `cs2_enabled` 字段，默认值为 `false`。
+- 迁移为一次性任务，在 `on_configuration_changed` 路径执行并写入完成标记，避免重复运行。
+
+### 具体改动
+- `RiftRail/scripts/migrations.lua`
+  - 新增 `Migrations.patch_cs2_enabled_default()`。
+  - 遍历 `storage.rift_rails`，对缺失 `cs2_enabled` 的旧数据补齐 `false`。
+  - 新增标志位 `storage.rift_rail_cs2_toggle_migrated`。
+  - 在 `Migrations.run_all()` 中接入该迁移任务。
+
+## 2026-03-09（v0.12.0 开发中：新增 CS2 按钮与本地开关链路）
+
+### 改动摘要
+- 在传送门 GUI 中新增 CS2 开关，位置位于 LTN 开关上方，仅在安装 `cybersyn2` 时显示。
+- 打通 CS2 开关的本地状态链路：`GUI -> Remote -> Logic`，用于保存 `cs2_enabled` 并刷新界面。
+- 新增英/日/简中本地化条目，覆盖 CS2 开关标签、状态与提示文案。
+- 本次不包含 CS2 路由/拓扑/handoff 兼容逻辑，仅实现按钮与按钮功能。
+
+### 具体改动
+- `RiftRail/scripts/gui.lua`
+  - 新增 `rift_rail_cs2_switch` 开关组件，显示条件为 `script.active_mods["cybersyn2"]`。
+  - 将 CS2 区块放置于 LTN 区块上方。
+  - 在 `handle_switch_state_changed` 中新增 `rift_rail_cs2_switch` 分支，调用 `remote.call("RiftRail", "set_cs2_enabled", ...)`。
+
+- `RiftRail/scripts/remote.lua`
+  - `RiftRail` remote interface 新增 `set_cs2_enabled(player_index, portal_id, enabled)`，转发到 `Logic.set_cs2_enabled`。
+
+- `RiftRail/scripts/logic.lua`
+  - 新增 `Logic.set_cs2_enabled(...)`，负责保存 `portaldata.cs2_enabled` 并刷新 GUI。
+  - 在连接归零自动复位逻辑中加入 `portaldata.cs2_enabled = false`。
+
+- `RiftRail/scripts/builder.lua`
+  - 新建传送门数据时新增默认字段 `cs2_enabled = false`。
+
+- `RiftRail/locale/en/strings.cfg`
+  - 新增 `rift-rail-cs2-label / connected / disconnected / tooltip`。
+
+- `RiftRail/locale/ja/strings.cfg`
+  - 新增 `rift-rail-cs2-label / connected / disconnected / tooltip`。
+
+- `RiftRail/locale/zh-CN/strings.cfg`
+  - 新增 `rift-rail-cs2-label / connected / disconnected / tooltip`。
+
 ## 2026-03-06（v0.11.10 开发中：入口拆除时的出口锁泄漏修复）
 
 ### 改动摘要
