@@ -1326,12 +1326,15 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         if merged_train and merged_train.valid then
             -- 在每次拼接后，清空方向和目的地的双重缓存
             -- 这将强制 maintain_exit_speed 在下一帧进行完整的重新验证和计算
-            exit_portaldata.cached_exit_drive_sign = nil
-            exit_portaldata.cached_destination_stop = nil
+            exit_portaldata.cached_exit_drive_sign = nil  -- 清理出口意图方向缓存
+            exit_portaldata.cached_destination_stop = nil -- 清理目的地站点缓存
+            exit_portaldata.cached_speed_sign = nil       -- 清理速度方向缓存
+
             local target_index = index_before_spawn or exit_portaldata.saved_schedule_index
             if RiftRail.DEBUG_MODE_ENABLED then
                 log_tp("【创建后】准备恢复: index_before_spawn=" .. tostring(index_before_spawn) .. ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index) .. ", 使用target=" .. tostring(target_index))
             end
+            
             restore_train_state(merged_train, exit_portaldata, false, target_index)
         end
     end
@@ -1470,11 +1473,17 @@ function Teleport.maintain_exit_speed(portaldata)
     -- 同时这会产生“弹射/吸入”效果，最大化吞吐量。
     local target_speed = exit_portaldata.cached_teleport_speed or settings.global["rift-rail-teleport-speed"].value
 
+    -- 获取或计算纯物理几何的推离方向（算一次管一节）
+    local phys_sign = exit_portaldata.cached_speed_sign
+    if not phys_sign then
+        phys_sign = calculate_speed_sign(train_exit, exit_portaldata)
+        exit_portaldata.cached_speed_sign = phys_sign
+    end
+
     -- 【第一层判断：处理手动模式列车】
     if train_exit.manual_mode then
-        -- 对于手动车，永远执行简单的物理推离，不涉及任何复杂缓存
-        local required_sign = calculate_speed_sign(train_exit, exit_portaldata)
-        train_exit.speed = target_speed * required_sign
+        -- 手动车直接使用缓存好的物理方向，不再每 tick 跨界调用！
+        train_exit.speed = target_speed * phys_sign
         return
     end
 
@@ -1565,9 +1574,9 @@ end
 ---@param portaldata PortalData 传送门数据 / Portal data
 ---@param tick integer 当前tick / Current tick
 local function process_teleport_sequence(portaldata, tick)
-    -- 频率控制���从��戏设置中读取间隔值
+    -- 频率控制从游戏设置中读取间隔值
     local interval = portaldata.placement_interval or settings.global["rift-rail-placement-interval"].value
-    -- 只有当间���大于1时，才启用频率控制，以获得最佳性能
+    -- 只有当间隔大于1时，才启用频率控制，以获得最佳性能
     if interval > 1 and tick % interval ~= portaldata.unit_number % interval then
         return
     end
