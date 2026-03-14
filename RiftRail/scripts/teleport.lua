@@ -379,75 +379,61 @@ local function calculate_speed_sign(train, select_portal)
 end
 
 -- =================================================================================
--- 出口专属：目标向量点积法 (免疫物理碰撞，精准嗅探 AI 真实意图)
+-- 【极度昂贵：只调用一次】获取 AI 的绝对物理意图向量
 -- =================================================================================
----@param train LuaTrain 要计算的列车 / The train to calculate
----@param fallback_portal PortalData 备用参考传送门 / Fallback reference portal (used if train has no path)
----@return integer 1 代表逻辑正向 (目标在车头前方), -1 代表逻辑反向 (目标在车尾后方) / 1 for forward, -1 for backward
-local function get_exit_native_speed_sign(train, fallback_portal)
-    if not (train and train.valid) then
-        return 1
+---@param train LuaTrain 要分析的列车 / The train to analyze
+---@return table|nil 绝对物理意图向量 {x=number, y=number} / Absolute physical intent vector
+---@note 这个函数非常昂贵，应该只在时刻表改变时调用一次，并将结果缓存起来供后续使用
+local function get_ai_intent_vector(train)
+    local path = train.path
+    local rails = path and path.rails
+    -- 如果没有路径，或者到了最后一截，返回 nil 走兜底
+    if not rails or #rails < 2 then
+        return nil
     end
 
-    --[[     -- 1. 如果没有寻路目标，或者处于手动模式，AI 没有意图
-    -- 立即触发兜底逻辑：强行推离出口防堵塞
-    if train.manual_mode or not train.has_path then
-        return calculate_speed_sign(train, fallback_portal)
-    end ]]
+    -- 用路径上前两截铁轨的坐标差，算出一个永远指向前方的绝对向量！
+    return {
+        x = rails[2].position.x - rails[1].position.x,
+        y = rails[2].position.y - rails[1].position.y,
+    }
+end
 
-    -- 2. 极速获取目标的绝对坐标 (O(1) 复杂度)
-    local target_pos = nil
-    if train.path_end_stop then
-        target_pos = train.path_end_stop.position
-    elseif train.path_end_rail then
-        target_pos = train.path_end_rail.position
+-- =================================================================================
+-- 【极度廉价：拼接时调用】用缓存的意图向量，计算当前应给的符号
+-- =================================================================================
+---@param train LuaTrain 要分析的列车 / The train to analyze
+---@param intent_vector table|nil 绝对物理意图向量 {x=number, y=number} / Absolute physical intent vector
+---@param portaldata PortalData 传送门数据 / Portal data
+---@return integer 速度符号 (1 或 -1) / Speed sign (1 or -1)
+local function calculate_sign_from_intent(train, intent_vector, portaldata)
+    -- 如果没取到意图向量，直接用“物理堵头”兜底推离
+    if not intent_vector or (intent_vector.x == 0 and intent_vector.y == 0) then
+        return calculate_speed_sign(train, portaldata)
     end
 
-    -- 极小概率没有拿到坐标，走兜底
-    if not target_pos then
-        return calculate_speed_sign(train, fallback_portal)
-    end
-
-    -- 3. 获取列车首尾铁轨坐标
     local front_rail = train.front_end and train.front_end.rail
     local back_rail = train.back_end and train.back_end.rail
     if not (front_rail and back_rail) then
-        return calculate_speed_sign(train, fallback_portal)
+        return calculate_speed_sign(train, portaldata)
     end
 
-    local front_pos = front_rail.position
-    local back_pos = back_rail.position
+    -- 取当前车身向量 (0 表格开销)
+    local v_train_x = front_rail.position.x - back_rail.position.x
+    local v_train_y = front_rail.position.y - back_rail.position.y
 
-    -- 4. 计算列车自身的正向向量 (V_train)
-    local v_train_x = front_pos.x - back_pos.x
-    local v_train_y = front_pos.y - back_pos.y
-
-    -- [特殊处理]：如果只有单节车厢，首尾铁轨可能是同一个，导致向量为 0
-    -- 此时我们用车厢的朝向 (orientation) 算一下方向
     if v_train_x == 0 and v_train_y == 0 then
         local car = train.carriages[1]
         if car then
             local angle = car.orientation * 2 * math.pi
-            -- Factorio 朝向换算：0是北(y-), 0.25是东(x+), 0.5是南(y+), 0.75是西(x-)
             v_train_x = math.sin(angle)
             v_train_y = -math.cos(angle)
-        else
-            return calculate_speed_sign(train, fallback_portal)
         end
     end
 
-    -- 5. 计算目标意图向量 (V_dest)：从车头指向目的地
-    local v_dest_x = target_pos.x - front_pos.x
-    local v_dest_y = target_pos.y - front_pos.y
-
-    -- 6. 点积运算判定 (Dot Product)
-    local dot = (v_train_x * v_dest_x) + (v_train_y * v_dest_y)
-
-    if dot >= 0 then
-        return 1  -- 目标在车头前方，给正向推力
-    else
-        return -1 -- 目标在车尾后方，给反向推力
-    end
+    -- 点积判断当前参考系下该给的正负号
+    local dot = (v_train_x * intent_vector.x) + (v_train_y * intent_vector.y)
+    return dot >= 0 and 1 or -1
 end
 
 -- =========================================================================
@@ -1063,6 +1049,7 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         exit_portaldata.saved_manual_mode = nil       -- 清理手动/自动模式缓存
         exit_portaldata.cached_place_query = nil      -- 清理 can_place 查询缓存，防止过期数据干扰下一次传送
         exit_portaldata.cached_destination_stop = nil -- 清理缓存的目的地站点数据
+        exit_portaldata.cached_intent_vector = nil    -- 清理缓存的意图向量
     end
     
     if entry_portaldata then
@@ -1327,8 +1314,8 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
             -- 在每次拼接后，清空方向和目的地的双重缓存
             -- 这将强制 maintain_exit_speed 在下一帧进行完整的重新验证和计算
             exit_portaldata.cached_exit_drive_sign = nil  -- 清理出口意图方向缓存
-            exit_portaldata.cached_destination_stop = nil -- 清理目的地站点缓存
-            exit_portaldata.cached_speed_sign = nil       -- 清理速度方向缓存
+            -- exit_portaldata.cached_destination_stop = nil -- 清理目的地站点缓存
+            -- exit_portaldata.cached_speed_sign = nil       -- 清理速度方向缓存
 
             local target_index = index_before_spawn or exit_portaldata.saved_schedule_index
             if RiftRail.DEBUG_MODE_ENABLED then
@@ -1492,21 +1479,19 @@ function Teleport.maintain_exit_speed(portaldata)
         -- 1. 获取列车当前真正的目的地
         local current_destination = train_exit.path_end_stop
 
-        -- 2. 检查列车意图是否已改变 (玩家修改了时刻表)
+        -- 2. 【昂贵层】检查列车意图是否已改变 (玩家修改了时刻表 / 第一次生成)
         if current_destination ~= exit_portaldata.cached_destination_stop then
-            -- 意图已变！主动将方向缓存清空，强制在下面重新计算
-            exit_portaldata.cached_exit_drive_sign = nil
+            exit_portaldata.cached_intent_vector = get_ai_intent_vector(train_exit)
+            exit_portaldata.cached_destination_stop = current_destination
+            exit_portaldata.cached_exit_drive_sign = nil -- 强制重算符号
         end
 
-        -- 3. 执行“按需计算”逻辑
+        -- 3. 【廉价层】执行极速符号计算
         local required_sign = exit_portaldata.cached_exit_drive_sign
         if not required_sign then
-            -- 仅在缓存为空时 (首次、拼接后、或时刻表改变后) 才计算
-            required_sign = get_exit_native_speed_sign(train_exit, exit_portaldata)
-
-            -- 将新的计算结果和对应的目的地，一同存入缓存
+            -- 仅在缓存为空时 (首次、每次拼接后、或时刻表改变后) 执行简单的点积
+            required_sign = calculate_sign_from_intent(train_exit, exit_portaldata.cached_intent_vector, exit_portaldata)
             exit_portaldata.cached_exit_drive_sign = required_sign
-            exit_portaldata.cached_destination_stop = current_destination
         end
 
         -- 4. 施加速度
