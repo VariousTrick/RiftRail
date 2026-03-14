@@ -4,6 +4,28 @@
 > 规则：新改动统一追加到最上方（时间倒序），每次包含日期、改动文件、改动内容。
 > 补充：本文件从 v0.11.7 之后开始维护；当前 2026-03-02 的全部条目均归入 v0.11.8 发布内容。
 
+## 2026-03-14（v0.12.1 开发中：LTN 兼容模块深度精简与去防卫式编程）
+
+### 改动摘要
+- 移除了 `ltn.lua` 顶部基于 `script.active_mods` 的短路拦截机制，解决因模组内部名判定失败导致整个兼容文件静默失效的恶性 Bug。
+- 全面清退 LTN 接口调用中的 `pcall`（保护模式调用）包裹，摒弃过度防卫式编程（Over-defensive Programming）。
+- 确立以 `remote.interfaces` 存在性校验为唯一前置安全门的轻量化调用规范。
+
+### 具体改动
+- `RiftRail/scripts/compat/ltn.lua`
+  - 移除文件顶部 15 行的 `if not script.active_mods["logistic-train-network"] then return {空壳} end` 拦截逻辑。
+  - `logic_reassign(...)`：剥离 `pcall`，直接调用 `remote.call("logistic-train-network", "reassign_delivery", ...)`。
+  - `p_join_pool(...)`：剥离 `pcall`，直接调用 `connect_surfaces`。
+  - `p_leave_pool(...)`：剥离 `pcall`，直接调用 `disconnect_surfaces`。
+  - `p_commit_all_ltn_connections(...)`：剥离批量连接循环中的 `pcall`。
+  - `LTN.purge_legacy_connections()`：剥离清理旧连接双重循环中的 `pcall`。
+
+### 设计优点
+1. **Fail-Fast (快速失败) 原则**：LTN 接口极度稳定，一旦未来发生破坏性 API 变更，直接抛出红字报错，比 `pcall` 静默吞噬错误更容易在第一时间定位问题。
+2. **零开销与高可读性**：移除了大量匿名函数和 `pcall` 的嵌套，避免了 Lua JIT 优化的打断，代码结构变得极其直观清爽。
+3. **架构自洽**：依靠事件驱动本身（没装 LTN 就不会有相关事件触发）以及严谨的 `is_ltn_active()` 前置校验，已经构建了 100% 安全的运行环境，彻底摆脱了画蛇添足的代码设计。
+
+
 ## 2026-03-14（v0.12.1 开发中：LTN 兼容性重构与纯事件驱动）
 
 ### 改动摘要
