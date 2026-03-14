@@ -7,7 +7,7 @@ script.on_event(defines.events.on_player_joined_game, function(event)
     local player = game.get_player(event.player_index)
     player.print({ "messages.rift-rail-welcome" })
     if script.active_mods["cybersyn"] then
-        player.print({ "messages.rift-rail-cybersyn-allremoved" })
+        player.print({ "messages.rift-rail-now-has-cs2" })
     end
 end)
 
