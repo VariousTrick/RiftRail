@@ -4,25 +4,6 @@
 --      负责管理与 LTN 模组的接口交互，以及动态修改列车时刻表以实现跨地表运输。
 
 local LTN = {}
-
--- =======================================================
--- 环境检测：如果没有安装 LTN，直接返回空壳模块 (最高效的拦截)
--- =======================================================
---[[ if not script.active_mods["logistic-train-network"] then
-    return {
-        init = function() end,
-        on_portal_mode_changed = function() end,
-        on_portal_destroyed = function() end,
-        update_connection = function() end,
-        update_station_name_in_routes = function() end,
-        on_stops_updated = function() end,
-        on_dispatcher_updated = function() end,
-        on_train_arrived = function() end,
-        purge_legacy_connections = function() end,
-        rebuild_routing_table_from_storage = function() end,
-    }
-end ]]
-
 local State = nil
 local log_ltn = function(...) end -- 接受任意参数的占位函数
 local ROUTING_TABLE_VERSION = 2
@@ -300,18 +281,11 @@ p_join_pool = function(portal_data, dest_surface, batch_mode)
 
         for partner_unit, partner_station in pairs(partner_pool) do
             if partner_station and partner_station.valid and station.valid then
-                local ok, err = pcall(function()
-                    local nid = compute_network_id(station, partner_station, -1)
-                    remote.call("logistic-train-network", "connect_surfaces", station, partner_station, nid)
-                end)
-
-                if ok then
-                    connection_count = connection_count + 1
-                    if RiftRail.DEBUG_MODE_ENABLED then
-                        ltn_log("[LTN] 已注册连接: " .. portal_data.name .. " <-> partner#" .. partner_unit)
-                    end
-                else
-                    ltn_log("[LTN] 注册失败: " .. tostring(err))
+                local nid = compute_network_id(station, partner_station, -1)
+                remote.call("logistic-train-network", "connect_surfaces", station, partner_station, nid)
+                connection_count = connection_count + 1
+                if RiftRail.DEBUG_MODE_ENABLED then
+                    ltn_log("[LTN] 已注册连接: " .. portal_data.name .. " <-> partner#" .. partner_unit)
                 end
             end
         end
@@ -344,17 +318,12 @@ p_leave_pool = function(portal_data, dest_surface, batch_mode)
 
         for partner_unit, partner_station in pairs(partner_pool) do
             if partner_station and partner_station.valid then
-                local ok, err = pcall(function()
-                    remote.call("logistic-train-network", "disconnect_surfaces", station, partner_station)
-                end)
+                -- 直接调用，出错了直接抛出让开发者看见
+                remote.call("logistic-train-network", "disconnect_surfaces", station, partner_station)
 
-                if ok then
-                    disconnection_count = disconnection_count + 1
-                    if RiftRail.DEBUG_MODE_ENABLED then
-                        ltn_log("[LTN] 已注销连接: " .. portal_data.name .. " <-> partner#" .. partner_unit)
-                    end
-                else
-                    ltn_log("[LTN] 注销失败: " .. tostring(err))
+                disconnection_count = disconnection_count + 1
+                if RiftRail.DEBUG_MODE_ENABLED then
+                    ltn_log("[LTN] 已注销连接: " .. portal_data.name .. " <-> partner#" .. partner_unit)
                 end
             end
         end
@@ -405,16 +374,10 @@ p_commit_all_ltn_connections = function()
                 for source_unit, source_station in pairs(source_pool) do
                     for dest_unit, dest_station in pairs(dest_pool) do
                         if source_station.valid and dest_station.valid then
-                            local ok, err = pcall(function()
-                                local nid = compute_network_id(source_station, dest_station, -1)
-                                remote.call("logistic-train-network", "connect_surfaces", source_station, dest_station, nid)
-                            end)
-
-                            if ok then
-                                total_connections = total_connections + 1
-                            else
-                                ltn_log("[LTN] 批量连接失败: " .. tostring(err))
-                            end
+                            local nid = compute_network_id(source_station, dest_station, -1)
+                            remote.call("logistic-train-network", "connect_surfaces", source_station, dest_station, nid)
+                            
+                            total_connections = total_connections + 1
                         end
                     end
                 end
@@ -1050,9 +1013,9 @@ local function logic_reassign(new_train, old_id)
 
     if remote.interfaces["logistic-train-network"] then
         -- 调用 LTN 接口将旧列车的任务指派给新列车
-        local ok, has_delivery = pcall(remote.call, "logistic-train-network", "reassign_delivery", old_id, new_train)
+        local has_delivery = remote.call("logistic-train-network", "reassign_delivery", old_id, new_train)
 
-        if ok and has_delivery then
+        if has_delivery then
             if RiftRail.DEBUG_MODE_ENABLED then
                 ltn_log("任务迁移: 已重指派交付给新列车 " .. new_train.id)
             end
@@ -1109,10 +1072,8 @@ function LTN.purge_legacy_connections()
         local disconnect_count = 0
         for i = 1, #stations do
             for j = i + 1, #stations do
-                local ok = pcall(remote.call, "logistic-train-network", "disconnect_surfaces", stations[i], stations[j])
-                if ok then
-                    disconnect_count = disconnect_count + 1
-                end
+                remote.call("logistic-train-network", "disconnect_surfaces", stations[i], stations[j])
+                disconnect_count = disconnect_count + 1
             end
         end
 
