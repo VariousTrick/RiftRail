@@ -42,8 +42,11 @@ remote.call("RiftRail", "get_train_arrived_event")
 事件参数为 table，常见字段如下：
 
 #### `TrainDeparting`
-*   `train`: [LuaTrain] 完整的、即将被传送的旧列车实体。
+*触发时机：列车第一节车厢刚刚在出口克隆生成，且入口的原车厢尚未被销毁的瞬间。此时新旧列车实体同时存在，非常适合用于物流网络、运单状态的无损移交。*
+*   `train`: [LuaTrain] 完整的旧列车实体。
 *   `train_id`: [number] 旧列车的ID。
+*   `new_train`: [LuaTrain] 刚刚在出口生成的新列车实体（此时仅包含第一节车厢）。
+*   `new_train_id`: [number] 新列车的ID。
 *   `source_teleporter`: [LuaEntity] 出发传送门实体。
 *   `source_teleporter_id`: [number] 出发传送门的ID。
 *   `source_surface`: [LuaSurface] 出发地表。
