@@ -43,8 +43,11 @@ Once you have the event ID, use script.on_event to listen for it.
 The event table includes the following fields:
 
 #### `TrainDeparting`
+*Trigger timing: Fired at the exact moment the first carriage is cloned at the destination, but BEFORE the old carriage is destroyed. Both old and new train entities exist simultaneously during this tick, making it ideal for seamlessly transferring logistics network deliveries or train states.*
 *   `train`: [LuaTrain] The complete, soon-to-be teleported old train entity.
 *   `train_id`: [number] The ID of the old train.
+*   `new_train`: [LuaTrain] **[New/Key]** The newly created train entity at the destination (contains only the first carriage at this moment).
+*   `new_train_id`: [number] The ID of the new train.
 *   `source_teleporter`: [LuaEntity] The source teleporter entity.
 *   `source_teleporter_id`: [number] The ID of the source teleporter.
 *   `source_surface`: [LuaSurface] The source surface.

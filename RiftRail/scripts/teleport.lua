@@ -11,8 +11,8 @@ local Events = nil
 -- 负责触发“出发”事件
 ---@see doc/API(CN).md#remote.call("RiftRail", "get_train_departing_event")
 ---@see doc/API(EN).md#How-to-Get-Rift-Rail-Custom-Event-IDs
-local function raise_departing_event(entry_portaldata, train_to_depart)
-    if not (entry_portaldata and entry_portaldata.shell and train_to_depart and train_to_depart.valid) then
+local function raise_departing_event(entry_portaldata, train_to_depart, new_train)
+    if not (entry_portaldata and entry_portaldata.shell and train_to_depart and train_to_depart.valid and new_train and new_train.valid) then
         return
     end
 
@@ -24,8 +24,10 @@ local function raise_departing_event(entry_portaldata, train_to_depart)
         return
     end
     script.raise_event(Events.TrainDeparting, {
-        train = train_to_depart,
-        train_id = train_to_depart.id,
+        train = train_to_depart,       -- 老车实体
+        train_id = train_to_depart.id, -- 老车 ID
+        new_train = new_train,         -- 新车实体 (给 LTN 重指派用)
+        new_train_id = new_train.id,   -- 新车 ID (给 LTN 重指派用)
         source_teleporter = shell,
         source_teleporter_id = shell.unit_number,
         source_surface = surface,
@@ -71,7 +73,6 @@ end
 local State = nil
 local Util = nil
 local Schedule = nil
-local LtnCompat = nil
 local AwCompat = nil
 
 -- 1. 定义一个空的日志函数占位符
@@ -86,7 +87,6 @@ function Teleport.init(deps)
         log_debug = deps.log_debug
     end
     -- 接收兼容模块
-    LtnCompat = deps.LtnCompat
     AwCompat = deps.AwCompat
     -- 接收事件ID表
     if deps.Events then
@@ -858,9 +858,6 @@ local function initialize_teleport_session(entry_portal, exit_portal)
         log_tp("会话启动: 入口 " .. entry_portal.id .. " 锁定出口 " .. exit_portal.id)
     end
 
-    -- 触发“出发”事件
-    raise_departing_event(entry_portal, entry_portal.entry_car.train)
-
     -- 给予入口列车起步的脉冲推力
     -- apply_entry_pulse(entry_portal, exit_portal)
 end
@@ -1188,11 +1185,9 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         -- 3. 保存新火车的时刻表索引 (解决重置问题)
         -- copy_schedule 内部已经调用了 go_to_station，所以现在的 current 是正确的下一站
 
-        -- 触发 LTN 到达钩子 (自动处理重指派)
-        -- 注意：LTN 比较特殊，通常需要在生成第一节车后立刻指派，以支持后续的时刻表操作
-        if LtnCompat then
-            LtnCompat.on_teleport_end(new_car.train, exit_portaldata.old_train_id)
-        end
+        -- 触发“出发”事件
+        -- 此时 car.train (老车) 还没被 car.destroy() 销毁，new_car.train (新车) 已经生成
+        raise_departing_event(entry_portaldata, car.train, new_car.train)
     end
 
     -- 立即恢复查看这节车厢的玩家界面
