@@ -99,7 +99,6 @@ if Teleport.init then
         Util = Util,
         Schedule = Schedule,
         log_debug = log_debug,
-        LtnCompat = LTN,
         AwCompat = AWCompat,
         Events = RiftRail.Events,
     })
@@ -281,8 +280,17 @@ script.on_event(defines.events.on_entity_settings_pasted, Builder.on_settings_pa
 script.on_event(defines.events.on_runtime_mod_setting_changed, Maintenance.on_settings_changed)
 
 script.on_event(RiftRail.Events.TrainArrived, function(event)
+    -- cs2 事件通知
     if CS2Compat and CS2Compat.on_train_arrived then
         CS2Compat.on_train_arrived(event)
+    end
+end)
+
+
+script.on_event(RiftRail.Events.TrainDeparting, function(event)
+    -- ltn 事件通知
+    if LTN and LTN.on_train_departing then
+        LTN.on_train_departing(event)
     end
 end)
 
