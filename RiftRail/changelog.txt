@@ -1,6 +1,48 @@
 ---------------------------------------------------------------------------------------------------
-Version: 0.12.0
+Version: 0.12.1
 Date: 2026-03-14
+  [EN]:
+    - Completely refactored the exit train momentum maintenance logic: upgraded from "pure geometric distance inference" to "AI pathfinding intent sniffing". Thoroughly resolved stuttering and physical conflict issues caused by the discrepancy between physical push direction and automatic pathfinding direction when trains encounter U-turns, sharp turns, or complex intersections at the exit.
+    - Completely refactored LTN (Logistic Train Network) compatibility architecture: perfectly resolved the critical issue where LTN deliveries were incorrectly cancelled (has_delivery = false) by the dispatcher due to a brief "state vacuum period" during cross-surface/cross-planet teleportation.
+    - Perfect native compatibility with LTN: no longer relies on any third-party mods. Rift Rail now natively handles the teleportation lifecycle and lossless transfer of deliveries, ensuring absolute stability under any mod combination.
+    - Optimized train abnormal states (defensive design): when an automatic mode train encounters a broken track (no_path) or signal congestion (wait_signal) at the exit, the portal will no longer blindly apply thrust to force the train forward. Faulty carriages will safely "park in place" and automatically suspend the teleportation queue, fully respecting the vanilla game's railway failure feedback mechanism.
+    - Fixed a severe issue where the underlying engine could accidentally trigger a Front/Back inversion when splicing bidirectional trains, causing physical bounce-back of the train.
+    - Fixed a hidden bug in the LTN compatibility module where internal environment checks could fail under specific circumstances, causing the compatibility features to silently stop working.
+    - Since Cybersyn 2 is still in the development and testing phase, CS2 related interfaces still use pcall for invocation.
+  Major Changes:
+    - 全面重构出口列车动力维护逻辑：由“纯几何距离推断”升级为“AI 寻路意图嗅探”。彻底解决列车在出口遭遇 U 型弯、急转弯或复杂交叉路网时，由于物理推离方向与自动寻路方向冲突导致的卡顿与打架问题。
+    - 彻底重构 LTN (Logistic Train Network) 兼容架构：完美解决 LTN 货车在跨表面/跨星球传送时，因短暂的“状态真空期”导致运单被调度器错误注销（has_delivery = false）的恶性痛点。
+  Compatibility:
+    - LTN 原生完美兼容：不再依赖任何第三方模组。Rift Rail 现已原生接管传送生命周期，运单的无损移交，确保任何模组组合下的绝对稳定性。
+  Changes:
+    - 优化列车异常状态（防御性设计）：当自动模式的列车在出口遭遇断轨（no_path）或信号灯拥堵（wait_signal）时，传送门不再盲目施加推力强制推车。故障车厢将安全“占位停摆”并自动挂起传送队列，完全尊重原版游戏的铁路故障反馈机制。
+  Bugfixes:
+    - 修复了底层引擎在拼接双向列车时，可能意外触发车头/车尾判定重置（Front/Back inversion）从而导致列车物理反弹的严重问题。
+    - 修复了 LTN 兼容模块在特定环境下可能由于内部环境判定失效，导致兼容功能静默罢工的隐藏 Bug。
+  note:
+    - 因cybersyn2仍在开发测试阶段，所以，cs2相关接口仍使用pcall调用。
+---------------------------------------------------------------------------------------------------
+Version: 0.12.0
+Date: 2026-03-13
+  [EN]:
+    - Added native compatibility for Cybersyn 2: completed cross-surface dispatch takeover via the CS2 route plugin API (including topology, reachable, and route callbacks).
+    - Converged the CS2 teleportation process into the same closed-loop as SE: writes the entry transition station and the next named station upon takeover, cleans up temporary stations after teleportation is complete, and returns control to CS2 via route_plugin_handoff, avoiding duplicate temporary stations and mixed paths.
+    - Upgraded cross-surface routing to globally optimal selection: changed from purely nearest-entry to comprehensively evaluating the approach distance to the entry and the distance from the exit to the target station, significantly improving hit quality in multi-entry scenarios.
+    - Added a CS2 toggle switch to the portal GUI (visible only when cybersyn2 is installed), and connected the local state link from GUI -> Remote -> Logic.
+    - Added old save migration: automatically populates the cs2_enabled field (defaulting to false) for historical portal data. Executes once and writes a completion flag.
+    - Added CS2 one-way path warning: after players toggle the CS2 switch, if a path is reachable from A->B but not B->A, an immediate prompt in the chat box will suggest building a return trip.
+    - Added a dedicated CS2 page in Informatron (EN/ZH/JA), and synchronously updated the Cybersyn FAQ to explain the return of CS2 and the deprecation of classic v1.
+    - Added CS2 routing cache structure (bucketed by from_surface -> to_surface, including by_entry drawers and flat_edges tiled indices) to reduce high-frequency query overhead.
+    - Added incremental cache updates by portal_id: executes precise cleanup and rewriting when toggling switches, avoiding full rebuilds.
+    - Added deterministic tie-break rules (total -> exit -> entry -> entry_id -> exit_id) to reduce boundary jitter and non-deterministic results.
+    - Added cybersyn2 to the mod's optional dependencies.
+    - Automatically registers Rift Rail route plugins during the data phase when cybersyn2 is detected.
+    - Completed runtime wiring for control -> compat.cs2 -> logic/remote, triggering CS2 topology rebuilds (throttled) after topology changes.
+    - If the player is viewing the train GUI after a CS2 train teleports, the train panel will now automatically refresh.
+    - Added a depot name fallback for complete scenarios: when stop_entity is missing, it prioritizes reading the last station of the current schedule as the continuation target, only falling back and recording debug logs upon failure. 
+    - Strictly unified cache write conditions: both entry and exit must have cs2_enabled active to be included as routable edges; edges are immediately removed if either side is disabled.
+    - Fixed local variable shadowing in one-way path detection (preventing overriding of Lua built-in iterators which could cause potential runtime exceptions).
+    - Fixed and converged risks of temporary schedule residue during the CS2 takeover process, avoiding duplicate station padding and state inconsistencies after teleportation.
   Major Changes:
     - 新接入 Cybersyn 2 原生兼容：通过 CS2 route plugin API 完成跨地表调度接管（topology、reachable、route 三类回调）。
     - CS2 传送流程收敛为与 SE 同款闭环：接管时写入入口过渡站与下一实名站，传送完成后清理临时站并 route_plugin_handoff 归还 CS2，避免重复临时站与混合路径。
@@ -15,6 +57,7 @@ Date: 2026-03-14
     - 新增按 portal_id 的增量缓存更新：切换开关时执行精准清理与补写，避免全量重建。
     - 新增确定性 tie-break 规则（total -> exit -> entry -> entry_id -> exit_id），减少边界抖动与非确定结果。
   Compatibility:
+    - 把cybersyn2加入模组可选依赖。
     - data 阶段在检测到 cybersyn2 时自动注册 Rift Rail route plugins。
     - 运行时接线完成 control -> compat.cs2 -> logic/remote，并在拓扑变更后触发 CS2 拓扑重建（节流）。
     - cs2的车辆传送后如果玩家正在查看列车gui，会自动刷新列车面板。
