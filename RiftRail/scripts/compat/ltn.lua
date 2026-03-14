@@ -4,6 +4,25 @@
 --      负责管理与 LTN 模组的接口交互，以及动态修改列车时刻表以实现跨地表运输。
 
 local LTN = {}
+
+-- =======================================================
+-- 环境检测：如果没有安装 LTN，直接返回空壳模块 (最高效的拦截)
+-- =======================================================
+--[[ if not script.active_mods["logistic-train-network"] then
+    return {
+        init = function() end,
+        on_portal_mode_changed = function() end,
+        on_portal_destroyed = function() end,
+        update_connection = function() end,
+        update_station_name_in_routes = function() end,
+        on_stops_updated = function() end,
+        on_dispatcher_updated = function() end,
+        on_train_arrived = function() end,
+        purge_legacy_connections = function() end,
+        rebuild_routing_table_from_storage = function() end,
+    }
+end ]]
+
 local State = nil
 local log_ltn = function(...) end -- 接受任意参数的占位函数
 local ROUTING_TABLE_VERSION = 2
@@ -1050,28 +1069,16 @@ local function logic_reassign(new_train, old_id)
     end
 end
 
-local function noop() end
-
 -- 策略分发
-LTN.on_teleport_end = noop
+-- 默认事件处理器为空
+function LTN.on_train_departing(event)
+    -- 我们永远自己在黄金微秒亲自重指派，无视第三方胶水模组
+    -- event.new_train 是新车，event.train_id 是老车ID
+    logic_reassign(event.new_train, event.train_id)
+end
 
-if script.active_mods["logistic-train-network"] then
-    local has_se = script.active_mods["space-exploration"]
-    local has_glue = script.active_mods["se-ltn-glue"]
-
-    -- 如果 (没装 SE) 或者 (装了 SE 但没装 Glue) -> 我们必须兜底
-    if (not has_se) or (has_se and not has_glue) then
-        LTN.on_teleport_end = logic_reassign
-        if RiftRail.DEBUG_MODE_ENABLED then
-            ltn_log("LTN兼容模式: 启用手动重指派")
-        end
-    else
-        -- 否则 (有 SE 且有 Glue) -> Glue 会处理，我们躺平
-        LTN.on_teleport_end = noop
-        if RiftRail.DEBUG_MODE_ENABLED then
-            ltn_log("LTN兼容模式: SE-Glue 托管")
-        end
-    end
+if RiftRail.DEBUG_MODE_ENABLED then
+    ltn_log("LTN兼容模式: 启用基于 TrainDeparting 事件的极速重指派")
 end
 
 -- ============================================================================
