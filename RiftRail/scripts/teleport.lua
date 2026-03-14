@@ -378,6 +378,64 @@ local function calculate_speed_sign(train, select_portal)
     return 1
 end
 
+-- =================================================================================
+-- 【极度昂贵：只调用一次】获取 AI 的绝对物理意图向量
+-- =================================================================================
+---@param train LuaTrain 要分析的列车 / The train to analyze
+---@return table|nil 绝对物理意图向量 {x=number, y=number} / Absolute physical intent vector
+---@note 这个函数非常昂贵，应该只在时刻表改变时调用一次，并将结果缓存起来供后续使用
+local function get_ai_intent_vector(train)
+    local path = train.path
+    local rails = path and path.rails
+    -- 如果没有路径，或者到了最后一截，返回 nil 走兜底
+    if not rails or #rails < 2 then
+        return nil
+    end
+
+    -- 用路径上前两截铁轨的坐标差，算出一个永远指向前方的绝对向量！
+    return {
+        x = rails[2].position.x - rails[1].position.x,
+        y = rails[2].position.y - rails[1].position.y,
+    }
+end
+
+-- =================================================================================
+-- 【极度廉价：拼接时调用】用缓存的意图向量，计算当前应给的符号
+-- =================================================================================
+---@param train LuaTrain 要分析的列车 / The train to analyze
+---@param intent_vector table|nil 绝对物理意图向量 {x=number, y=number} / Absolute physical intent vector
+---@param portaldata PortalData 传送门数据 / Portal data
+---@return integer 速度符号 (1 或 -1) / Speed sign (1 or -1)
+local function calculate_sign_from_intent(train, intent_vector, portaldata)
+    -- 如果没取到意图向量，直接用“物理堵头”兜底推离
+    if not intent_vector or (intent_vector.x == 0 and intent_vector.y == 0) then
+        return calculate_speed_sign(train, portaldata)
+    end
+
+    local front_rail = train.front_end and train.front_end.rail
+    local back_rail = train.back_end and train.back_end.rail
+    if not (front_rail and back_rail) then
+        return calculate_speed_sign(train, portaldata)
+    end
+
+    -- 取当前车身向量 (0 表格开销)
+    local v_train_x = front_rail.position.x - back_rail.position.x
+    local v_train_y = front_rail.position.y - back_rail.position.y
+
+    if v_train_x == 0 and v_train_y == 0 then
+        local car = train.carriages[1]
+        if car then
+            local angle = car.orientation * 2 * math.pi
+            v_train_x = math.sin(angle)
+            v_train_y = -math.cos(angle)
+        end
+    end
+
+    -- 点积判断当前参考系下该给的正负号
+    local dot = (v_train_x * intent_vector.x) + (v_train_y * intent_vector.y)
+    return dot >= 0 and 1 or -1
+end
+
 -- =========================================================================
 -- 入口速度控制：施加“脉冲推力” (事件驱动核心)
 -- =========================================================================
@@ -981,14 +1039,17 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         -- 5. 重置状态变量
 
         -- 注意：exit_portaldata 不维护 entry_car，避免写入无效字段
-        exit_portaldata.exit_car = nil              -- 清理出口车厢引用，防止 on_tick 中的过期访问
-        exit_portaldata.old_train_id = nil          -- 清理旧车ID缓存
-        exit_portaldata.cached_teleport_speed = nil -- 清理缓存速度
-        exit_portaldata.cached_speed_sign = nil     -- 清理速度方向缓存
-        exit_portaldata.saved_schedule_index = nil  -- 清理时刻表索引缓存
-        exit_portaldata.locking_entry_id = nil      -- 释放互斥锁,允许其他入口使用
-        exit_portaldata.saved_manual_mode = nil     -- 清理手动/自动模式缓存
-        exit_portaldata.cached_place_query = nil    -- 清理 can_place 查询缓存，防止过期数据干扰下一次传送
+        exit_portaldata.exit_car = nil                -- 清理出口车厢引用，防止 on_tick 中的过期访问
+        exit_portaldata.old_train_id = nil            -- 清理旧车ID缓存
+        exit_portaldata.cached_teleport_speed = nil   -- 清理缓存速度
+        exit_portaldata.cached_speed_sign = nil       -- 清理速度方向缓存
+        exit_portaldata.cached_exit_drive_sign = nil  -- 清理新的出口意图方向缓存
+        exit_portaldata.saved_schedule_index = nil    -- 清理时刻表索引缓存
+        exit_portaldata.locking_entry_id = nil        -- 释放互斥锁,允许其他入口使用
+        exit_portaldata.saved_manual_mode = nil       -- 清理手动/自动模式缓存
+        exit_portaldata.cached_place_query = nil      -- 清理 can_place 查询缓存，防止过期数据干扰下一次传送
+        exit_portaldata.cached_destination_stop = nil -- 清理缓存的目的地站点数据
+        exit_portaldata.cached_intent_vector = nil    -- 清理缓存的意图向量
     end
     
     if entry_portaldata then
@@ -1250,11 +1311,17 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     if exit_portaldata.exit_car and exit_portaldata.exit_car.valid then
         local merged_train = exit_portaldata.exit_car.train
         if merged_train and merged_train.valid then
-            exit_portaldata.cached_speed_sign = calculate_speed_sign(merged_train, exit_portaldata)
+            -- 在每次拼接后，清空方向和目的地的双重缓存
+            -- 这将强制 maintain_exit_speed 在下一帧进行完整的重新验证和计算
+            exit_portaldata.cached_exit_drive_sign = nil  -- 清理出口意图方向缓存
+            -- exit_portaldata.cached_destination_stop = nil -- 清理目的地站点缓存
+            -- exit_portaldata.cached_speed_sign = nil       -- 清理速度方向缓存
+
             local target_index = index_before_spawn or exit_portaldata.saved_schedule_index
             if RiftRail.DEBUG_MODE_ENABLED then
                 log_tp("【创建后】准备恢复: index_before_spawn=" .. tostring(index_before_spawn) .. ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index) .. ", 使用target=" .. tostring(target_index))
             end
+            
             restore_train_state(merged_train, exit_portaldata, false, target_index)
         end
     end
@@ -1393,20 +1460,43 @@ function Teleport.maintain_exit_speed(portaldata)
     -- 同时这会产生“弹射/吸入”效果，最大化吞吐量。
     local target_speed = exit_portaldata.cached_teleport_speed or settings.global["rift-rail-teleport-speed"].value
 
-    -- 读取出口速度方向缓存；仅在缓存缺失时兜底计算一次
-    local required_sign = exit_portaldata.cached_speed_sign
-    if not required_sign then
-        required_sign = calculate_speed_sign(train_exit, exit_portaldata)
-        exit_portaldata.cached_speed_sign = required_sign
+    -- 获取或计算纯物理几何的推离方向（算一次管一节）
+    local phys_sign = exit_portaldata.cached_speed_sign
+    if not phys_sign then
+        phys_sign = calculate_speed_sign(train_exit, exit_portaldata)
+        exit_portaldata.cached_speed_sign = phys_sign
     end
 
-    -- 应用速度前增加状态检查
-    local should_push = train_exit.manual_mode or (train_exit.state == defines.train_state.on_the_path)
+    -- 【第一层判断：处理手动模式列车】
+    if train_exit.manual_mode then
+        -- 手动车直接使用缓存好的物理方向，不再每 tick 跨界调用！
+        train_exit.speed = target_speed * phys_sign
+        return
+    end
 
-    if should_push then
-        -- 直接赋值，不管它现在是快了还是慢了
-        -- 这样既解决了掉速卡顿，也解决了超速断裂
+    -- 【第二层判断：处理就绪的自动模式列车】
+    if train_exit.state == defines.train_state.on_the_path then
+        -- 1. 获取列车当前真正的目的地
+        local current_destination = train_exit.path_end_stop
+
+        -- 2. 【昂贵层】检查列车意图是否已改变 (玩家修改了时刻表 / 第一次生成)
+        if current_destination ~= exit_portaldata.cached_destination_stop then
+            exit_portaldata.cached_intent_vector = get_ai_intent_vector(train_exit)
+            exit_portaldata.cached_destination_stop = current_destination
+            exit_portaldata.cached_exit_drive_sign = nil -- 强制重算符号
+        end
+
+        -- 3. 【廉价层】执行极速符号计算
+        local required_sign = exit_portaldata.cached_exit_drive_sign
+        if not required_sign then
+            -- 仅在缓存为空时 (首次、每次拼接后、或时刻表改变后) 执行简单的点积
+            required_sign = calculate_sign_from_intent(train_exit, exit_portaldata.cached_intent_vector, exit_portaldata)
+            exit_portaldata.cached_exit_drive_sign = required_sign
+        end
+
+        -- 4. 施加速度
         train_exit.speed = target_speed * required_sign
+        return
     end
 end
 
@@ -1469,7 +1559,7 @@ end
 ---@param portaldata PortalData 传送门数据 / Portal data
 ---@param tick integer 当前tick / Current tick
 local function process_teleport_sequence(portaldata, tick)
-    -- 频率控制：从游戏设置中读取间隔值
+    -- 频率控制从游戏设置中读取间隔值
     local interval = portaldata.placement_interval or settings.global["rift-rail-placement-interval"].value
     -- 只有当间隔大于1时，才启用频率控制，以获得最佳性能
     if interval > 1 and tick % interval ~= portaldata.unit_number % interval then
@@ -1502,7 +1592,7 @@ local function process_teleport_sequence(portaldata, tick)
 
     if not portaldata.entry_car then
         if RiftRail.DEBUG_MODE_ENABLED then
-            log_tp("传送序列正常结束，关闭状态。")
+            log_tp("传送序列正常结束，关闭状���。")
         end
         portaldata.is_teleporting = false
     end
