@@ -4,6 +4,39 @@
 > 规则：新改动统一追加到最上方（时间倒序），每次包含日期、改动文件、改动内容。
 > 补充：本文件从 v0.11.7 之后开始维护；当前 2026-03-02 的全部条目均归入 v0.11.8 发布内容。
 
+## 2026-03-14（v0.12.1 开发中：LTN 兼容性重构与纯事件驱动）
+
+### 改动摘要
+- 重构自定义事件 `TrainDeparting` 的触发时机，精准定位在首节新车厢克隆完毕、旧车厢尚未销毁的“黄金微秒”。
+- 事件载荷新增 `new_train` 与 `new_train_id` 字段，实现新旧列车实体状态的在同一帧内的无损暴露。
+- 彻底解耦 LTN 兼容模块，移除 `teleport.lua` 中的硬编码回调，改为纯粹的事件总线监听。
+- 彻底解决 LTN 跨表面传送时，因短暂的“状态真空期”导致运单被后台调度器错误注销（`has_delivery = false`）的问题。
+- 无视且不再依赖第三方胶水模组（如 `se-ltn-glue`），确保在任何模组组合下运单移交的绝对稳定性。
+
+### 具体改动
+- `RiftRail/scripts/teleport.lua`
+  - `raise_departing_event(...)`（顶部包裹函数）：新增 `new_train` 参数，并在 `script.raise_event` 的载荷中追加 `new_train` 和 `new_train_id` 字段。
+  - `process_transfer_step(...)`：将 `raise_departing_event` 的触发位置，精确移动到时刻表复制完毕后、`car.destroy()` 销毁旧车厢执行前。
+
+- `RiftRail/scripts/compat/ltn.lua`
+  - 移除底部对 `se-ltn-glue` 的兼容判断逻辑（不再“躺平”指望第三方抛事件）。
+  - 新增 `LTN.on_train_departing(event)` 专属事件处理器，直接提取 `event.new_train` 与 `event.train_id` 并交由 `logic_reassign` 执行极速接管。
+  - 调整初始化日志位置，将 `ltn_log` 移出事件处理器外部，避免传送频繁触发导致控制台刷屏。
+
+- `RiftRail/control.lua`
+  - `Teleport.init(...)`：彻底移除 `LtnCompat = LTN` 的硬编码依赖注入。
+  - 新增对 `RiftRail.Events.TrainDeparting` 的事件总线监听，并将 `LTN.on_train_departing` 挂载其中。
+
+- `RiftRail/doc/API(CN).md` & `RiftRail/doc/API(EN).md`
+  - 更新 `TrainDeparting` 事件参数列表，追加 `new_train` 及 `new_train_id` 字段。
+  - 新增斜体说明段落，明确指出该事件在“新车已生、旧车未死”的微秒级窗口触发，指导其他物流/调度模组开发者进行正确的生命周期接管。
+
+### 设计优点
+1. **零硬编码**：物理传送模块（teleport）不再感知 LTN，回归纯粹的物理引擎定位。
+2. **极高鲁棒性**：完美契合 LTN 极其严苛的后台巡逻判定逻辑，用原生的 Factorio 事件机制平替了之前存在隐患的代码调用。
+3. **生态闭环**：扩充后的 `TrainDeparting` 载荷成为了 Rift Rail 极其强大的标准 API，为后续接入其他同类模组铺平了道路。
+
+
 ## 2026-03-12（v0.12.0 开发中：CS2 传送后 GUI 刷新逻辑）
 
 ### 改动摘要
