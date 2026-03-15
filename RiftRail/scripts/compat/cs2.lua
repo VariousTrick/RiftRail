@@ -32,16 +32,6 @@ local function cs2_log(msg)
     log_debug("[CS2] " .. msg)
 end
 
--- 初始化/补齐 CS2 相关持久化存储字段。
-local function ensure_storage()
-    storage.rr_cs2_handoff_by_old_train_id = storage.rr_cs2_handoff_by_old_train_id or {}
-    storage.rr_cs2_old_train_by_delivery_id = storage.rr_cs2_old_train_by_delivery_id or {}
-    storage.rr_cs2_route_cache = storage.rr_cs2_route_cache or { by_surface = {} }
-    if storage.rr_cs2_route_cache_dirty == nil then
-        storage.rr_cs2_route_cache_dirty = true
-    end
-end
-
 -- 从传送门 children 中提取站台实体（rift-rail-station）。
 local function get_station(portaldata)
     if not (portaldata and portaldata.children) then
@@ -171,7 +161,7 @@ end
 -- 重建 CS2 路由缓存。
 -- 规则：入口和出口都必须开启 cs2 开关，否则不写入缓存。
 local function rebuild_route_cache()
-    ensure_storage()
+
 
     local cache = { by_surface = {} }
 
@@ -193,7 +183,7 @@ end
 
 -- 按 dirty 标记惰性重建缓存，避免每次查询都全量构建。
 local function ensure_route_cache()
-    ensure_storage()
+
     if storage.rr_cs2_route_cache_dirty then
         rebuild_route_cache()
     end
@@ -546,7 +536,7 @@ end
 function CS2.init(deps)
     State = deps.State
     log_debug = deps.log_debug or log_debug
-    ensure_storage()
+
     rebuild_route_cache()
 end
 
@@ -671,7 +661,7 @@ function CS2.route_callback(delivery_id, action, _, train_id, luatrain, train_st
 
     local old_train_id = luatrain.id
 
-    ensure_storage()
+
 
     storage.rr_cs2_handoff_by_old_train_id[old_train_id] = {
         delivery_id = delivery_id,
@@ -691,7 +681,7 @@ end
 -- TrainArrived 事件处理：恢复车组后，将新列车归还给 CS2。
 function CS2.on_train_arrived(event)
 
-    ensure_storage()
+
 
     local old_train_id = event and event.old_train_id
     local new_train = event and event.train
@@ -756,7 +746,7 @@ end
 -- 拓扑变化入口：标记缓存脏并触发一次重建与 CS2 拓扑刷新。
 function CS2.on_topology_changed()
 
-    ensure_storage()
+
     storage.rr_cs2_route_cache_dirty = true
     rebuild_route_cache()
 
@@ -796,7 +786,7 @@ function CS2.on_portal_cs2_toggle(portal_id)
         return
     end
 
-    ensure_storage()
+
     refresh_cache_for_toggled_portal(portal_id)
     request_cs2_topology_rebuild()
 end

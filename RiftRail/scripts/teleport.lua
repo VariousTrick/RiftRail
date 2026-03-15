@@ -187,20 +187,13 @@ local function add_to_active(portaldata)
     if not portaldata or not portaldata.unit_number then
         return
     end
+-- 将传送门加入活跃列表
+if storage.active_teleporters[portaldata.unit_number] then
+    return -- 已经在列表中，无需重复添加
+end
 
-    if not storage.active_teleporters then
-        storage.active_teleporters = {}
-    end
-    if not storage.active_teleporter_list then
-        storage.active_teleporter_list = {}
-    end
-
-    if storage.active_teleporters[portaldata.unit_number] then
-        return
-    end
-
-    storage.active_teleporters[portaldata.unit_number] = portaldata
-    local list = storage.active_teleporter_list
+storage.active_teleporters[portaldata.unit_number] = portaldata
+local list = storage.active_teleporter_list
     local unit_number = portaldata.unit_number
 
     -- 二分查找确定插入位置
@@ -1530,7 +1523,7 @@ local function process_rebuild_collider(portaldata)
     if new_collider and portaldata.children then
 
         if new_collider.unit_number then
-            storage.collider_to_portal = storage.collider_to_portal or {}
+            
             storage.collider_to_portal[new_collider.unit_number] = portaldata.unit_number
         end
 

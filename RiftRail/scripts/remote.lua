@@ -216,7 +216,7 @@ function Remote.init(params)
 
         -- 专供沙盒：强行关闭测试玩家的摄像头预览
         disable_camera_preview = function(player_index)
-            storage.rift_rail_player_settings = storage.rift_rail_player_settings or {}
+            
             storage.rift_rail_player_settings[player_index] = { show_preview = false }
         end,
 

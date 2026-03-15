@@ -427,6 +427,21 @@ function Migrations.patch_cs2_enabled_default()
 end
 
 -- ============================================================================
+-- [迁移任务 13] 历史遗留：全图碰撞器实体化重建
+-- ============================================================================
+-- 目的：为了适应引擎更新，将所有旧的无 ID 碰撞器替换为带 unit_number 的新碰撞器。
+-- 触发条件：标志位 storage.collider_migration_done 不为 true
+function Migrations.rebuild_legacy_colliders()
+    if not storage.collider_migration_done then
+        if Util and Util.rebuild_all_colliders then
+            Util.rebuild_all_colliders()
+            log_debug("[Migration] 已完成历史遗留的全图碰撞器实体化重建。")
+        end
+        storage.collider_migration_done = true
+    end
+end
+
+-- ============================================================================
 -- 主入口：按顺序执行所有迁移任务
 -- ============================================================================
 function Migrations.run_all()
@@ -444,10 +459,11 @@ function Migrations.run_all()
     Migrations.unified_multi_pairing()
     Migrations.logistics_reset()
 
-    -- cybersyn兼容移除
+    -- 其他
     Migrations.final_cybersyn_purge()
     Migrations.calculate_teleport_cache()
     Migrations.patch_cs2_enabled_default()
+    Migrations.rebuild_legacy_colliders()
 end
 
 return Migrations

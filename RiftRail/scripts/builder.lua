@@ -98,20 +98,9 @@ function Builder.on_built(event)
     end
 
     -- 确保 storage 结构完整
-    if not storage.rift_rails then
-        storage.rift_rails = {}
-    end
-    if not storage.rift_rail_id_map then
-        storage.rift_rail_id_map = {}
-    end
-
-    -- 生成新 ID
-    if not storage.next_rift_id then
-        storage.next_rift_id = 1
-    end
+    -- 4. 存储数据
     local custom_id = storage.next_rift_id
     storage.next_rift_id = storage.next_rift_id + 1
-
     local surface = entity.surface
     local force = entity.force
     local direction = entity.direction
@@ -289,7 +278,7 @@ function Builder.on_built(event)
 
         -- 2. 建立碰撞器与传送门的映射关系 (Collider -> Portal)
         if collider and collider.unit_number then
-            storage.collider_to_portal = storage.collider_to_portal or {}
+            
             -- 写入映射: 碰撞器ID -> 传送门ID
             storage.collider_to_portal[collider.unit_number] = shell.unit_number
         end
@@ -616,7 +605,7 @@ function Builder.on_cloned(event)
 
                     -- 【重要】如果是碰撞器，必须给克隆体上户口！
                     if child_name == "rift-rail-collider" and found_clone[1].unit_number then
-                        storage.collider_to_portal = storage.collider_to_portal or {}
+                        
                         storage.collider_to_portal[found_clone[1].unit_number] = new_unit_number
                     end
                 end

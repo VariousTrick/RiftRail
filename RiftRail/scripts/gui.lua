@@ -123,9 +123,6 @@ function GUI.build_or_update(player, entity)
     end
 
     -- 2. 初始化玩家设置
-    if not storage.rift_rail_player_settings then
-        storage.rift_rail_player_settings = {}
-    end
     if not storage.rift_rail_player_settings[player.index] then
         storage.rift_rail_player_settings[player.index] = { show_preview = true }
     end

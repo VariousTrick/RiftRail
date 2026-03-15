@@ -185,7 +185,7 @@ local function update_collider_state(portaldata)
         -- 将新创建的碰撞器登记到 children 列表中并注册 ID
         if new_collider then
             if new_collider.unit_number then
-                storage.collider_to_portal = storage.collider_to_portal or {}
+                
                 storage.collider_to_portal[new_collider.unit_number] = portaldata.unit_number
             end
 
