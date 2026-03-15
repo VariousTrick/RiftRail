@@ -3,6 +3,32 @@
 -- 作用：重构后的 LTN 兼容逻辑，旨在提升代码的清晰度、健壮性和可维护性。
 --      负责管理与 LTN 模组的接口交互，以及动态修改列车时刻表以实现跨地表运输。
 
+-- 检测是否安装了 LTN 模组
+if not script.active_mods["LogisticTrainNetwork"] then
+    return {
+        BUTTON_NAME = "rift_rail_ltn_switch",
+        
+        init = function() end,
+        on_portal_mode_changed = function() end,
+        on_portal_destroyed = function() end,
+        update_connection = function() end,
+        update_station_name_in_routes = function() end,
+        on_stops_updated = function() end,
+        on_dispatcher_updated = function() end,
+        on_train_departing = function() end,
+
+        purge_legacy_connections = function()
+            storage.rift_rail_ltn_routing_table = {}
+            storage.rr_ltn_pools = {}
+        end,
+
+        rebuild_routing_table_from_storage = function()
+            storage.rift_rail_ltn_routing_table = {}
+            storage.rr_ltn_pools = {}
+        end,
+    }
+end
+
 local LTN = {}
 local State = nil
 local log_ltn = function(...) end -- 接受任意参数的占位函数
@@ -989,10 +1015,6 @@ end
 
 -- 主入口函数：处理 LTN 调度更新事件
 function LTN.on_dispatcher_updated(e)
-    if not is_ltn_active() then
-        return
-    end
-
     local deliveries = e.deliveries
     local stops = storage.ltn_stops or {}
 
