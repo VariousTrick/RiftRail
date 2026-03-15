@@ -32,9 +32,8 @@ function Maintenance.on_settings_changed(event)
         local count_cs2 = 0
         if storage.rift_rails then
             for _, portaldata in pairs(storage.rift_rails) do
-                -- 清理 LTN
-                if portaldata.ltn_enabled and LTN and LTN.on_portal_destroyed then
-                    LTN.on_portal_destroyed(portaldata)
+                -- 仅仅关闭本地开关状态，不触发单体同步，避免状态错位
+                if portaldata.ltn_enabled then
                     portaldata.ltn_enabled = false
                     count_ltn = count_ltn + 1
                 end
@@ -44,6 +43,11 @@ function Maintenance.on_settings_changed(event)
                     count_cs2 = count_cs2 + 1
                 end
             end
+        end
+
+        -- 调用全局大清洗：断开所有底层 LTN 连接并清空路由表
+        if count_ltn > 0 and LTN and LTN.purge_legacy_connections then
+            LTN.purge_legacy_connections()
         end
 
         -- 通知 CS2 刷新拓扑（这会触发全局缓存清空与重建）

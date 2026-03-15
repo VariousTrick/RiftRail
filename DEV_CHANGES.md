@@ -14,6 +14,7 @@
 - 优化了 LTN 兼容模块的加载逻辑，引入了“空壳模块（Stub Module）”模式。
 - 实现了 LTN 的“优雅卸载”机制，保障玩家中途移除模组后的存档健康。
 - 升级了“卸载清理”设置：现在除了 LTN 外，也能一键正确注销所有 Cybersyn 2 (CS2) 的本地和全局注册缓存。
+- 修复了“卸载清理”功能的一个严重逻辑错位 Bug：旧版本在清理 LTN 时由于先发送销毁事件后才关闭本地开关，导致真实的底层连接断开指令（`disconnect_surfaces`）被拦截，致使出现“按钮关闭但列车依然跨星系接单”的幽灵连接现象。现在改为直接调用 `purge_legacy_connections` 实施彻底清洗。
 
 ### 具体改动
 - `RiftRail/scripts/state.lua` 与 `RiftRail/control.lua`
