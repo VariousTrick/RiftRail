@@ -274,7 +274,7 @@ end
 -- 重建所有碰撞器 (用于修复位置错误的碰撞器，并升级 ID 架构)
 function Util.rebuild_all_colliders()
     -- 0. 确保全局字典存在 (核心！)
-    storage.collider_to_portal = storage.collider_to_portal or {}
+    
 
     -- 1. 【焦土】销毁全图所有的旧碰撞器 + 清理旧字典记录
     for _, surface in pairs(game.surfaces) do

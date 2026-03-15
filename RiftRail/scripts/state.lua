@@ -5,29 +5,72 @@
 local State = {}
 
 -- ============================================================================
--- 存储初始化与迁移 (由 control.lua 调用)
+-- 存储初始化与补全 (架构解耦重构版)
 -- ============================================================================
-function State.ensure_storage()
-    -- 1. 为新游戏创建完整数据结构
-    if not storage.rift_rails then
-        storage.rift_rails = {}
-        storage.next_rift_id = 1
-        storage.rift_rail_id_map = {}
-        storage.collider_to_portal = {}
-    end
 
-    -- 2. 为从旧版本升级的存档补全 id_map
-    if not storage.rift_rail_id_map then
-        storage.rift_rail_id_map = {}
-        -- 迁移逻辑将在 control.lua 的 on_configuration_changed 中执行
-    end
+--- [阶段一：创世手册]
+--- 仅在 script.on_init (新开档) 时调用一次。
+--- 它是全模组数据结构的"唯一真理蓝图"。不需要判断，直接暴力声明。
+function State.setup_new_game()
+    storage.rift_rails = {}
+    storage.next_rift_id = 1
+    storage.rift_rail_id_map = {}
 
-    if not storage.collider_to_portal then
-        storage.collider_to_portal = {}
-    end
+    storage.collider_to_portal = {}
+    storage.collider_map = {}
+    storage.active_teleporter_list = {}
+    storage.active_teleporters = {} -- 添加了缺失的字典缓存
+    storage.rift_rail_player_settings = {} -- 玩家 GUI 设置
+
+    -- LTN 兼容数据
+    storage.rift_rail_ltn_routing_table = {}
+    storage.rr_ltn_pools = {}
+    storage.ltn_stops = {}
+
+    -- CS2 兼容数据
+    storage.rr_cs2_handoff_by_old_train_id = {}
+    storage.rr_cs2_old_train_by_delivery_id = {}
+    storage.rr_cs2_route_cache = { by_surface = {} }
+    storage.rr_cs2_route_cache_dirty = true
+
+    -- 初始化所有的全局生命周期标记
+    storage.collider_migration_done = true
+    storage.rift_rail_teleport_cache_calculated = true
+    storage.rift_rail_cs2_toggle_migrated = true
+    storage.rift_rail_cybersyn_fully_purged = false -- 默认未清理过
 end
 
--- 通过 自定义ID (Custom ID) 获取数据
+--- [阶段二：老兵补丁]
+--- 仅在 script.on_configuration_changed (配置/版本变更) 时调用。
+--- 负责检查旧存档在升级后，是否缺失了新版本引入的最外层根表，并安全补齐。
+function State.patch_missing_root_tables()
+    if not storage.rift_rails then storage.rift_rails = {} end
+    if not storage.next_rift_id then storage.next_rift_id = 1 end
+    if not storage.rift_rail_id_map then storage.rift_rail_id_map = {} end
+
+    if not storage.collider_to_portal then storage.collider_to_portal = {} end
+    if not storage.collider_map then storage.collider_map = {} end
+    if not storage.active_teleporter_list then storage.active_teleporter_list = {} end
+    if not storage.active_teleporters then storage.active_teleporters = {} end
+    if not storage.rift_rail_player_settings then storage.rift_rail_player_settings = {} end
+
+    -- LTN 兼容数据兜底
+    if not storage.rift_rail_ltn_routing_table then storage.rift_rail_ltn_routing_table = {} end
+    if not storage.rr_ltn_pools then storage.rr_ltn_pools = {} end
+    if not storage.ltn_stops then storage.ltn_stops = {} end
+
+    -- CS2 兼容数据兜底
+    if not storage.rr_cs2_handoff_by_old_train_id then storage.rr_cs2_handoff_by_old_train_id = {} end
+    if not storage.rr_cs2_old_train_by_delivery_id then storage.rr_cs2_old_train_by_delivery_id = {} end
+    if not storage.rr_cs2_route_cache then storage.rr_cs2_route_cache = { by_surface = {} } end
+    if storage.rr_cs2_route_cache_dirty == nil then storage.rr_cs2_route_cache_dirty = true end
+
+    -- 生命周期标记防空兜底
+    if storage.collider_migration_done == nil then storage.collider_migration_done = false end
+    if storage.rift_rail_teleport_cache_calculated == nil then storage.rift_rail_teleport_cache_calculated = false end
+end
+
+-- ============================================================================
 -- 【性能重构】: 现在使用 id_map 缓存进行 O(1) 查询
 function State.get_portaldata_by_id(target_id)
     if not (storage.rift_rails and storage.rift_rail_id_map and target_id) then

@@ -4,14 +4,22 @@
 > 规则：新改动统一追加到最上方（时间倒序），每次包含日期、改动文件、改动内容。
 > 补充：本文件从 v0.11.7 之后开始维护；
 
-## 2026-03-15（v0.12.2 开发中：LTN 兼容模块优化与空壳模式）
+## 2026-03-15（v0.12.2 开发中：全局数据生命周期重构与兼容模块优化）
 
 ### 改动摘要
+- **数据架构重构**：全面重构了全局数据的生命周期管理，确立了“新档创世蓝图”与“旧档兜底补丁”分离的标准规范。彻底消除了“数据结构唯一真理（Source of Truth）缺失”的问题。
+- **性能与清洁度提升**：依托坚固的全局数据底座，大面积清除了散落在各业务模块高频循环中的冗余“懒加载防卫判断”（`if not storage.xxx`）。
 - 优化了 LTN 兼容模块的加载逻辑，引入了“空壳模块（Stub Module）”模式。
 - 实现了 LTN 的“优雅卸载”机制，保障玩家中途移除模组后的存档健康。
-- 清理了高频回调中的冗余环境判断，进一步压榨性能。
 
 ### 具体改动
+- `RiftRail/scripts/state.lua` 与 `RiftRail/control.lua`
+  - 核心重构：废弃了职责模糊的 `ensure_storage()`，拆分为 `State.setup_new_game()` 和 `State.patch_missing_root_tables()` 两个严格隔离的函数。
+  - `setup_new_game`：作为新开档专属的“创世蓝图”，无视环境条件、绝对暴力地声明了所有的顶级数据结构（包括散落的缓存表和所有第三方兼容表）。
+  - `patch_missing_root_tables`：作为旧存档升级的“兜底补丁”，专门用于在 `on_configuration_changed` 时安全补齐缺失的根节点表。
+  - 统一收编：将之前散落在各处的 `storage.active_teleporters`、`storage.rift_rail_player_settings`、LTN/CS2 的路由和连接池数据等“私生子”表全部收编到核心蓝图中统一管理。
+- 各业务逻辑文件（`teleport.lua`, `builder.lua`, `gui.lua`, `util.lua`, `cs2.lua`, `ltn.lua`）
+  - 代码清洁：大面积清除了冗余的防御性表创建代码（如 `storage.xxx = storage.xxx or {}`），利用新数据架构的“绝对存在”特性，使核心业务代码变得极度清爽。
 - `RiftRail/scripts/compat/ltn.lua`
   - 新增顶层环境拦截：利用 `script.active_mods["LogisticTrainNetwork"]` 进行检测，若未安装 LTN，则直接返回空函数壳。
   - 性能提升：移除了 `LTN.on_dispatcher_updated` 高频调度回调中多余的 `is_ltn_active()` 检查，因为顶层硬拦截已确保该函数只在 LTN 存在时执行，从而降低了每次派单事件的函数栈开销。

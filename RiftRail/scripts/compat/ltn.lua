@@ -86,9 +86,6 @@ end
 
 -- 获取池子
 local function get_pool(s1, s2)
-    if not storage.rr_ltn_pools then
-        storage.rr_ltn_pools = {}
-    end
     if not storage.rr_ltn_pools[s1] then
         storage.rr_ltn_pools[s1] = {}
     end
@@ -100,10 +97,6 @@ end
 
 local function get_or_create_route_bucket(source_surface, dest_surface, entry_unit_number)
     local routing_table = storage.rift_rail_ltn_routing_table
-    if not routing_table then
-        storage.rift_rail_ltn_routing_table = {}
-        routing_table = storage.rift_rail_ltn_routing_table
-    end
 
     if not routing_table[source_surface] then
         routing_table[source_surface] = {}
@@ -139,11 +132,6 @@ function LTN.init(dependencies)
         log_ltn = dependencies.log_ltn
     elseif dependencies.log_debug then
         log_ltn = dependencies.log_debug
-    end
-
-    -- 初始化双向验证池子（用于 LTN 注册）
-    if not storage.rr_ltn_pools then
-        storage.rr_ltn_pools = {}
     end
 
     if storage.rift_rail_ltn_routing_table_version ~= ROUTING_TABLE_VERSION then
@@ -253,10 +241,6 @@ end
 p_get_current_pools = function(portal_data)
     local result = {}
 
-    if not storage.rr_ltn_pools then
-        return result
-    end
-
     local source_surface = portal_data.surface.index
     local unit_number = portal_data.unit_number
 
@@ -360,7 +344,7 @@ p_leave_pool = function(portal_data, dest_surface, batch_mode)
     end
 
     -- Step 2: 将自己从池子中移除
-    if storage.rr_ltn_pools and storage.rr_ltn_pools[source_surface] and storage.rr_ltn_pools[source_surface][dest_surface] then
+    if storage.rr_ltn_pools[source_surface] and storage.rr_ltn_pools[source_surface][dest_surface] then
         storage.rr_ltn_pools[source_surface][dest_surface][unit_number] = nil
 
         if RiftRail.DEBUG_MODE_ENABLED then
@@ -380,10 +364,6 @@ end
 ---   遍历所有池子，将池子中的传送门两两配对，建立 LTN 连接
 p_commit_all_ltn_connections = function()
     if not is_ltn_active() then
-        return
-    end
-
-    if not storage.rr_ltn_pools then
         return
     end
 
@@ -546,11 +526,6 @@ check_if_connected_before_sync = function(portal1, portal2)
     local station2 = get_station(portal2)
 
     if not (station1 and station1.valid and station2 and station2.valid) then
-        return false
-    end
-
-    -- 检查连接池
-    if not storage.rr_ltn_pools then
         return false
     end
 
@@ -771,9 +746,6 @@ end
 -- 更新路由表中的车站名（当玩家改名时调用）
 function LTN.update_station_name_in_routes(entry_unit_number, new_station_name)
     local routing_table = storage.rift_rail_ltn_routing_table
-    if not routing_table then
-        return
-    end
 
     -- 遍历所有地表对
     for source_surface, dest_surfaces in pairs(routing_table) do

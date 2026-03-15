@@ -298,38 +298,22 @@ end)
 -- 延迟加载事件注册
 -- on_init: 只在创建新游戏时运行
 script.on_init(function()
-    State.ensure_storage() -- 会创建空的 rift_rails 和 id_map
-    storage.collider_map = {}
-    storage.active_teleporter_list = {}
-    storage.collider_to_portal = {}
-    if not storage.rift_rail_ltn_routing_table then
-        storage.rift_rail_ltn_routing_table = {} -- 初始化 LTN 路由表
-    end
+    State.setup_new_game()
     register_ltn_events() -- 注册 LTN 事件（若可用）
-    storage.collider_migration_done = true
-    storage.rift_rail_teleport_cache_calculated = true
 end)
 
 -- on_configuration_changed: 处理模组更新或配置变更
 script.on_configuration_changed(function(event)
-    -- 1. 确保基础表结构存在
-    State.ensure_storage()
+    -- 1. 确保基础表结构存在 (为老存档打补丁)
+    State.patch_missing_root_tables()
 
-    -- 确保 LTN 路由表存在
-    if not storage.rift_rail_ltn_routing_table then
-        storage.rift_rail_ltn_routing_table = {}
-    end
-
-    -- 2. 执行所有迁移任务
+    -- 2. 执行所有深层数据迁移任务
     Migrations.run_all()
 
     -- 处理碰撞器获得实体ID
     if not storage.collider_migration_done then
         Util.rebuild_all_colliders()
         storage.collider_migration_done = true
-    end
-    if not storage.collider_to_portal then
-        storage.collider_to_portal = {}
     end
 end)
 
