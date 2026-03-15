@@ -309,12 +309,6 @@ script.on_configuration_changed(function(event)
 
     -- 2. 执行所有深层数据迁移任务
     Migrations.run_all()
-
-    -- 处理碰撞器获得实体ID
-    if not storage.collider_migration_done then
-        Util.rebuild_all_colliders()
-        storage.collider_migration_done = true
-    end
 end)
 
 -- on_load: 只在加载存档时运行
