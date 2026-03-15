@@ -33,11 +33,13 @@ function State.setup_new_game()
     storage.rr_cs2_route_cache = { by_surface = {} }
     storage.rr_cs2_route_cache_dirty = true
 
-    -- 初始化所有的全局生命周期标记
+    -- 初始化所有的全局生命周期标记 (新存档天生完美，无需任何旧档迁移)
     storage.collider_migration_done = true
     storage.rift_rail_teleport_cache_calculated = true
     storage.rift_rail_cs2_toggle_migrated = true
-    storage.rift_rail_cybersyn_fully_purged = false -- 默认未清理过
+    storage.rift_rail_cybersyn_fully_purged = true
+    storage.rift_rail_ltn_remote_purged = true
+    storage.rift_rail_ltn_table_migrated = true
 end
 
 --- [阶段二：老兵补丁]
@@ -65,9 +67,13 @@ function State.patch_missing_root_tables()
     if not storage.rr_cs2_route_cache then storage.rr_cs2_route_cache = { by_surface = {} } end
     if storage.rr_cs2_route_cache_dirty == nil then storage.rr_cs2_route_cache_dirty = true end
 
-    -- 生命周期标记防空兜底
+    -- 生命周期标记防空兜底 (老存档如果没这些标记，统统视为未迁移 false)
     if storage.collider_migration_done == nil then storage.collider_migration_done = false end
     if storage.rift_rail_teleport_cache_calculated == nil then storage.rift_rail_teleport_cache_calculated = false end
+    if storage.rift_rail_cs2_toggle_migrated == nil then storage.rift_rail_cs2_toggle_migrated = false end
+    if storage.rift_rail_cybersyn_fully_purged == nil then storage.rift_rail_cybersyn_fully_purged = false end
+    if storage.rift_rail_ltn_remote_purged == nil then storage.rift_rail_ltn_remote_purged = false end
+    if storage.rift_rail_ltn_table_migrated == nil then storage.rift_rail_ltn_table_migrated = false end
 end
 
 -- ============================================================================

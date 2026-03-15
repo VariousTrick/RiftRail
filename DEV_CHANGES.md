@@ -1,8 +1,10 @@
-# RiftRail 开发变更记录
+# RiftRail 开发变更记录 / Development Changelog
 
-> 说明：模组未发布阶段使用本文件记录每一次改动。
-> 规则：新改动统一追加到最上方（时间倒序），每次包含日期、改动文件、改动内容。
-> 补充：本文件从 v0.11.7 之后开始维护；
+> [CN] 说明：模组未发布阶段使用本文件记录每一次改动。
+> 规则：新改动统一追加到最上方（时间倒序），每次包含日期、改动文件、改动内容。语言不限（中英文皆可），可使用翻译工具阅读。
+>
+> [EN] Note: This file is used to record every change during the unreleased development phase.
+> Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
 ## 2026-03-15（v0.12.2 开发中：全局数据生命周期重构与兼容模块优化）
 
