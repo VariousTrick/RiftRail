@@ -145,6 +145,7 @@ if Maintenance.init then
     Maintenance.init({
         State = State,
         LTN = LTN,
+        CS2 = CS2Compat,
         Util = Util,
         log_debug = log_debug,
     })

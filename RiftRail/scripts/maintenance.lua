@@ -2,6 +2,7 @@
 local Maintenance = {}
 local Util = nil
 local LTN = nil
+local CS2 = nil
 local State = nil
 
 local log_debug = function() end
@@ -9,6 +10,7 @@ local log_debug = function() end
 function Maintenance.init(deps)
     Util = deps.Util
     LTN = deps.LTN
+    CS2 = deps.CS2
     State = deps.State
     if deps.log_debug then
         log_debug = deps.log_debug
@@ -27,14 +29,26 @@ function Maintenance.on_settings_changed(event)
     -- 2. 卸载清理
     if event.setting == "rift-rail-uninstall-cleanup" and settings.global["rift-rail-uninstall-cleanup"].value then
         local count_ltn = 0
+        local count_cs2 = 0
         if storage.rift_rails then
             for _, portaldata in pairs(storage.rift_rails) do
-                if portaldata.ltn_enabled and LTN.on_portal_destroyed then
+                -- 清理 LTN
+                if portaldata.ltn_enabled and LTN and LTN.on_portal_destroyed then
                     LTN.on_portal_destroyed(portaldata)
                     portaldata.ltn_enabled = false
                     count_ltn = count_ltn + 1
                 end
+                -- 清理 CS2 的开关状态
+                if portaldata.cs2_enabled then
+                    portaldata.cs2_enabled = false
+                    count_cs2 = count_cs2 + 1
+                end
             end
+        end
+
+        -- 通知 CS2 刷新拓扑（这会触发全局缓存清空与重建）
+        if count_cs2 > 0 and CS2 and CS2.on_topology_changed then
+            CS2.on_topology_changed()
         end
 
         local active_count = storage.active_teleporter_list and #storage.active_teleporter_list or 0
@@ -43,7 +57,7 @@ function Maintenance.on_settings_changed(event)
         end
 
         settings.global["rift-rail-uninstall-cleanup"] = { value = false }
-        game.print({ "messages.rift-rail-uninstall-complete", count_ltn })
+        game.print({ "messages.rift-rail-uninstall-complete", count_ltn, count_cs2 })
     end
 
     -- 3. 调试模式
