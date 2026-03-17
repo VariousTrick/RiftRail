@@ -36,8 +36,7 @@
 ---@field waiting_car LuaEntity|nil
 ---@field entry_car LuaEntity|nil
 ---@field exit_car LuaEntity|nil
----@field is_teleporting boolean|nil
----@field collider_needs_rebuild boolean|nil
+---@field state integer|nil 状态枚举: 0=DORMANT, 1=QUEUED, 2=TELEPORTING, 3=REBUILDING
 ---@field locked_exit_unit_number uint|nil
 ---@field locking_entry_id uint|nil
 ---@field old_train_id uint|nil
@@ -55,7 +54,9 @@
 ---@field restored_guis table[]|nil
 ---@field leadertrain LuaEntity|nil
 ---@field ltn_enabled boolean|nil
+---@field cs2_enabled boolean|nil
 ---@field cybersyn_enabled boolean|nil
 ---@field paired_to_id integer|nil
----@field cached_destination_stop LuaEntity|nil|nil
+---@field cached_destination_stop LuaEntity|nil
 ---@field cached_exit_drive_sign integer|nil
+---@field cached_intent_vector table|nil

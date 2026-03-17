@@ -4,6 +4,13 @@
 ---@diagnostic disable: need-check-nil, param-type-mismatch
 
 local Teleport = {}
+
+Teleport.STATE = {
+    DORMANT = 0,
+    QUEUED = 1,
+    TELEPORTING = 2,
+    REBUILDING = 3,
+}
 -- =================================================================================
 -- 【事件广播模块】 - 集中处理自定义API事件的触发
 -- =================================================================================
@@ -70,9 +77,13 @@ end
 -- =================================================================================
 -- 依赖与日志系统
 -- =================================================================================
+---@type StateModule
 local State = nil
+---@type UtilModule
 local Util = nil
+---@type ScheduleModule
 local Schedule = nil
+---@type AwCompatModule
 local AwCompat = nil
 
 -- 1. 定义一个空的日志函数占位符
@@ -903,7 +914,7 @@ local function initialize_teleport_session(entry_portal, exit_portal)
     entry_portal.waiting_target_exit_id = nil
 
     -- 3. 激活传送状态
-    entry_portal.is_teleporting = true
+    entry_portal.state = Teleport.STATE.TELEPORTING
 
     if RiftRail.DEBUG_MODE_ENABLED then
         log_tp("会话启动: 入口 " .. entry_portal.id .. " 锁定出口 " .. exit_portal.id)
@@ -920,6 +931,7 @@ local function process_waiting_logic(portaldata)
     if not (portaldata.waiting_car and portaldata.waiting_car.valid) then
         portaldata.waiting_car = nil
         portaldata.waiting_target_exit_id = nil
+        portaldata.state = Teleport.STATE.DORMANT
         return
     end
 
@@ -929,6 +941,7 @@ local function process_waiting_logic(portaldata)
     if not exit_portal then
         portaldata.waiting_car = nil
         portaldata.waiting_target_exit_id = nil
+        portaldata.state = Teleport.STATE.DORMANT
         return
     end
     portaldata.waiting_target_exit_id = exit_portal.id
@@ -1055,7 +1068,7 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
     
     -- 6. 标记需要重建入口碰撞器
     -- 我们不在这里直接创建，而是交给 on_tick 去计算正确的坐标并创建
-        entry_portaldata.collider_needs_rebuild = true
+        entry_portaldata.state = Teleport.STATE.REBUILDING
         -- 确保它在活跃列表中，这样 on_tick 才会去处理它
         add_to_active(entry_portaldata)
     end
@@ -1390,25 +1403,26 @@ function Teleport.on_collider_died(event)
 
     -- 3. 根据是否有车，决定下一步任务
     if not car then
-        portaldata.collider_needs_rebuild = true
+        portaldata.state = Teleport.STATE.REBUILDING
         add_to_active(portaldata)
         return
     end
     -- 必须是入口模式
     if portaldata.mode ~= "entry" then
-        portaldata.collider_needs_rebuild = true
+        portaldata.state = Teleport.STATE.REBUILDING
         add_to_active(portaldata)
         return
     end
     -- 必须配对才能传送，否则直接重建碰撞器并报错
     if not (portaldata.target_ids and next(portaldata.target_ids)) then
-        portaldata.collider_needs_rebuild = true
+        portaldata.state = Teleport.STATE.REBUILDING
         add_to_active(portaldata)
         game.print({ "messages.rift-rail-error-unpaired-or-collider" })
         return
     end
     -- 不再立即传送，而是挂入等待队列
     portaldata.waiting_car = car
+    portaldata.state = Teleport.STATE.QUEUED
     local preselected_exit = select_target_exit(portaldata)
     portaldata.waiting_target_exit_id = preselected_exit and preselected_exit.id or nil
     if RiftRail.DEBUG_MODE_ENABLED then
@@ -1543,7 +1557,7 @@ local function process_rebuild_collider(portaldata)
     end
 
     -- 5. 标记完成
-    portaldata.collider_needs_rebuild = false
+    portaldata.state = Teleport.STATE.DORMANT
 end
 
 -- =================================================================================
@@ -1583,12 +1597,6 @@ local function process_teleport_sequence(portaldata, tick)
         Teleport.process_transfer_step(portaldata, exit_portaldata)
     end
 
-    if not portaldata.entry_car then
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_tp("传送序列正常结束，关闭状���。")
-        end
-        portaldata.is_teleporting = false
-    end
 end
 -- =================================================================================
 -- Tick 调度 (GC 优化版)
@@ -1616,29 +1624,30 @@ function Teleport.on_tick(event)
             table.remove(list, i)
         else
             -- === 任务调度区 ===
+            local state = portaldata.state
 
-            -- 1. 重建碰撞器任务
-            if portaldata.collider_needs_rebuild then
+            if state == Teleport.STATE.REBUILDING then
+                -- 1. 重建碰撞器任务
                 process_rebuild_collider(portaldata)
             end
 
-            -- 2. 传送任务
-            if portaldata.is_teleporting then
+            if state == Teleport.STATE.TELEPORTING then
+                -- 2. 传送任务
                 process_teleport_sequence(portaldata, event.tick)
                 -- 动力同步需持续进行 (再次检查状态防止序列刚结束)
-                if portaldata.is_teleporting then
+                if portaldata.state == Teleport.STATE.TELEPORTING then
                     Teleport.maintain_exit_speed(portaldata)
                 end
             end
 
-            -- 3. 排队任务 (仅当未传送时)
-            if not portaldata.is_teleporting and portaldata.waiting_car then
+            if state == Teleport.STATE.QUEUED then
+                -- 3. 排队任务
                 process_waiting_logic(portaldata)
             end
 
             -- 4. 垃圾回收 (GC)
             -- 如果所有任务都空闲，移出活跃列表
-            if not portaldata.is_teleporting and not portaldata.waiting_car and not portaldata.collider_needs_rebuild then
+            if portaldata.state == Teleport.STATE.DORMANT then
                 storage.active_teleporters[portaldata.unit_number] = nil
                 table.remove(list, i)
             end

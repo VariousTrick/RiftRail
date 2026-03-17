@@ -6,6 +6,36 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+## 2026-03-17（v0.12.3 开发中：传送核心状态机重构）
+
+### 改动摘要
+- 彻底淘汰了基于多个布尔值（`is_teleporting`, `collider_needs_rebuild`）的"瀑布流"隐式状态判断，改为使用结构化的四态枚举状态机。
+- `Teleport.on_tick` 调度器从多个并行 `if` 判断重构为互斥的 `if/elseif` 分支，杜绝了非预期状态冲突。
+- 新增数据迁移脚本，确保存档无缝升级。
+- **修复隐性死锁 Bug**：修复了通过菜单重置碰撞器时，如果因列车阻挡创建失败会导致传送门脱离活跃队列从而永久卡死的底层隐患。
+- 完善并注入全套 LuaLS 类型注解，系统性消除编辑器告警。
+
+### 具体改动
+- `RiftRail/scripts/teleport.lua`
+  - 文件顶部定义 `Teleport.STATE = { DORMANT = 0, QUEUED = 1, TELEPORTING = 2, REBUILDING = 3 }`。
+  - 移除了冗余的防御性状态恢复；移除了懒加载回退，直接读取 `portaldata.state`。
+  - 补充了顶层依赖模块（State, Util, Schedule, AwCompat）的 `---@type` 依赖注入注解，消除编辑器报错。
+
+- `RiftRail/scripts/migrations.lua`
+  - 新增 `Migrations.state_machine_refactor()`: 遍历所有传送门清理旧字段并推齐 `state` 参数。
+
+- `RiftRail/scripts/util.lua`
+  - 修复 `rebuild_all_colliders()`：当碰撞器因受阻创建失败时，除了将 `state` 设为 `REBUILDING` 外，直接将其**推入** `storage.active_teleporters` 及列表，交由 `on_tick` 后续接管调度，解决了死锁 BUG。
+
+- `RiftRail/scripts/builder.lua`
+  - 严格遵守结构透明原则，在 `on_built` 数据初始化时显式插入 `state = 0` 取代懒加载。
+  - 补充了 `State` 模块的 `---@type` 依赖注入注解。
+
+- `RiftRail/types/`
+  - 更新 `portaldata.annotations.lua`，将旧字段替换为 `state`，并清理了遗漏的 `cs2_enabled` 与 `cached_intent_vector`。
+  - 更新 `modules.annotations.lua`，补全 `LogicModule` 等相关接口方法。
+
+
 ## 2026-03-15（v0.12.2 开发中：全局数据生命周期重构与兼容模块优化）
 
 ### 改动摘要

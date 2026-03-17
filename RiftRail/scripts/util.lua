@@ -348,15 +348,21 @@ function Util.rebuild_all_colliders()
                         portaldata.cached_check_area = cached_area
 
                         -- 成功创建，标记完成
-                        portaldata.collider_needs_rebuild = false
+                        portaldata.state = 0 -- Teleport.STATE.DORMANT
                     else
-                        -- [可选优化] 如果因为被火车挡住而创建失败，保持 true，让 on_tick 稍后再试
-                        -- 但作为一次性重置脚本，设为 false 也没问题，只要玩家不是故意停火车在门口
-                        portaldata.collider_needs_rebuild = true
+                        -- 创建失败（可能被火车挡住），设置 REBUILDING 并加入活跃列表让 on_tick 重试
+                        portaldata.state = 3 -- Teleport.STATE.REBUILDING
+                        -- 直接操作 storage，避免引入 Teleport 模块造成循环依赖
+                        if storage.active_teleporters and not storage.active_teleporters[portaldata.unit_number] then
+                            storage.active_teleporters[portaldata.unit_number] = portaldata
+                            if storage.active_teleporter_list then
+                                table.insert(storage.active_teleporter_list, portaldata)
+                            end
+                        end
                     end
                 else
                     -- 非入口模式，不需要重建
-                    portaldata.collider_needs_rebuild = false
+                    portaldata.state = 0 -- Teleport.STATE.DORMANT
                 end
             end
         end

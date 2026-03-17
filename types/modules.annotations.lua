@@ -11,6 +11,8 @@
 ---@field update_station_name_in_routes fun(unit_number: uint, station_name: string)|nil
 
 ---@class StateModule
+---@field setup_new_game fun()
+---@field patch_missing_root_tables fun()
 ---@field ensure_storage fun()
 ---@field get_portaldata_by_id fun(target_id: integer): PortalData|nil
 ---@field get_portaldata_by_unit_number fun(unit_number: uint): PortalData|nil
@@ -45,6 +47,7 @@
 ---@field unpair_portals_specific fun(player_index: uint|nil, source_id: integer, target_id: integer)
 ---@field set_default_exit fun(player_index: uint, entry_unit_number: uint, target_exit_id: integer)
 ---@field on_entity_renamed fun(event: EventData)
+---@field set_cs2_enabled fun(player_index: uint, portal_id: integer, enabled: boolean)
 
 ---@class ScheduleModule
 ---@field copy_schedule fun(old_train: LuaTrain, new_train: LuaTrain, station_name: string, saved_index: integer|nil, saved_manual_mode: boolean|nil)
