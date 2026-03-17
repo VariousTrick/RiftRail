@@ -871,7 +871,6 @@ local function insert_portal_sequence(train, station_name, exit_id, insert_index
         schedule.add_record({
             station = teleported_name,
             index = { schedule_index = insert_index },
-            temporary = true,
             wait_conditions = { { type = "time", ticks = 0 } },
         })
         schedule.add_record({
