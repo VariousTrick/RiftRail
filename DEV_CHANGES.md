@@ -13,6 +13,7 @@
 - `Teleport.on_tick` 调度器从多个并行 `if` 判断重构为互斥的 `if/elseif` 分支，杜绝了非预期状态冲突。
 - 新增数据迁移脚本，确保存档无缝升级。
 - **修复隐性死锁 Bug**：修复了通过菜单重置碰撞器时，如果因列车阻挡创建失败会导致传送门脱离活跃队列从而永久卡死的底层隐患。
+- **修复 LTN 临时轨道坐标丢失问题**：修复了启用“清理车站”设置时，LTN 无法在目标站前正确生成临时轨道坐标的问题。通过取消 teleported 站点的临时属性确保时刻表以“传送门 -> teleported -> 临时轨道 -> 目标站点”的正确顺序生成。
 - 完善并注入全套 LuaLS 类型注解，系统性消除编辑器告警。
 
 ### 具体改动
@@ -30,6 +31,9 @@
 - `RiftRail/scripts/builder.lua`
   - 严格遵守结构透明原则，在 `on_built` 数据初始化时显式插入 `state = 0` 取代懒加载。
   - 补充了 `State` 模块的 `---@type` 依赖注入注解。
+
+- `RiftRail/scripts/compat/ltn.lua`
+  - `insert_portal_sequence(...)`：移除了插入 `teleported` 站点时的 `temporary = true` 属性，让其作为普通临时站（停靠 0 帧）存在，以确保能够正确生成真实的临时轨道坐标。
 
 - `RiftRail/types/`
   - 更新 `portaldata.annotations.lua`，将旧字段替换为 `state`，并清理了遗漏的 `cs2_enabled` 与 `cached_intent_vector`。
