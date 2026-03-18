@@ -3,6 +3,7 @@
 
 -- builder.lua
 local Builder = {}
+---@type StateModule
 local State = nil
 
 local log_debug = function() end
@@ -346,6 +347,7 @@ function Builder.on_built(event)
         surface = shell.surface,
         cybersyn_enabled = false,
         cs2_enabled = false,
+        state = 0, -- Teleport.STATE.DORMANT
         prefix = prefix,
         shell = shell,
         children = children,

@@ -43,6 +43,8 @@ local Logic = require("scripts.logic")
 local Schedule = require("scripts.schedule")
 local Util = require("scripts.util")
 local Teleport = require("scripts.teleport")
+local TeleportMath = require("scripts.teleport_system.teleport_math")
+local TeleportFactory = require("scripts.teleport_system.teleport_factory")
 local LTN = require("scripts.compat.ltn")
 local CS2Compat = require("scripts.compat.cs2")
 local AWCompat = require("scripts.compat.aw")
@@ -92,12 +94,22 @@ if AWCompat and AWCompat.init then
     AWCompat.init({ log_debug = log_debug })
 end
 
+if TeleportFactory.init then
+    TeleportFactory.init({
+        Util = Util,
+        Math = TeleportMath,
+        log_debug = log_debug,
+    })
+end
+
 -- 注入 Teleport 依赖
 if Teleport.init then
     Teleport.init({
         State = State,
         Util = Util,
         Schedule = Schedule,
+        Math = TeleportMath,
+        Factory = TeleportFactory,
         log_debug = log_debug,
         AwCompat = AWCompat,
         Events = RiftRail.Events,

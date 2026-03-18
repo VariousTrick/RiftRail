@@ -442,6 +442,35 @@ function Migrations.rebuild_legacy_colliders()
 end
 
 -- ============================================================================
+-- [迁移任务 14] v0.12.3 状态机重构
+-- ============================================================================
+-- 目的：为旧存档中的传送门数据转换状态机枚举
+-- 触发条件：存在标志位未迁移的情况 (以 portaldata.state 为准)
+function Migrations.state_machine_refactor()
+    if storage.rift_rails then
+        for _, portaldata in pairs(storage.rift_rails) do
+            if portaldata.state == nil then
+                if portaldata.collider_needs_rebuild then
+                    portaldata.state = 3 -- Teleport.STATE.REBUILDING
+                elseif portaldata.is_teleporting then
+                    portaldata.state = 2 -- Teleport.STATE.TELEPORTING
+                elseif portaldata.waiting_car then
+                    portaldata.state = 1 -- Teleport.STATE.QUEUED
+                else
+                    portaldata.state = 0 -- Teleport.STATE.DORMANT
+                end
+                
+                -- 清理旧字段以节省内存
+                portaldata.collider_needs_rebuild = nil
+                portaldata.is_teleporting = nil
+                -- waiting_car 不能删，因为它保存了列车实体的引用
+            end
+        end
+        log_debug("[Migration] 已完成传送门状态机数据的转换。")
+    end
+end
+
+-- ============================================================================
 -- 主入口：按顺序执行所有迁移任务
 -- ============================================================================
 function Migrations.run_all()
@@ -464,6 +493,7 @@ function Migrations.run_all()
     Migrations.calculate_teleport_cache()
     Migrations.patch_cs2_enabled_default()
     Migrations.rebuild_legacy_colliders()
+    Migrations.state_machine_refactor()
 end
 
 return Migrations

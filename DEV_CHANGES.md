@@ -6,6 +6,66 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+## 2026-03-18（v0.12.3 开发中：传送门核心逻辑深度瘦身与代码展平）
+
+### 改动摘要
+- **修复跨状态死锁漏洞**：修复了正在传送的列车因碾碎全局重建生成的碰撞器而触发 `on_collider_died` 事件，导致传送门状态意外降级并引发锁泄漏的逻辑漏洞。
+- **模块结构归档**：在 `scripts` 下新建 `teleport_system` 目录，将抽离出的附加子模块（如数学与工厂逻辑）集中归档，保障代码树整洁。
+- **模块化重构**：将臃肿的 `teleport.lua` 拆分为三层架构：主控制总线 (`teleport`)、物理几何算法 (`teleport_system/teleport_math`) 以及实体生成工厂 (`teleport_system/teleport_factory`)，实现性能无损解耦。
+- **视觉展平与去嵌套**：重构了 `on_tick` 内部调度。通过提炼 `process_active_portal` 函数并使用提前 `return` 控制流（卫语句），彻底消灭了原有的 `else` 嵌套层级结构。
+- **职责聚焦**：进一步剥离了 `release_exit_lock`（死锁清理）和 `spawn_leader_train`（引导车生成）等辅助细节，主流程可读性大幅跃升。
+- **规范补全**：为全部新提炼出的控制函数和计算模块补齐了标准的 LuaLS 类型注解（`---@param`）。
+
+### 具体改动
+- `RiftRail/scripts/teleport.lua`
+  - `on_collider_died`：增加拦截逻辑，当传送门已处于 `TELEPORTING` 状态时，忽略后续多余的碰撞器销毁事件。
+  - 删除冗余本地算法，全面接入 `Math` 和 `Factory` 的模块化调用。
+  - 提炼 `release_exit_lock` 集中封装 GC 死锁清除逻辑。
+  - 提炼 `process_active_portal` 负责单次传送门事件的调度流转工作。
+  - 提炼 `spawn_leader_train` 分离牵引实体生成逻辑。
+- `RiftRail/scripts/teleport_system/teleport_math.lua`（移入新目录）
+  - 承载 `GEOMETRY` 常量阵列、意图向量获取与物理极性推力引擎。
+- `RiftRail/scripts/teleport_system/teleport_factory.lua`（移入新目录）
+  - 承载智能克隆/备份创建工厂方法。
+- `RiftRail/scripts/util.lua`
+  - `rebuild_all_colliders`：仅对原状态为 `REBUILDING(3)` 的瘫痪传送门解除锁定（置为 `0`）；去除无用的创建失败代码分支，保证运行期修改建筑设置时不会影响正常传送队列。
+- `RiftRail/control.lua`
+  - 同步更新传送门扩展模块的载入路径与依赖注入。
+
+## 2026-03-17（v0.12.3 开发中：传送核心状态机重构）
+
+### 改动摘要
+- 彻底淘汰了基于多个布尔值（`is_teleporting`, `collider_needs_rebuild`）的"瀑布流"隐式状态判断，改为使用结构化的四态枚举状态机。
+- `Teleport.on_tick` 调度器从多个并行 `if` 判断重构为互斥的 `if/elseif` 分支，杜绝了非预期状态冲突。
+- 新增数据迁移脚本，确保存档无缝升级。
+- **修复隐性死锁 Bug**：修复了通过菜单重置碰撞器时，如果因列车阻挡创建失败会导致传送门脱离活跃队列从而永久卡死的底层隐患。
+- **修复 LTN 临时轨道坐标丢失问题**：修复了启用“清理车站”设置时，LTN 无法在目标站前正确生成临时轨道坐标的问题。通过取消 teleported 站点的临时属性确保时刻表以“传送门 -> teleported -> 临时轨道 -> 目标站点”的正确顺序生成。
+- 完善并注入全套 LuaLS 类型注解，系统性消除编辑器告警。
+
+### 具体改动
+- `RiftRail/scripts/teleport.lua`
+  - 文件顶部定义 `Teleport.STATE = { DORMANT = 0, QUEUED = 1, TELEPORTING = 2, REBUILDING = 3 }`。
+  - 移除了冗余的防御性状态恢复；移除了懒加载回退，直接读取 `portaldata.state`。
+  - 补充了顶层依赖模块（State, Util, Schedule, AwCompat）的 `---@type` 依赖注入注解，消除编辑器报错。
+
+- `RiftRail/scripts/migrations.lua`
+  - 新增 `Migrations.state_machine_refactor()`: 遍历所有传送门清理旧字段并推齐 `state` 参数。
+
+- `RiftRail/scripts/util.lua`
+  - 修复 `rebuild_all_colliders()`：当碰撞器因受阻创建失败时，除了将 `state` 设为 `REBUILDING` 外，直接将其**推入** `storage.active_teleporters` 及列表，交由 `on_tick` 后续接管调度，解决了死锁 BUG。
+
+- `RiftRail/scripts/builder.lua`
+  - 严格遵守结构透明原则，在 `on_built` 数据初始化时显式插入 `state = 0` 取代懒加载。
+  - 补充了 `State` 模块的 `---@type` 依赖注入注解。
+
+- `RiftRail/scripts/compat/ltn.lua`
+  - `insert_portal_sequence(...)`：移除了插入 `teleported` 站点时的 `temporary = true` 属性，让其作为普通临时站（停靠 0 帧）存在，以确保能够正确生成真实的临时轨道坐标。
+
+- `RiftRail/types/`
+  - 更新 `portaldata.annotations.lua`，将旧字段替换为 `state`，并清理了遗漏的 `cs2_enabled` 与 `cached_intent_vector`。
+  - 更新 `modules.annotations.lua`，补全 `LogicModule` 等相关接口方法。
+
+
 ## 2026-03-15（v0.12.2 开发中：全局数据生命周期重构与兼容模块优化）
 
 ### 改动摘要

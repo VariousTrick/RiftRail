@@ -331,7 +331,7 @@ function Util.rebuild_all_colliders()
 
                     -- [核心修改] 只有创建成功才进行注册
                     if new_collider then
-                        -- A. 【上户口】注册 ID 到全局字典 (这是你之前漏掉的！)
+                        -- A. 【上户口】注册 ID 到全局字典
                         if new_collider.unit_number then
                             storage.collider_to_portal[new_collider.unit_number] = portaldata.unit_number
                         end
@@ -346,17 +346,12 @@ function Util.rebuild_all_colliders()
                         local cached_spawn, cached_area = Util.calculate_teleport_cache(portaldata.shell.position, portaldata.shell.direction)
                         portaldata.cached_spawn_pos = cached_spawn
                         portaldata.cached_check_area = cached_area
-
-                        -- 成功创建，标记完成
-                        portaldata.collider_needs_rebuild = false
-                    else
-                        -- [可选优化] 如果因为被火车挡住而创建失败，保持 true，让 on_tick 稍后再试
-                        -- 但作为一次性重置脚本，设为 false 也没问题，只要玩家不是故意停火车在门口
-                        portaldata.collider_needs_rebuild = true
+                        
+                        -- 只拯救处于瘫痪状态的建筑
+                        if portaldata.state == 3 then -- Teleport.STATE.REBUILDING
+                            portaldata.state = 0 -- Teleport.STATE.DORMANT
+                        end
                     end
-                else
-                    -- 非入口模式，不需要重建
-                    portaldata.collider_needs_rebuild = false
                 end
             end
         end
