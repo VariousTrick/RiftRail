@@ -1030,6 +1030,12 @@ function Teleport.on_collider_died(event)
         return
     end
 
+    -- 过滤传送中产生的多余碰撞器销毁事件
+    -- 传送流程由内部链表接管，不应被后续碰撞中断
+    if portaldata.state == Teleport.STATE.TELEPORTING then
+        return
+    end
+
     -- 2. 尝试捕获肇事车辆
     local car = nil
     if event.cause and event.cause.train then
