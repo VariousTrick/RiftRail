@@ -6,6 +6,28 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+## 2026-03-18（v0.12.3 开发中：传送门核心逻辑深度瘦身与代码展平）
+
+### 改动摘要
+- **模块结构归档**：在 `scripts` 下新建 `teleport_system` 目录，将抽离出的附加子模块（如数学与工厂逻辑）集中归档，保障代码树整洁。
+- **模块化重构**：将臃肿的 `teleport.lua` 拆分为三层架构：主控制总线 (`teleport`)、物理几何算法 (`teleport_system/teleport_math`) 以及实体生成工厂 (`teleport_system/teleport_factory`)，实现性能无损解耦。
+- **视觉展平与去嵌套**：重构了 `on_tick` 内部调度。通过提炼 `process_active_portal` 函数并使用提前 `return` 控制流（卫语句），彻底消灭了原有的 `else` 嵌套层级结构。
+- **职责聚焦**：进一步剥离了 `release_exit_lock`（死锁清理）和 `spawn_leader_train`（引导车生成）等辅助细节，主流程可读性大幅跃升。
+- **规范补全**：为全部新提炼出的控制函数和计算模块补齐了标准的 LuaLS 类型注解（`---@param`）。
+
+### 具体改动
+- `RiftRail/scripts/teleport.lua`
+  - 删除冗余本地算法，全面接入 `Math` 和 `Factory` 的模块化调用。
+  - 提炼 `release_exit_lock` 集中封装 GC 死锁清除逻辑。
+  - 提炼 `process_active_portal` 负责单次传送门事件的调度流转工作。
+  - 提炼 `spawn_leader_train` 分离牵引实体生成逻辑。
+- `RiftRail/scripts/teleport_system/teleport_math.lua`（移入新目录）
+  - 承载 `GEOMETRY` 常量阵列、意图向量获取与物理极性推力引擎。
+- `RiftRail/scripts/teleport_system/teleport_factory.lua`（移入新目录）
+  - 承载智能克隆/备份创建工厂方法。
+- `RiftRail/control.lua`
+  - 同步更新传送门扩展模块的载入路径与依赖注入。
+
 ## 2026-03-17（v0.12.3 开发中：传送核心状态机重构）
 
 ### 改动摘要

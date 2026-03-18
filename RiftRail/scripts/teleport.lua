@@ -85,15 +85,21 @@ local Util = nil
 local Schedule = nil
 ---@type AwCompatModule
 local AwCompat = nil
+---@type table
+local Math = nil
+---@type table
+local Factory = nil
 
 -- 1. 定义一个空的日志函数占位符
-local log_debug = function() end
+local log_debug = function(...) end
 
 -- 2. 在 init 函数中接收来自 control.lua 的 log_debug 函数
 function Teleport.init(deps)
     State = deps.State
     Util = deps.Util
     Schedule = deps.Schedule
+    Math = deps.Math
+    Factory = deps.Factory
     if deps.log_debug then
         log_debug = deps.log_debug
     end
@@ -148,45 +154,7 @@ local function read_train_schedule_index(train)
     return current
 end
 
--- =================================================================================
--- 【Rift Rail 专用几何参数】
--- =================================================================================
--- 将偏移量调整为偶数 (0)，对准铁轨中心，防止生成失败
--- 基于 "车厢生成在建筑中心 (y=0)" 的设定
-local GEOMETRY = {
-    [0] = { -- North (出口在下方 Y+)
-        spawn_offset = { x = 0, y = 0 },
-        direction = defines.direction.south,
-        leadertrain_offset = { x = 0, y = 4.0 },
-        velocity_mult = { x = 0, y = 1 },
-        collider_offset = { x = 0, y = -2 },
-        check_area_rel = { lt = { x = -1, y = 0 }, rb = { x = 1, y = 10 } },
-    },
-    [4] = { -- East (出口在左方 X-)
-        spawn_offset = { x = 0, y = 0 },
-        direction = defines.direction.west,
-        leadertrain_offset = { x = -4.0, y = 0 },
-        velocity_mult = { x = -1, y = 0 },
-        collider_offset = { x = 2, y = 0 },
-        check_area_rel = { lt = { x = -10, y = -1 }, rb = { x = 0, y = 1 } },
-    },
-    [8] = { -- South (出口在上方 Y-)
-        spawn_offset = { x = 0, y = 0 },
-        direction = defines.direction.north,
-        leadertrain_offset = { x = 0, y = -4.0 },
-        velocity_mult = { x = 0, y = -1 },
-        collider_offset = { x = 0, y = 2 },
-        check_area_rel = { lt = { x = -1, y = -10 }, rb = { x = 1, y = 0 } },
-    },
-    [12] = { -- West (出口在右方 X+)
-        spawn_offset = { x = 0, y = 0 },
-        direction = defines.direction.east,
-        leadertrain_offset = { x = 4.0, y = 0 },
-        velocity_mult = { x = 1, y = 0 },
-        collider_offset = { x = -2, y = 0 },
-        check_area_rel = { lt = { x = 0, y = -1 }, rb = { x = 10, y = 1 } },
-    },
-}
+-- GEOMETRY 常量已迁移至 scripts/teleport_system/teleport_math.lua (TeleportMath.GEOMETRY)
 
 -- =================================================================================
 -- 活跃列表管理辅助函数 (GC 优化)
@@ -311,137 +279,9 @@ local function reopen_car_gui(watchers, entity)
     end
 end
 
--- =================================================================================
--- 速度方向计算函数 (基于铁轨端点距离)
--- =================================================================================
---- 计算列车相对于一个参考点的逻辑方向。
----@param train LuaTrain 要计算的列车 / The train to calculate
----@param select_portal PortalData 参考传送门 / Reference portal
----@return integer 1 代表逻辑正向 (Front更远), -1 代表逻辑反向 (Back更远)。/ 1 for forward, -1 for backward
-local function calculate_speed_sign(train, select_portal)
-    -- 安全检查：如果输入无效，默认返回正向
-    if not (train and train.valid and select_portal) then
-        return 1
-    end
-
-    -- [核心逻辑] 使用缓存，并为旧存档/克隆体提供懒加载
-    local origin_pos = select_portal.blocker_position
-
-    -- 如果缓存不存在 (旧存档)，则计算一次并写回
-    if not origin_pos then
-        local shell = select_portal.shell
-        -- 再次安全检查，防止 shell 失效
-        if not (shell and shell.valid) then
-            return 1
-        end
-
-        local shell_pos = shell.position
-        local shell_dir = shell.direction
-        local blocker_relative_pos = { x = 0, y = -6 }
-
-        local rotated_offset
-        if shell_dir == 0 then
-            rotated_offset = { x = blocker_relative_pos.x, y = blocker_relative_pos.y }
-        elseif shell_dir == 4 then
-            rotated_offset = { x = -blocker_relative_pos.y, y = blocker_relative_pos.x }
-        elseif shell_dir == 8 then
-            rotated_offset = { x = -blocker_relative_pos.x, y = -blocker_relative_pos.y }
-        else
-            rotated_offset = { x = blocker_relative_pos.y, y = -blocker_relative_pos.x }
-        end
-
-        origin_pos = { x = shell_pos.x + rotated_offset.x, y = shell_pos.y + rotated_offset.y }
-        select_portal.blocker_position = origin_pos -- 将计算结果写回缓存
-    end
-
-    local rail_front = train.front_end and train.front_end.rail
-    local rail_back = train.back_end and train.back_end.rail
-
-    if rail_front and rail_back then
-        -- 计算距离平方 (dx^2 + dy^2), 避免开方运算
-        local df_x = rail_front.position.x - origin_pos.x
-        local df_y = rail_front.position.y - origin_pos.y
-        local dist_sq_f = (df_x * df_x) + (df_y * df_y)
-
-        local db_x = rail_back.position.x - origin_pos.x
-        local db_y = rail_back.position.y - origin_pos.y
-        local dist_sq_b = (db_x * db_x) + (db_y * db_y)
-
-        -- [最终决策]
-        -- API定义: 正速度驶向 front_end, 负速度驶向 back_end
-        -- 如果后端(Back)离参考点更远，说明列车需要向后端行驶才能“远离”，即需要负速度。
-        if dist_sq_b > dist_sq_f then
-            return -1 -- 后端更远 -> 逻辑反向
-        end
-        -- 在所有其他情况下 (前端更远，或两端距离相等)，都判定为逻辑正向。
-        -- 这可以完美处理单节车厢(距离相等)时需要正向启动的问题。
-        return 1
-    end
-
-    -- 异常情况 (无法获取铁轨端点)，返回默认正向
-    return 1
-end
-
--- =================================================================================
--- 【极度昂贵：只调用一次】获取 AI 的绝对物理意图向量
--- =================================================================================
----@param train LuaTrain 要分析的列车 / The train to analyze
----@return table|nil 绝对物理意图向量 {x=number, y=number} / Absolute physical intent vector
----@note 这个函数非常昂贵，应该只在时刻表改变时调用一次，并将结果缓存起来供后续使用
-local function get_ai_intent_vector(train)
-    local path = train.path
-    local rails = path and path.rails
-    -- 如果没有路径，或者到了最后一截，返回 nil 走兜底
-    if not rails or #rails < 2 then
-        return nil
-    end
-
-    -- 用路径上前两截铁轨的坐标差，算出一个永远指向前方的绝对向量！
-    return {
-        x = rails[2].position.x - rails[1].position.x,
-        y = rails[2].position.y - rails[1].position.y,
-    }
-end
-
--- =================================================================================
--- 【极度廉价：拼接时调用】用缓存的意图向量，计算当前应给的符号
--- =================================================================================
----@param train LuaTrain 要分析的列车 / The train to analyze
----@param intent_vector table|nil 绝对物理意图向量 {x=number, y=number} / Absolute physical intent vector
----@param portaldata PortalData 传送门数据 / Portal data
----@return integer 速度符号 (1 或 -1) / Speed sign (1 or -1)
-local function calculate_sign_from_intent(train, intent_vector, portaldata)
-    -- 如果没取到意图向量，直接用“物理堵头”兜底推离
-    if not intent_vector or (intent_vector.x == 0 and intent_vector.y == 0) then
-        return calculate_speed_sign(train, portaldata)
-    end
-
-    local front_rail = train.front_end and train.front_end.rail
-    local back_rail = train.back_end and train.back_end.rail
-    if not (front_rail and back_rail) then
-        return calculate_speed_sign(train, portaldata)
-    end
-
-    -- 取当前车身向量 (0 表格开销)
-    local v_train_x = front_rail.position.x - back_rail.position.x
-    local v_train_y = front_rail.position.y - back_rail.position.y
-
-    if v_train_x == 0 and v_train_y == 0 then
-        local car = train.carriages[1]
-        if car then
-            local angle = car.orientation * 2 * math.pi
-            v_train_x = math.sin(angle)
-            v_train_y = -math.cos(angle)
-        end
-    end
-
-    -- 点积判断当前参考系下该给的正负号
-    local dot = (v_train_x * intent_vector.x) + (v_train_y * intent_vector.y)
-    return dot >= 0 and 1 or -1
-end
 
 -- =========================================================================
--- 入口速度控制：施加“脉冲推力” (事件驱动核心)
+-- 入口速度控制：施加"脉冲推力" (事件驱动核心)
 -- =========================================================================
 ---@param entry_portaldata PortalData 入口数据 / Entry portal data
 ---@param exit_portaldata PortalData 出口数据 / Exit portal data
@@ -465,220 +305,18 @@ local function apply_entry_pulse(entry_portaldata, exit_portaldata)
     local target_speed = (exit_portaldata and exit_portaldata.cached_teleport_speed) or settings.global["rift-rail-teleport-speed"].value
 
     -- 2. 重新计算当前入口列车应该进入入口的方向（正向/反向），并将其转化为速度符号
-    local entry_sign = -1 * calculate_speed_sign(train, entry_portaldata)
+    local entry_sign = -1 * Math.calculate_speed_sign(train, entry_portaldata)
 
-    -- 3. 施加 10 速度迫使列车“靠近/吸入”传送门
+    -- 3. 施加 10 速度迫使列车"靠近/吸入"传送门
     train.speed = target_speed * 10 * entry_sign
 
     if RiftRail.DEBUG_MODE_ENABLED then
         log_tp("入口脉冲已施加: 速度=" .. train.speed)
     end
 end
--- =================================================================================
--- 【纯函数】计算车厢在出口生成的朝向 (Orientation 0.0-1.0)
--- =================================================================================
----@param entry_shell_dir integer|defines.direction 入口传送门朝向 / Entry portal direction
----@param exit_geo_dir integer|defines.direction 出口传送门朝向 / Exit portal direction
----@param current_ori number 当前车厢朝向 / Current carriage orientation
----@return number 目标朝向 / Target orientation
----@return boolean 是否顺向 / Is nose-in
-local function calculate_arrival_orientation(entry_shell_dir, exit_geo_dir, current_ori)
-    -- 1. 将入口建筑朝向转为 Orientation (0-1)
-    local entry_shell_ori = entry_shell_dir / 16.0
 
-    -- 2. 判断车厢是“顺着进”还是“倒着进”
-    -- 计算角度差 (处理 0.0/1.0 的环形边界)
-    local diff = math.abs(current_ori - entry_shell_ori)
-    if diff > 0.5 then
-        diff = 1.0 - diff
-    end
-
-    -- 判定阈值 (0.125 = 45度，小于45度夹角视为顺向)
-    local is_nose_in = diff < 0.125
-
-    if RiftRail.DEBUG_MODE_ENABLED then
-        log_tp("方向计算: 车厢=" .. string.format("%.2f", current_ori) .. ", 入口=" .. entry_shell_ori .. ", 判定=" .. (is_nose_in and "顺向(NoseIn)" or "逆向(TailIn)"))
-    end
-
-    -- 3. 计算出口基准朝向
-    local exit_base_ori = exit_geo_dir / 16.0
-    local target_ori = exit_base_ori
-
-    -- 4. 根据进出关系修正最终朝向
-    if not is_nose_in then
-        -- 逆向进入 -> 逆向离开 (翻转 180 度即 +0.5)
-        target_ori = (target_ori + 0.5) % 1.0
-    end
-
-    if RiftRail.DEBUG_MODE_ENABLED and not is_nose_in then
-        log_tp("方向计算: 执行逆向翻转 -> " .. target_ori)
-    end
-
-    -- 增加第二个返回值 is_nose_in
-    return target_ori, is_nose_in
-end
-
--- =================================================================================
--- 司机转移函数 (处理玩家和NPC两种情况)
--- =================================================================================
-local function transfer_driver(old_entity, new_entity)
-    if not (old_entity and old_entity.valid and new_entity and new_entity.valid) then
-        return
-    end
-
-    local driver = old_entity.get_driver()
-    if driver then
-        old_entity.set_driver(nil)
-        if driver.object_name == "LuaPlayer" then
-            new_entity.set_driver(driver)
-        elseif driver.valid and driver.teleport then
-            driver.teleport(new_entity.position, new_entity.surface)
-            new_entity.set_driver(driver)
-        end
-    end
-end
-
--- =================================================================================
--- 【克隆工厂 v3.0 - 旋转克隆】 - 统一处理所有平行传送
--- =================================================================================
----@param old_entity LuaEntity 原车厢实体 / Old carriage entity
----@param surface LuaSurface 目标地表 / Target surface
----@param position Position 目标坐标 / Target position
----@param needs_rotation boolean 是否需要在克隆前进行原地180度旋转 / Whether needs rotation
----@return LuaEntity|nil 新车厢实体 / New carriage entity
-local function spawn_via_clone(old_entity, surface, position, needs_rotation)
-    if not (old_entity and old_entity.valid) then
-        return nil
-    end
-
-    -- 步骤 1: 如果需要，执行“断开->旋转”
-    if needs_rotation then
-        -- 物理隔离，为旋转做准备
-        old_entity.disconnect_rolling_stock(defines.rail_direction.front)
-        old_entity.disconnect_rolling_stock(defines.rail_direction.back)
-
-        -- 尝试原地掉头
-        local rotated_successfully = old_entity.rotate()
-
-        if not rotated_successfully then
-            -- 极端情况：由于铁轨扭曲等原因，原地旋转失败。
-            -- 优雅地失败，让主逻辑降级到 create_entity。
-            if RiftRail.DEBUG_MODE_ENABLED then
-                log_tp("警告：车厢在入口原地旋转失败，将尝试使用 create_entity 降级处理。")
-            end
-            return nil -- 返回 nil，主逻辑会知道需要使用备用方案
-        end
-    end
-
-    -- 步骤 2: 极速克隆
-    -- 无论是旋转过的还是没旋转的，都直接克隆
-    local new_entity = old_entity.clone({
-        surface = surface,
-        position = position,
-        force = old_entity.force,
-        create_build_effect_smoke = false,
-    })
-
-    if not new_entity then
-        -- 克隆失败，可能是出口在最后一刻被堵住
-        -- 不需要做任何回滚，主逻辑会在下一tick重新尝试
-        return nil
-    end
-
-    -- 步骤 3: 手动转移司机 (clone 唯一不复制的东西)
-    transfer_driver(old_entity, new_entity)
-
-    return new_entity
-end
-
--- =================================================================================
--- 【克隆工厂】生成替身车厢并转移所有属性
--- =================================================================================
----@param old_entity LuaEntity 原车厢实体 / Old carriage entity
----@param surface LuaSurface 目标地表 / Target surface
----@param position Position 目标坐标 / Target position
----@param orientation number 目标朝向(0.0-1.0) / Target orientation (0.0-1.0)
----@return LuaEntity|nil 新车厢实体 / New carriage entity
-local function spawn_cloned_car(old_entity, surface, position, orientation)
-    if not (old_entity and old_entity.valid) then
-        return nil
-    end
-
-    -- 1. 创建实体 (Factorio 2.0 API: 支持 quality 和 orientation)
-    local new_entity = surface.create_entity({
-        name = old_entity.name,
-        position = position,
-        orientation = orientation,
-        force = old_entity.force,
-        quality = old_entity.quality,
-        snap_to_train_stop = false, -- 建议设为 false 以提高位置精确度
-        snap_to_grid = false,
-        create_build_effect_smoke = false,
-        raise_built = true,
-    })
-
-    if not new_entity then
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_tp("克隆工厂: 创建实体失败 " .. old_entity.name)
-        end
-        return nil
-    end
-
-    -- 使用 copy_settings 一键同步配置 (颜色、名字、过滤器、红叉、中断等)
-    new_entity.copy_settings(old_entity)
-
-    -- 2. 基础属性同步
-    new_entity.health = old_entity.health
-
-    -- 3. 内容转移 (调用 Util)
-    Util.clone_all_inventories(old_entity, new_entity)
-    Util.clone_fluid_contents(old_entity, new_entity)
-    Util.clone_grid(old_entity, new_entity)
-
-    -- 4. 司机转移 (特殊处理)
-    transfer_driver(old_entity, new_entity)
-
-    return new_entity
-end
-
--- =================================================================================
--- 【智能生成决策 v4.0】 - 封装所有创建逻辑的主函数
--- =================================================================================
--- 这个函数是传送的核心大脑，它会决定使用最高效的方式创建下一节车厢。
----@param car LuaEntity 要传送的旧车厢 / Old carriage to teleport
----@param entry_portaldata PortalData 入口数据 / Entry portal data
----@param exit_portaldata PortalData 出口数据 / Exit portal data
----@param spawn_pos Position 出口生成坐标 / Spawn position
----@param geo table 几何数据 / Geometry data
----@return LuaEntity|nil 新车厢实体 / New carriage entity
-local function spawn_next_car_intelligently(car, entry_portaldata, exit_portaldata, spawn_pos, geo)
-    local new_car = nil
-
-    -- 首先，判断入口和出口铁轨是否平行
-    local entry_dir = entry_portaldata.shell.direction
-    local exit_dir = exit_portaldata.shell.direction
-    local is_parallel = (entry_dir == exit_dir) or ((entry_dir + 8) % 16 == exit_dir)
-
-    if is_parallel then
-        -- 【高性能路径】铁轨平行，尝试使用 clone
-        local needs_rotation = (entry_dir == exit_dir) -- 建筑同向时，需要旋转
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_tp("优化: 铁轨平行，尝试使用 clone()。" .. (needs_rotation and " (需要旋转)" or " (无需旋转)"))
-        end
-        new_car = spawn_via_clone(car, exit_portaldata.surface, spawn_pos, needs_rotation)
-    end
-
-    -- 【降级/备用路径】如果不是平行，或者 clone 失败（比如旋转失败），则使用传统方法
-    if not new_car then
-        if is_parallel and RiftRail.DEBUG_MODE_ENABLED then
-            log_tp("Clone 路径失败，降级至 create_entity 进行传送。")
-        end
-        local target_ori, is_nose_in = calculate_arrival_orientation(entry_dir, geo.direction, car.orientation)
-        new_car = spawn_cloned_car(car, exit_portaldata.surface, spawn_pos, target_ori)
-    end
-
-    return new_car
-end
+-- 车厢生成工厂函数（transfer_driver、spawn_via_clone、spawn_cloned_car、spawn_next_car_intelligently）
+-- 已迁移至 scripts/teleport_system/teleport_factory.lua (TeleportFactory)
 
 -- =================================================================================
 -- 【辅助函数】确保几何数据缓存有效 (去重逻辑)
@@ -693,7 +331,7 @@ local function ensure_geometry_cache(portaldata)
     local geo = portaldata.cached_geo
     -- 检查缓存是否存在，且包含最新的字段 check_area_rel
     if not geo or not geo.check_area_rel then
-        geo = GEOMETRY[portaldata.shell.direction] or GEOMETRY[0]
+        geo = Math.GEOMETRY[portaldata.shell.direction] or Math.GEOMETRY[0]
         portaldata.cached_geo = geo
     end
     return geo
@@ -984,7 +622,7 @@ local function restore_train_state(train, portaldata, apply_speed, preferred_ind
     -- C. (可选) 恢复速度
     if apply_speed then
         local speed_mag = settings.global["rift-rail-teleport-speed"].value
-        local sign = calculate_speed_sign(train, portaldata)
+        local sign = Math.calculate_speed_sign(train, portaldata)
         train.speed = speed_mag * sign
 
         if RiftRail.DEBUG_MODE_ENABLED then
@@ -1071,6 +709,33 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         entry_portaldata.state = Teleport.STATE.REBUILDING
         -- 确保它在活跃列表中，这样 on_tick 才会去处理它
         add_to_active(entry_portaldata)
+    end
+end
+
+-- =================================================================================
+-- 生成引导车 (Leader)
+-- =================================================================================
+--- 生成一个不可摧毁的引导车实体
+---@param exit_portaldata PortalData 出口传送门数据
+---@param geo table 几何设置信息
+---@param force LuaForce 新车厢的阵营
+local function spawn_leader_train(exit_portaldata, geo, force)
+    local leadertrain_pos = Util.add_offset(exit_portaldata.shell.position, geo.leadertrain_offset)
+    if RiftRail.DEBUG_MODE_ENABLED then
+        log_tp("正在创建引导车 (Leader)... 坐标偏移: x=" .. geo.leadertrain_offset.x .. ", y=" .. geo.leadertrain_offset.y)
+    end
+    local leadertrain = exit_portaldata.surface.create_entity({
+        name = "rift-rail-leader-train",
+        position = leadertrain_pos,
+        direction = geo.direction,
+        force = force,
+    })
+    if leadertrain then
+        leadertrain.destructible = false
+        exit_portaldata.leadertrain = leadertrain
+        if RiftRail.DEBUG_MODE_ENABLED then
+            log_tp("引导车创建成功 ID: " .. leadertrain.unit_number)
+        end
     end
 end
 
@@ -1199,7 +864,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     -- 计算目标朝向
     -- 参数：入口方向, 出口几何预设方向, 车厢当前方向
     -- 接收 target_ori 和 is_nose_in 两个返回值
-    local _, is_nose_in = calculate_arrival_orientation(entry_portaldata.shell.direction, geo.direction, car.orientation)
+    local _, is_nose_in = Math.calculate_arrival_orientation(entry_portaldata.shell.direction, geo.direction, car.orientation)
 
     -- 判断是否需要引导车 (如果是正向车头则不需要)
     local need_leader = is_first_car and (car.type ~= "locomotive" or not is_nose_in)
@@ -1221,7 +886,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     -- 【动态克隆决策】根据入口和出口的朝向决定使用哪种生成方式
     -- =========================================================================
     -- 【调用我们的新“大脑”函数来完成所有复杂的创建决策】
-    local new_car = spawn_next_car_intelligently(car, entry_portaldata, exit_portaldata, spawn_pos, geo)
+    local new_car = Factory.spawn_next_car_intelligently(car, entry_portaldata, exit_portaldata, spawn_pos, geo)
 
     if not new_car then
         if RiftRail.DEBUG_MODE_ENABLED then
@@ -1290,24 +955,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     -- =========================================================================
     -- 1. 如果是第一节车并且需要引导车，生成引导车 (Leader)
     if need_leader then
-        -- 计算位于前方的引导车坐标 (leadertrain_offset 已改为前方)
-        local leadertrain_pos = Util.add_offset(exit_portaldata.shell.position, geo.leadertrain_offset)
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_tp("正在创建引导车 (Leader)... 坐标偏移: x=" .. geo.leadertrain_offset.x .. ", y=" .. geo.leadertrain_offset.y)
-        end
-        local leadertrain = exit_portaldata.surface.create_entity({
-            name = "rift-rail-leader-train",
-            position = leadertrain_pos,
-            direction = geo.direction,
-            force = new_car.force,
-        })
-        if leadertrain then
-            leadertrain.destructible = false
-            exit_portaldata.leadertrain = leadertrain
-            if RiftRail.DEBUG_MODE_ENABLED then
-                log_tp("引导车创建成功 ID: " .. leadertrain.unit_number)
-            end
-        end
+        spawn_leader_train(exit_portaldata, geo, new_car.force)
     end
 
     -- =========================================================================
@@ -1470,7 +1118,7 @@ function Teleport.maintain_exit_speed(portaldata)
     -- 获取或计算纯物理几何的推离方向（算一次管一节）
     local phys_sign = exit_portaldata.cached_speed_sign
     if not phys_sign then
-        phys_sign = calculate_speed_sign(train_exit, exit_portaldata)
+        phys_sign = Math.calculate_speed_sign(train_exit, exit_portaldata)
         exit_portaldata.cached_speed_sign = phys_sign
     end
 
@@ -1488,7 +1136,7 @@ function Teleport.maintain_exit_speed(portaldata)
 
         -- 2. 【昂贵层】检查列车意图是否已改变 (玩家修改了时刻表 / 第一次生成)
         if current_destination ~= exit_portaldata.cached_destination_stop then
-            exit_portaldata.cached_intent_vector = get_ai_intent_vector(train_exit)
+            exit_portaldata.cached_intent_vector = Math.get_ai_intent_vector(train_exit)
             exit_portaldata.cached_destination_stop = current_destination
             exit_portaldata.cached_exit_drive_sign = nil -- 强制重算符号
         end
@@ -1497,7 +1145,7 @@ function Teleport.maintain_exit_speed(portaldata)
         local required_sign = exit_portaldata.cached_exit_drive_sign
         if not required_sign then
             -- 仅在缓存为空时 (首次、每次拼接后、或时刻表改变后) 执行简单的点积
-            required_sign = calculate_sign_from_intent(train_exit, exit_portaldata.cached_intent_vector, exit_portaldata)
+            required_sign = Math.calculate_sign_from_intent(train_exit, exit_portaldata.cached_intent_vector, exit_portaldata)
             exit_portaldata.cached_exit_drive_sign = required_sign
         end
 
@@ -1517,7 +1165,7 @@ local function process_rebuild_collider(portaldata)
     end
 
     -- 1. 查表获取偏移
-    local geo = GEOMETRY[portaldata.shell.direction] or GEOMETRY[0]
+    local geo = Math.GEOMETRY[portaldata.shell.direction] or Math.GEOMETRY[0]
 
     -- 2. 计算绝对坐标
     local final_pos = Util.add_offset(portaldata.shell.position, geo.collider_offset)
@@ -1599,6 +1247,69 @@ local function process_teleport_sequence(portaldata, tick)
 
 end
 -- =================================================================================
+-- 专门用于清理出口互斥锁的辅助函数
+-- =================================================================================
+--- 释放死锁保护期间占用的出口记录
+---@param portaldata PortalData 入口层传送门数据
+local function release_exit_lock(portaldata)
+    local exit_id = portaldata.locked_exit_unit_number
+    local exit_portal = exit_id and State.get_portaldata_by_unit_number(exit_id)
+    if exit_portal and exit_portal.locking_entry_id == portaldata.unit_number then
+        exit_portal.locking_entry_id = nil
+    end
+    portaldata.locked_exit_unit_number = nil
+end
+
+-- =================================================================================
+-- 单个活动传送门的处理 (供 GC 和任务调度使用)
+-- =================================================================================
+--- 独立处理每个活跃的传送门，消除 else 层级
+---@param portaldata PortalData 当前迭代的传送门数据
+---@param list table 活跃传送门列表 storage.active_teleporter_list
+---@param i integer 当前传送门在列表中的索引（倒序剔除用）
+---@param tick integer 当前游戏 tick
+local function process_active_portal(portaldata, list, i, tick)
+    -- 顶层判断：数据无效直接清理
+    if not (portaldata and portaldata.shell and portaldata.shell.valid) then
+        if portaldata and portaldata.unit_number then
+            release_exit_lock(portaldata)
+            storage.active_teleporters[portaldata.unit_number] = nil
+        end
+        table.remove(list, i)
+        return
+    end
+
+    -- === 任务调度区 ===
+    local state = portaldata.state
+
+    if state == Teleport.STATE.REBUILDING then
+        -- 1. 重建碰撞器任务
+        process_rebuild_collider(portaldata)
+    end
+
+    if state == Teleport.STATE.TELEPORTING then
+        -- 2. 传送任务
+        process_teleport_sequence(portaldata, tick)
+        -- 动力同步需持续进行 (再次检查状态防止序列刚结束)
+        if portaldata.state == Teleport.STATE.TELEPORTING then
+            Teleport.maintain_exit_speed(portaldata)
+        end
+    end
+
+    if state == Teleport.STATE.QUEUED then
+        -- 3. 排队任务
+        process_waiting_logic(portaldata)
+    end
+
+    -- 4. 垃圾回收 (GC)
+    -- 如果所有任务都空闲，移出活跃列表
+    if portaldata.state == Teleport.STATE.DORMANT then
+        storage.active_teleporters[portaldata.unit_number] = nil
+        table.remove(list, i)
+    end
+end
+
+-- =================================================================================
 -- Tick 调度 (GC 优化版)
 -- =================================================================================
 ---@param event EventData tick事件 / Tick event
@@ -1606,52 +1317,7 @@ function Teleport.on_tick(event)
     local list = storage.active_teleporter_list or {}
 
     for i = #list, 1, -1 do
-        local portaldata = list[i]
-
-        -- 顶层判断：数据无效直接清理
-        if not (portaldata and portaldata.shell and portaldata.shell.valid) then
-            if portaldata and portaldata.unit_number then
-                local locked_exit_unit_number = portaldata.locked_exit_unit_number
-                if locked_exit_unit_number then
-                    local exit_portaldata = State.get_portaldata_by_unit_number(locked_exit_unit_number)
-                    if exit_portaldata and exit_portaldata.locking_entry_id == portaldata.unit_number then
-                        exit_portaldata.locking_entry_id = nil
-                    end
-                    portaldata.locked_exit_unit_number = nil
-                end
-                storage.active_teleporters[portaldata.unit_number] = nil
-            end
-            table.remove(list, i)
-        else
-            -- === 任务调度区 ===
-            local state = portaldata.state
-
-            if state == Teleport.STATE.REBUILDING then
-                -- 1. 重建碰撞器任务
-                process_rebuild_collider(portaldata)
-            end
-
-            if state == Teleport.STATE.TELEPORTING then
-                -- 2. 传送任务
-                process_teleport_sequence(portaldata, event.tick)
-                -- 动力同步需持续进行 (再次检查状态防止序列刚结束)
-                if portaldata.state == Teleport.STATE.TELEPORTING then
-                    Teleport.maintain_exit_speed(portaldata)
-                end
-            end
-
-            if state == Teleport.STATE.QUEUED then
-                -- 3. 排队任务
-                process_waiting_logic(portaldata)
-            end
-
-            -- 4. 垃圾回收 (GC)
-            -- 如果所有任务都空闲，移出活跃列表
-            if portaldata.state == Teleport.STATE.DORMANT then
-                storage.active_teleporters[portaldata.unit_number] = nil
-                table.remove(list, i)
-            end
-        end
+        process_active_portal(list[i], list, i, event.tick)
     end
 end
 
