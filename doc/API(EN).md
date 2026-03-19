@@ -55,9 +55,10 @@ The event table includes the following fields:
 *   `source_surface_index`: [number] The index of the source surface.
 
 #### `TrainTeleportTransfer`
-*Trigger timing: Fired at the exact microsecond the first new carriage is cloned at the destination, and the old carriage has not yet been destroyed. This event is specifically designed for logistics mods (like LTN/Cybersyn) to seamlessly assign deliveries from the old train ID to the new train ID in the same tick. To prioritize extreme performance and minimum GC overhead, this event solely passes the IDs of the two train entities.*
+*Trigger timing: Fired at the exact microsecond the first new carriage is cloned at the destination, and the old carriage has not yet been destroyed. This event is specifically designed for logistics mods (like LTN/Cybersyn) to seamlessly assign deliveries from the old train ID to the new train ID in the same tick. To satisfy fundamental API constraints of third-party logistics mods, this event provides both IDs and the actual new train entity object.*
 *   `old_train_id`: [number] The ID of the complete old train.
 *   `new_train_id`: [number] The ID of the newly created train at the destination (containing only the first carriage).
+*   `new_train`: [LuaTrain] The newly created train entity object at the destination.
 
 #### `TrainArrived`
 *   `train`: [LuaTrain] The complete, newly created train entity.

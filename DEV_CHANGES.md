@@ -14,6 +14,7 @@
 - 还原 `TrainDeparting` 事件：将其改回至传送会话阶段初始化（`initialize_teleport_session`）时触发。此时列车结构完好，方便外围通用模组执行清空车站、清理信号等逻辑，且不再附带 `new_train` 参数。
 - 引入全新 `TrainTeleportTransfer` 事件：精确定位于出口第一节新车厢刚刚克隆生成、且入口原车厢尚未被销毁的微秒级瞬间触发。该事件专为对接移交设计，且去除了由于传递实体对象带来的 GC 性能开销，仅传递 `old_train_id` 和 `new_train_id` 确保无损转移数据。
 - **LTN 兼容适配**：更新 LTN 模块监听路由，将其对接至新事件 `TrainTeleportTransfer`，彻底完成物流网络对接并维持零硬编码。
+- **LTN 兼容热修复**：修正了 `TrainTeleportTransfer` 事件载荷。在原有仅下发 ID 的基础上，重新补充下发了 `new_train`（LuaTrain 实体本身），以严格符合 LTN 官方 API `reassign_delivery` 要求传入实体对象参数的约束要求。
 - **API 文档更新**：增补对 `TrainTeleportTransfer` 的中英双语开发文档及相应的远程调用 `remote.call` 获取接口。
 
 ### 具体改动

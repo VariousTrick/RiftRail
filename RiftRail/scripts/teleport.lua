@@ -41,15 +41,16 @@ local function raise_departing_event(entry_portaldata, train_to_depart)
 end
 
 --- 负责触发“传送开始”事件 (给需要交接 ID 的 LTN 专属环节使用)
----@see doc/API(CN).md#remote.call("RiftRail", "get_train_teleport_started_event")
+---@see doc/API(CN).md#remote.call("RiftRail", "get_train_teleport_transfer_event")
 ---@see doc/API(EN).md#How-to-Get-Rift-Rail-Custom-Event-IDs
-local function raise_teleport_transfer_event(old_train_id, new_train_id)
+local function raise_teleport_transfer_event(old_train_id, new_train)
     if not Events or not Events.TrainTeleportTransfer then
         return
     end
     script.raise_event(Events.TrainTeleportTransfer, {
         old_train_id = old_train_id,
-        new_train_id = new_train_id
+        new_train_id = new_train.id,
+        new_train = new_train
     })
 end
 
@@ -931,8 +932,8 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         -- 3. 保存新火车的时刻表索引 (解决重置问题)
         -- copy_schedule 内部已经调用了 go_to_station，所以现在的 current 是正确的下一站
 
-        -- 新旧实体物理交接完毕，触发移交事件（仅传递ID以减少GC积压）
-        raise_teleport_transfer_event(car.train.id, new_car.train.id)
+        -- 新旧实体物理交接完毕，触发移交事件（除了传递ID，必须传递 new_train 实体供 LTN 使用）
+        raise_teleport_transfer_event(car.train.id, new_car.train)
     end
 
     -- 立即恢复查看这节车厢的玩家界面
