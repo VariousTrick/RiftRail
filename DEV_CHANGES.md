@@ -6,9 +6,10 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
-## 2026-03-19（v0.12.3 开发中：传送事件重构与LTN兼容优化）
+## 2026-03-19（v0.13.0 开发中：传送事件重构与LTN兼容优化）
 
 ### 改动摘要
+- **全量无状态零拷贝（Zero-Copy）克隆架构**：完全废弃并删除了原代码中的 `create_entity` 及其附带的冗长属性搬运（`util.lua` 中的背包、燃烧室、装备网格等全部清空），现针对所有角度铁轨（包含平行与90度折角）采用基于纯数学演算预测引擎倾向的大一统方案，进行100%覆盖的原生高速深拷贝克隆。
 - **传送事件生命周期解耦**：将列车离站（`TrainDeparting`）与列车跨地表物理移交（`TrainTeleportTransfer`）的事件触发点分离。
 - 还原 `TrainDeparting` 事件：将其改回至传送会话阶段初始化（`initialize_teleport_session`）时触发。此时列车结构完好，方便外围通用模组执行清空车站、清理信号等逻辑，且不再附带 `new_train` 参数。
 - 引入全新 `TrainTeleportTransfer` 事件：精确定位于出口第一节新车厢刚刚克隆生成、且入口原车厢尚未被销毁的微秒级瞬间触发。该事件专为对接移交设计，且去除了由于传递实体对象带来的 GC 性能开销，仅传递 `old_train_id` 和 `new_train_id` 确保无损转移数据。
@@ -29,7 +30,7 @@
 - `RiftRail/doc/API(CN|EN).md`
   - 完善 `TrainDeparting` 和 `TrainTeleportTransfer` 事件信息与生命周期说明。
 
-## 2026-03-18（v0.12.3 开发中：传送门核心逻辑深度瘦身与代码展平）
+## 2026-03-18（v0.13.0 开发中：传送门核心逻辑深度瘦身与代码展平）
 - **修复跨状态死锁漏洞**：修复了正在传送的列车因碾碎全局重建生成的碰撞器而触发 `on_collider_died` 事件，导致传送门状态意外降级并引发锁泄漏的逻辑漏洞。
 - **模块结构归档**：在 `scripts` 下新建 `teleport_system` 目录，将抽离出的附加子模块（如数学与工厂逻辑）集中归档，保障代码树整洁。
 - **模块化重构**：将臃肿的 `teleport.lua` 拆分为三层架构：主控制总线 (`teleport`)、物理几何算法 (`teleport_system/teleport_math`) 以及实体生成工厂 (`teleport_system/teleport_factory`)，实现性能无损解耦。
@@ -53,7 +54,7 @@
 - `RiftRail/control.lua`
   - 同步更新传送门扩展模块的载入路径与依赖注入。
 
-## 2026-03-17（v0.12.3 开发中：传送核心状态机重构）
+## 2026-03-17（v0.13.0 开发中：传送核心状态机重构）
 
 ### 改动摘要
 - 彻底淘汰了基于多个布尔值（`is_teleporting`, `collider_needs_rebuild`）的"瀑布流"隐式状态判断，改为使用结构化的四态枚举状态机。

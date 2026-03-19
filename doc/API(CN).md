@@ -11,7 +11,7 @@
 
 ## 事件监听建议与自定义事件说明
 
-Rift Rail 在不同传送实现下会分别触发 Factorio 的 `on_built_entity` 和 `on_entity_cloned` 标准事件：
+Rift Rail 传送时会触发 Factorio 的 `on_entity_cloned` 标准事件：
 
 - 这两类事件会为每一节新生成的车厢单独触发，适合需要逐节处理列车数据的场景。
 
@@ -19,7 +19,7 @@ Rift Rail 在不同传送实现下会分别触发 Factorio 的 `on_built_entity`
 
 ### 监听方式建议
 
-- 需要逐节车厢详细数据 → 监听标准事件（on_built_entity/on_entity_cloned）
+- 需要逐节车厢详细数据 → 监听标准事件（on_entity_cloned）
 - 需要整体传送信息或跨模组交互 → 监听 Rift Rail 自定义事件
 - 也可以两者同时监听，获得最完整的兼容性和信息
 

@@ -1,5 +1,5 @@
 ---------------------------------------------------------------------------------------------------
-Version: 0.12.3
+Version: 0.13.0
 Date: 2026-03-19
   [EN]:
     - Refactored the teleport event lifecycle: Reverted the `TrainDeparting` event to fire at the beginning of the teleport session, and introduced a new `TrainTeleportTransfer` event that fires exactly when the first carriage is cloned at the destination.

@@ -11,7 +11,7 @@ This means any variable or data table directly referencing the old train entity 
 
 ## Event Listening Recommendations & Custom Events
 
-Rift Rail triggers Factorio's standard `on_built_entity` and `on_entity_cloned` events depending on the teleportation method:
+Rift Rail triggers Factorio's standard `on_entity_cloned` event during teleportation:
 
 - These events are fired for each new carriage created, making them suitable for mods that need to process individual carriages.
 
@@ -19,7 +19,7 @@ Additionally, Rift Rail fires custom events at the start and end of a full train
 
 ### Listening Strategy
 
-- Need per-carriage details? → Listen to standard events (`on_built_entity`/`on_entity_cloned`)
+- Need per-carriage details? → Listen to standard events (`on_entity_cloned`)
 - Need whole-train or cross-mod info? → Listen to Rift Rail custom events
 - For maximum compatibility, you may listen to both
 
