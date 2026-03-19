@@ -54,9 +54,10 @@ remote.call("RiftRail", "get_train_arrived_event")
 *   `source_surface_index`: [number] 出发地表的索引。
 
 #### `TrainTeleportTransfer`
-*触发时机：出口第一节新车厢刚刚克隆生成、且入口原车厢尚未被销毁的微秒级瞬间触发。该事件专为外部物流模组（如 LTN/Cybersyn）设计，用于在同一帧内完成新旧列车 ID 的发货单接管。为了极致的性能与最小的 GC 开销，本事件仅传递新老列车的 ID。*
+*触发时机：出口第一节新车厢刚刚克隆生成、且入口原车厢尚未被销毁的微秒级瞬间触发。该事件专为外部物流模组（如 LTN/Cybersyn）设计，用于在同一帧内完成新旧列车 ID 的发货单接管。为满足相关模组底层调用约束，本事件不仅传递新老列车的 ID，也特别提供了新生成的列车实体对象。*
 *   `old_train_id`: [number] 完整的旧列车 ID。
 *   `new_train_id`: [number] 刚刚在出口生成的新列车（此时仅包含首节车厢）的 ID。
+*   `new_train`: [LuaTrain] 刚刚在出口生成的新列车实体对象。
 
 #### `TrainArrived`
 *   `train`: [LuaTrain] 完整的、刚刚形成的新列车实体。

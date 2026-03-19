@@ -1026,15 +1026,15 @@ local function logic_reassign(new_train, old_id)
 end
 
 -- 策略分发
--- 默认事件处理器为空
-function LTN.on_train_teleport_started(event)
+-- 处理自定义的传送交接事件 (在两车共存的唯一一帧执行)
+function LTN.on_train_teleport_transfer(event)
     -- 我们永远自己在黄金微秒亲自重指派，无视第三方胶水模组
-    -- event.new_train 是新车，event.train_id 是老车ID
-    logic_reassign(event.new_train, event.train_id)
+    -- 我们必须向 LTN 提供 new_train 的 Lua 引用，否则 reassign_delivery 无法执行
+    logic_reassign(event.new_train, event.old_train_id)
 end
 
 if RiftRail.DEBUG_MODE_ENABLED then
-    ltn_log("LTN兼容模式: 启用基于 TrainTeleportStarted 事件的极速重指派")
+    ltn_log("LTN兼容模式: 启用基于 TrainTeleportTransfer 事件的极速重指派")
 end
 
 -- ============================================================================
