@@ -17,6 +17,7 @@ end)
 RiftRail = {} -- 创建一个全局可访问的表
 RiftRail.Events = RiftRail.Events or {}
 RiftRail.Events.TrainDeparting = script.generate_event_name()
+RiftRail.Events.TrainTeleportTransfer = script.generate_event_name()
 RiftRail.Events.TrainArrived = script.generate_event_name()
 
 -- 将调试开关挂载到全局表上
@@ -301,9 +302,13 @@ end)
 
 
 script.on_event(RiftRail.Events.TrainDeparting, function(event)
-    -- ltn 事件通知
-    if LTN and LTN.on_train_departing then
-        LTN.on_train_departing(event)
+    -- 预留的通用“列车离站”事件，第三方模组可在此处挂载离站状态清理逻辑
+end)
+
+script.on_event(RiftRail.Events.TrainTeleportTransfer, function(event)
+    -- ltn 专属兼容：在此阶段进行任务的极速接管，避免出现物流状态丢失
+    if LTN and LTN.on_train_teleport_transfer then
+        LTN.on_train_teleport_transfer(event)
     end
 end)
 

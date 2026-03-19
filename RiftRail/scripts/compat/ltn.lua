@@ -1027,14 +1027,14 @@ end
 
 -- 策略分发
 -- 默认事件处理器为空
-function LTN.on_train_departing(event)
+function LTN.on_train_teleport_started(event)
     -- 我们永远自己在黄金微秒亲自重指派，无视第三方胶水模组
     -- event.new_train 是新车，event.train_id 是老车ID
     logic_reassign(event.new_train, event.train_id)
 end
 
 if RiftRail.DEBUG_MODE_ENABLED then
-    ltn_log("LTN兼容模式: 启用基于 TrainDeparting 事件的极速重指派")
+    ltn_log("LTN兼容模式: 启用基于 TrainTeleportStarted 事件的极速重指派")
 end
 
 -- ============================================================================

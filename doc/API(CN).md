@@ -11,7 +11,7 @@
 
 ## 事件监听建议与自定义事件说明
 
-Rift Rail 在不同传送实现下会分别触发 Factorio 的 `on_built_entity` 和 `on_entity_cloned` 标准事件：
+Rift Rail 传送时会触发 Factorio 的 `on_entity_cloned` 标准事件：
 
 - 这两类事件会为每一节新生成的车厢单独触发，适合需要逐节处理列车数据的场景。
 
@@ -19,7 +19,7 @@ Rift Rail 在不同传送实现下会分别触发 Factorio 的 `on_built_entity`
 
 ### 监听方式建议
 
-- 需要逐节车厢详细数据 → 监听标准事件（on_built_entity/on_entity_cloned）
+- 需要逐节车厢详细数据 → 监听标准事件（on_entity_cloned）
 - 需要整体传送信息或跨模组交互 → 监听 Rift Rail 自定义事件
 - 也可以两者同时监听，获得最完整的兼容性和信息
 
@@ -30,6 +30,9 @@ Rift Rail 在不同传送实现下会分别触发 Factorio 的 `on_built_entity`
 ```lua
 -- 获取“列车开始传送”事件ID
 remote.call("RiftRail", "get_train_departing_event")
+
+-- 获取“列车传送移交”事件ID
+remote.call("RiftRail", "get_train_teleport_transfer_event")
 
 -- 获取“列车传送完成”事件ID
 remote.call("RiftRail", "get_train_arrived_event")
@@ -42,15 +45,18 @@ remote.call("RiftRail", "get_train_arrived_event")
 事件参数为 table，常见字段如下：
 
 #### `TrainDeparting`
-*触发时机：列车第一节车厢刚刚在出口克隆生成，且入口的原车厢尚未被销毁的瞬间。此时新旧列车实体同时存在，非常适合用于物流网络、运单状态的无损移交。*
+*触发时机：传送会话启动，列车被入口传送门锁定准备传送时触发。此时列车本体完好无损，适合通用模组清空车站状态。*
 *   `train`: [LuaTrain] 完整的旧列车实体。
 *   `train_id`: [number] 旧列车的ID。
-*   `new_train`: [LuaTrain] 刚刚在出口生成的新列车实体（此时仅包含第一节车厢）。
-*   `new_train_id`: [number] 新列车的ID。
 *   `source_teleporter`: [LuaEntity] 出发传送门实体。
 *   `source_teleporter_id`: [number] 出发传送门的ID。
 *   `source_surface`: [LuaSurface] 出发地表。
 *   `source_surface_index`: [number] 出发地表的索引。
+
+#### `TrainTeleportTransfer`
+*触发时机：出口第一节新车厢刚刚克隆生成、且入口原车厢尚未被销毁的微秒级瞬间触发。该事件专为外部物流模组（如 LTN/Cybersyn）设计，用于在同一帧内完成新旧列车 ID 的发货单接管。为了极致的性能与最小的 GC 开销，本事件仅传递新老列车的 ID。*
+*   `old_train_id`: [number] 完整的旧列车 ID。
+*   `new_train_id`: [number] 刚刚在出口生成的新列车（此时仅包含首节车厢）的 ID。
 
 #### `TrainArrived`
 *   `train`: [LuaTrain] 完整的、刚刚形成的新列车实体。

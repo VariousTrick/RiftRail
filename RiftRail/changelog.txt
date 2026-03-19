@@ -1,7 +1,13 @@
 ---------------------------------------------------------------------------------------------------
-Version: 0.12.3
-Date: 2026-03-17
+Version: 0.13.0
+Date: 2026-03-19
+  [EN]:
+    - Refactored the teleport event lifecycle: Reverted the `TrainDeparting` event to fire at the beginning of the teleport session, and introduced a new `TrainTeleportTransfer` event that fires exactly when the first carriage is cloned at the destination.
+    - This separation allows logistics mods (like LTN/Cybersyn) to seamlessly hand over deliveries during the `TrainTeleportTransfer` window while providing a clean `TrainDeparting` window for general station-clearing logic. In addition, `TrainTeleportTransfer` passes only minimum IDs to save GC footprint.
+    - Adapted LTN compatibility completely to the new event structure.
+    - Added API endpoints for general mod usage and documented them in `API(EN).md` and `API(CN).md`.
   Major Changes:
+    - 传送事件生命周期解耦：将列车离站（`TrainDeparting`）与跨地表物流实体移交（`TrainTeleportTransfer`）的触发点分离，使得各种不同的物流模组在最准确的微秒级窗口接管运单，提供高度兼容性。且 `TrainTeleportTransfer` 只传递 ID 无多余数据以消除性能及回收负担。
     - 传送核心状态机重构：彻底淘汰了基于多个布尔值（如 is_teleporting, collider_needs_rebuild, waiting_car）的“瀑布流”隐式状态判断，改为使用结构化、唯一的枚举状态机（DORMANT, QUEUED, TELEPORTING, REBUILDING）。
   Performance:
     - 状态机重构消除了多处冗余的条件分支，使核心 tick 调度逻辑的执行路径更加清晰且性能微幅提升。
