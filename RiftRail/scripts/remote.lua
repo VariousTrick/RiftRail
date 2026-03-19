@@ -27,6 +27,9 @@ function Remote.init(params)
         get_train_departing_event = function()
             return RiftRail.Events.TrainDeparting
         end,
+        get_train_teleport_transfer_event = function()
+            return RiftRail.Events.TrainTeleportTransfer
+        end,
         get_train_arrived_event = function()
             return RiftRail.Events.TrainArrived
         end,

@@ -31,6 +31,9 @@ Use remote.call to get the event IDs:
 -- Get the "train departing" event ID
 remote.call("RiftRail", "get_train_departing_event")
 
+-- Get the "train teleport transfer" event ID
+remote.call("RiftRail", "get_train_teleport_transfer_event")
+
 -- Get the "train arrived" event ID
 remote.call("RiftRail", "get_train_arrived_event")
 ```
@@ -43,15 +46,18 @@ Once you have the event ID, use script.on_event to listen for it.
 The event table includes the following fields:
 
 #### `TrainDeparting`
-*Trigger timing: Fired at the exact moment the first carriage is cloned at the destination, but BEFORE the old carriage is destroyed. Both old and new train entities exist simultaneously during this tick, making it ideal for seamlessly transferring logistics network deliveries or train states.*
-*   `train`: [LuaTrain] The complete, soon-to-be teleported old train entity.
+*Trigger timing: Fired at the moment the teleport session is initialized and the portal locking sequence begins. The train is still completely intact in the entry portal. Ideal for general mods to clear station logic as the train begins its departure.*
+*   `train`: [LuaTrain] The complete old train entity.
 *   `train_id`: [number] The ID of the old train.
-*   `new_train`: [LuaTrain] **[New/Key]** The newly created train entity at the destination (contains only the first carriage at this moment).
-*   `new_train_id`: [number] The ID of the new train.
 *   `source_teleporter`: [LuaEntity] The source teleporter entity.
 *   `source_teleporter_id`: [number] The ID of the source teleporter.
 *   `source_surface`: [LuaSurface] The source surface.
 *   `source_surface_index`: [number] The index of the source surface.
+
+#### `TrainTeleportTransfer`
+*Trigger timing: Fired at the exact microsecond the first new carriage is cloned at the destination, and the old carriage has not yet been destroyed. This event is specifically designed for logistics mods (like LTN/Cybersyn) to seamlessly assign deliveries from the old train ID to the new train ID in the same tick. To prioritize extreme performance and minimum GC overhead, this event solely passes the IDs of the two train entities.*
+*   `old_train_id`: [number] The ID of the complete old train.
+*   `new_train_id`: [number] The ID of the newly created train at the destination (containing only the first carriage).
 
 #### `TrainArrived`
 *   `train`: [LuaTrain] The complete, newly created train entity.
