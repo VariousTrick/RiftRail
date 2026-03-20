@@ -74,10 +74,8 @@ local function raise_arrived_event(entry_portaldata, exit_portaldata, final_trai
         train = final_train,
         train_id = final_train.id,
         old_train_id = exit_portaldata.old_train_id,
-
         source_surface = entry_surface,
         source_surface_index = entry_surface.index,
-
         destination_teleporter = exit_shell,
         destination_teleporter_id = exit_shell.unit_number,
         destination_surface = exit_surface,
@@ -263,8 +261,7 @@ local function collect_gui_watchers(train)
         end
     end
 
-    -- 【关键修改】如果表是空的，返回 nil，而不是空表
-    -- next(map) 是 Lua 判断表是否为空最高效的方法
+    -- 如果表是空的，返回 nil，而不是空表
     if next(map) == nil then
         return nil
     end
@@ -314,7 +311,8 @@ local function apply_entry_pulse(entry_portaldata, exit_portaldata)
     end
 
     -- 1. 获取目标速度大小
-    local target_speed = (exit_portaldata and exit_portaldata.cached_teleport_speed) or settings.global["rift-rail-teleport-speed"].value
+    local target_speed = (exit_portaldata and exit_portaldata.cached_teleport_speed) or
+    settings.global["rift-rail-teleport-speed"].value
 
     -- 2. 重新计算当前入口列车应该进入入口的方向（正向/反向），并将其转化为速度符号
     local entry_sign = -1 * Math.calculate_speed_sign(train, entry_portaldata)
@@ -326,9 +324,6 @@ local function apply_entry_pulse(entry_portaldata, exit_portaldata)
         log_tp("入口脉冲已施加: 速度=" .. train.speed)
     end
 end
-
--- 车厢生成工厂函数（transfer_driver、spawn_via_clone、spawn_cloned_car、spawn_next_car_intelligently）
--- 已迁移至 scripts/teleport_system/teleport_factory.lua (TeleportFactory)
 
 -- =================================================================================
 -- 【辅助函数】确保几何数据缓存有效 (去重逻辑)
@@ -573,9 +568,6 @@ local function initialize_teleport_session(entry_portal, exit_portal)
 
     -- 触发“出发”事件
     raise_departing_event(entry_portal, entry_portal.entry_car.train)
-    
-    -- 给予入口列车起步的脉冲推力
-    -- apply_entry_pulse(entry_portal, exit_portal)
 end
 
 -- 排队逻辑处理器
@@ -711,7 +703,7 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         exit_portaldata.cached_destination_stop = nil -- 清理缓存的目的地站点数据
         exit_portaldata.cached_intent_vector = nil    -- 清理缓存的意图向量
     end
-    
+
     if entry_portaldata then
         entry_portaldata.entry_car = nil               -- 清理入口车厢引用，防止 on_tick 中的过期访问
         entry_portaldata.exit_car = nil                -- 清理入口侧“上一节已生成替身”标记，供下一次会话重新判定首节
@@ -720,7 +712,7 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         entry_portaldata.restored_guis = nil           -- 阅后即焚，清理恢复名单
         entry_portaldata.placement_interval = nil      -- 清理入口放置间隔缓存（process_teleport_sequence 读取入口侧）
         entry_portaldata.cached_entry_radius = nil     -- 清除外接圆半径缓存
-    
+
     -- 6. 标记需要重建入口碰撞器
     -- 我们不在这里直接创建，而是交给 on_tick 去计算正确的坐标并创建
         entry_portaldata.state = Teleport.STATE.REBUILDING
@@ -887,9 +879,8 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     local old_car_id = car.unit_number
 
     -- =========================================================================
-    -- 【动态克隆决策】根据入口和出口的朝向决定使用哪种生成方式
+    -- 根据入口和出口的朝向决定使用哪种生成方式
     -- =========================================================================
-    -- 【调用我们的新“大脑”函数来完成所有复杂的创建决策】
     local new_car = Factory.spawn_next_car_intelligently(car, entry_portaldata, exit_portaldata, spawn_pos, geo)
 
     if not new_car then
@@ -908,18 +899,14 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     if not entry_portaldata.exit_car then
         -- 1. 获取带图标的真实站名 (解决比对失败问题)
         local real_station_name = get_real_station_name(entry_portaldata)
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_tp("时刻表转移: 使用真实站名 '" .. real_station_name .. "' 进行比对")
-        end
+
         -- 2. 转移时刻表
         Schedule.copy_schedule(car.train, new_car.train, real_station_name, exit_portaldata.saved_schedule_index, exit_portaldata.saved_manual_mode)
 
-        -- 关键修复: 在被引导车重置前，立刻备份正确的索引！
+        -- 在被引导车重置前，立刻备份正确的索引！
         if new_car.train and new_car.train.schedule then
             exit_portaldata.saved_schedule_index = new_car.train.schedule.current
         end
-        -- 3. 保存新火车的时刻表索引 (解决重置问题)
-        -- copy_schedule 内部已经调用了 go_to_station，所以现在的 current 是正确的下一站
 
         -- 新旧实体物理交接完毕，触发移交事件（除了传递ID，必须传递 new_train 实体供 LTN 使用）
         raise_teleport_transfer_event(car.train.id, new_car.train)
@@ -927,7 +914,6 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
 
     -- 立即恢复查看这节车厢的玩家界面
     if entry_portaldata.gui_map then
-        -- 查表：O(1) 复杂度
         local watchers = entry_portaldata.gui_map[old_car_id]
         if watchers then
             reopen_car_gui(watchers, new_car)
@@ -1042,18 +1028,6 @@ function Teleport.on_collider_died(event)
     if event.cause and event.cause.train then
         -- 如果是火车撞的，直接取肇事车厢
         car = event.cause
-    end
-    -- 否则搜索附近的火车车厢 (半径3)
-    if not car then
-        local cars = entity.surface.find_entities_filtered({
-            type = { "locomotive", "cargo-wagon", "fluid-wagon", "artillery-wagon" },
-            position = entity.position,
-            radius = 3,
-            limit = 1,
-        })
-        if cars[1] then
-            car = cars[1]
-        end
     end
 
     -- 3. 根据是否有车，决定下一步任务
