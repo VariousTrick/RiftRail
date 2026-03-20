@@ -62,3 +62,5 @@
 ---@field cached_intent_vector table|nil
 ---@field cached_entry_radius number|nil
 ---@field cached_exit_radius number|nil
+---@field last_car_name string|nil
+---@field last_car_radius number|nil
