@@ -99,6 +99,8 @@ local AwCompat = nil
 local Math = nil
 ---@type table
 local Factory = nil
+---@type table
+local TeleportUtils = nil
 
 -- 1. 定义一个空的日志函数占位符
 local log_debug = function(...) end
@@ -110,12 +112,11 @@ function Teleport.init(deps)
     Schedule = deps.Schedule
     Math = deps.Math
     Factory = deps.Factory
+    TeleportUtils = deps.TeleportUtils
     if deps.log_debug then
         log_debug = deps.log_debug
     end
-    -- 接收兼容模块
     AwCompat = deps.AwCompat
-    -- 接收事件ID表
     if deps.Events then
         Events = deps.Events
     end
@@ -128,41 +129,7 @@ local function log_tp(msg)
     end
 end
 
--- =================================================================================
--- 统一列车时刻表索引读取函数（直接读取真实指针）
--- =================================================================================
----@param train LuaTrain 要读取的列车 / The train to read
----@return integer|nil 当前时刻表索引 / Current schedule index
-local function read_train_schedule_index(train)
-    if not (train and train.valid) then
-        return nil
-    end
-
-    local schedule = train.schedule
-    if not schedule then
-        return nil
-    end
-
-    local records = schedule.records
-    if not records then
-        return nil
-    end
-
-    local current = schedule.current
-    if not current then
-        return nil
-    end
-
-    if type(records) ~= "table" or #records == 0 then
-        return nil
-    end
-
-    if type(current) ~= "number" or current < 1 or current > #records then
-        return nil
-    end
-
-    return current
-end
+-- read_train_schedule_index 已迁移至 scripts/teleport_system/teleport_utils.lua (TeleportUtils)
 
 -- GEOMETRY 常量已迁移至 scripts/teleport_system/teleport_math.lua (TeleportMath.GEOMETRY)
 
@@ -199,94 +166,9 @@ local list = storage.active_teleporter_list
     end
     table.insert(list, pos, portaldata)
 end
--- =================================================================================
--- 通用查找子实体函数
--- =================================================================================
----@param portaldata PortalData 传送门数据 / Portal data
----@param name_to_find string 要查找的实体名 / Entity name to find
----@return LuaEntity|nil 匹配的子实体 / Matched child entity
-local function find_child_entity(portaldata, name_to_find)
-    if not (portaldata and portaldata.children) then
-        return nil
-    end
-    for _, child_data in pairs(portaldata.children) do
-        local entity = child_data.entity
-        if entity and entity.valid and entity.name == name_to_find then
-            return entity
-        end
-    end
-    return nil
-end
--- =================================================================================
--- 辅助函数：从子实体中获取真实的车站名称 (带图标)
--- =================================================================================
----@param portaldata PortalData 传送门数据 / Portal data
----@return string 真实车站名称 / Real station name
-local function get_real_station_name(portaldata)
-    -- 适配 children 结构 {entity=..., relative_pos=...}
-    local station = find_child_entity(portaldata, "rift-rail-station")
-    if station then
-        return station.backer_name
-    end
-    return portaldata.name
-end
--- =================================================================================
--- 精准记录查看具体车厢的玩家（映射表模式）
--- =================================================================================
----@param train LuaTrain 要查找的列车 / The train to search
----@return table|nil 车厢ID到玩家列表映射 / Map<UnitNumber, Player[]>  { [carriage ID] = {PlayerA, PlayerB} }
-local function collect_gui_watchers(train)
-    local map = {}
+-- find_child_entity 已迁移至 scripts/teleport_system/teleport_utils.lua (TeleportUtils)
+-- get_real_station_name / collect_gui_watchers / reopen_car_gui 已迁移至 scripts/teleport_system/teleport_utils.lua (TeleportUtils)
 
-    if not settings.global["rift-rail-train-gui-track"].value then
-        return nil -- 如果功能被全局禁用，直接返回 nil
-    end
-
-    if not (train and train.valid) then
-        return nil
-    end
-
-    -- 遍历所有玩家，寻找正在查看该列车实体的玩家
-    for _, p in pairs(game.connected_players) do
-        local opened = p.opened
-        -- 仅处理 LuaEntity 类型（精准对应车厢），暂不处理 LuaTrain（时刻表）
-        if opened and opened.valid and opened.object_name == "LuaEntity" then
-            if opened.train == train then
-                local uid = opened.unit_number
-                if not map[uid] then
-                    map[uid] = {}
-                end
-                table.insert(map[uid], p)
-            end
-        end
-    end
-
-    -- 如果表是空的，返回 nil，而不是空表
-    if next(map) == nil then
-        return nil
-    end
-
-    return map
-end
--- =================================================================================
--- 精准恢复 GUI 到指定车厢实体
--- =================================================================================
-
----@param watchers table 玩家对象列表 / List of player objects
----@param entity LuaEntity 新生成的车厢实体 / Newly created carriage entity
-local function reopen_car_gui(watchers, entity)
-    -- 如果没人看这节车，或者实体无效，直接返回
-    if not (watchers and entity and entity.valid) then
-        return
-    end
-
-    for _, p in ipairs(watchers) do
-        if p.valid then
-            -- [关键] 立即将玩家界面重定向到新车厢
-            p.opened = entity
-        end
-    end
-end
 
 
 -- =========================================================================
@@ -386,7 +268,7 @@ local function get_entry_circuit_go_to_id(entry_portaldata)
         return nil
     end
 
-    local signal_source = find_child_entity(entry_portaldata, "rift-rail-station")
+    local signal_source = TeleportUtils.find_child_entity(entry_portaldata, "rift-rail-station")
     if not (signal_source and signal_source.valid) then
         signal_source = entry_portaldata.shell
     end
@@ -602,42 +484,7 @@ local function process_waiting_logic(portaldata)
     initialize_teleport_session(portaldata, exit_portal)
 end
 -- =================================================================================
--- 统一列车状态恢复函数
--- =================================================================================
----@param train LuaTrain 要恢复的列车 / Train to restore
----@param portaldata PortalData 传送门数据 / Portal data
----@param apply_speed boolean 是否恢复速度 / Whether to restore speed
----@param preferred_index integer|nil 优先恢复索引 / Preferred index
-local function restore_train_state(train, portaldata, apply_speed, preferred_index)
-    if not (train and train.valid) then
-        return
-    end
-
-    if RiftRail.DEBUG_MODE_ENABLED then
-        log_tp("状态恢复: TrainID=" .. train.id .. ", 恢复进度=" .. tostring(portaldata.saved_schedule_index ~= nil))
-    end
-
-    -- A. 恢复时刻表索引 (副作用：列车变为自动模式)
-    -- 优先使用传入的 preferred_index，其次使用 saved_schedule_index
-    local index_to_restore = preferred_index or portaldata.saved_schedule_index
-    if index_to_restore then
-        train.go_to_station(index_to_restore)
-    end
-
-    -- B. 恢复手动/自动模式
-    train.manual_mode = portaldata.saved_manual_mode or false
-
-    -- C. (可选) 恢复速度
-    if apply_speed then
-        local speed_mag = settings.global["rift-rail-teleport-speed"].value
-        local sign = Math.calculate_speed_sign(train, portaldata)
-        train.speed = speed_mag * sign
-
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_tp("状态恢复: 速度重置为 " .. train.speed)
-        end
-    end
-end
+-- restore_train_state 已迁移至 scripts/teleport_system/teleport_utils.lua (TeleportUtils)
 -- =================================================================================
 -- 核心传送逻辑
 -- =================================================================================
@@ -660,7 +507,7 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         if exit_portaldata.exit_car and exit_portaldata.exit_car.valid then
             final_train = exit_portaldata.exit_car.train
             if final_train and final_train.valid then
-                actual_index_before_cleanup = read_train_schedule_index(final_train)
+                actual_index_before_cleanup = TeleportUtils.read_train_schedule_index(final_train)
             end
         end
 
@@ -682,7 +529,7 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
                 log_tp("【销毁后】准备恢复: actual_index=" .. tostring(actual_index_before_cleanup) .. ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index))
             end
             -- 使用统一函数恢复状态 (参数 true 代表同时恢复速度)
-            restore_train_state(final_train, exit_portaldata, true, actual_index_before_cleanup)
+            TeleportUtils.restore_train_state(final_train, exit_portaldata, true, actual_index_before_cleanup)
 
             -- 触发“抵达”事件
             raise_arrived_event(entry_portaldata, exit_portaldata, final_train, entry_portaldata.restored_guis)
@@ -850,7 +697,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     -- 第一节车时记录正在查看该列车 GUI 的玩家
     if is_first_car and car.train then
         -- 构建 GUI 映射表，存入 entry_portaldata (因为要在传送循环中用)
-        entry_portaldata.gui_map = collect_gui_watchers(car.train)
+        entry_portaldata.gui_map = TeleportUtils.collect_gui_watchers(car.train)
     end
 
     -- 获取下一节车 (用于更新循环)
@@ -888,7 +735,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     if not is_first_car and exit_portaldata.exit_car and exit_portaldata.exit_car.valid then
         local current_train = exit_portaldata.exit_car.train
         if current_train and current_train.valid then
-            index_before_spawn = read_train_schedule_index(current_train)
+            index_before_spawn = TeleportUtils.read_train_schedule_index(current_train)
         end
     end
 
@@ -915,7 +762,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     -- 转移时刻表与保存索引
     if not entry_portaldata.exit_car then
         -- 1. 获取带图标的真实站名 (解决比对失败问题)
-        local real_station_name = get_real_station_name(entry_portaldata)
+        local real_station_name = TeleportUtils.get_real_station_name(entry_portaldata)
 
         -- 2. 转移时刻表
         Schedule.copy_schedule(car.train, new_car.train, real_station_name, exit_portaldata.saved_schedule_index, exit_portaldata.saved_manual_mode)
@@ -933,7 +780,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     if entry_portaldata.gui_map then
         local watchers = entry_portaldata.gui_map[old_car_id]
         if watchers then
-            reopen_car_gui(watchers, new_car)
+            TeleportUtils.reopen_car_gui(watchers, new_car)
 
             -- 记录成功恢复的玩家和对应的新车厢
             entry_portaldata.restored_guis = entry_portaldata.restored_guis or {}
@@ -979,7 +826,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
             if RiftRail.DEBUG_MODE_ENABLED then
                 log_tp("【创建后】准备恢复: index_before_spawn=" .. tostring(index_before_spawn) .. ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index) .. ", 使用target=" .. tostring(target_index))
             end
-            restore_train_state(merged_train, exit_portaldata, false, target_index)
+            TeleportUtils.restore_train_state(merged_train, exit_portaldata, false, target_index)
         end
     end
 
