@@ -208,25 +208,6 @@ local function apply_entry_pulse(entry_portaldata, exit_portaldata)
 end
 
 -- =================================================================================
--- 【辅助函数】确保几何数据缓存有效 (去重逻辑)
--- =================================================================================
----@param portaldata PortalData 传送门数据 / Portal data
----@return table|nil 有效的几何配置表 / Valid geometry config
-local function ensure_geometry_cache(portaldata)
-    if not (portaldata and portaldata.shell and portaldata.shell.valid) then
-        return nil
-    end
-
-    local geo = portaldata.cached_geo
-    -- 检查缓存是否存在，且包含最新的字段 check_area_rel
-    if not geo or not geo.check_area_rel then
-        geo = Math.GEOMETRY[portaldata.shell.direction] or Math.GEOMETRY[0]
-        portaldata.cached_geo = geo
-    end
-    return geo
-end
-
--- =================================================================================
 -- 辅助函数：从列车时刻表中读取目标ID信号 (riftrail-go-to-id)
 -- =================================================================================
 ---@param train LuaTrain 要读取的列车 / The train to read
@@ -624,6 +605,7 @@ end
 function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     -- 必须在 entry_portaldata.exit_car 被后续逻辑更新之前记录下来
     local is_first_car = (entry_portaldata.exit_car == nil)
+    local geo = Math.GEOMETRY[exit_portaldata.shell.direction] or Math.GEOMETRY[0]
 
     -- 安全检查
     if not (exit_portaldata and exit_portaldata.shell and exit_portaldata.shell.valid) then
@@ -645,11 +627,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     end
 
     -- 检查出口是否堵塞
-    -- 使用统一函数获取缓存
-    local geo = ensure_geometry_cache(exit_portaldata)
-    if not geo then
-        return
-    end -- 保护性检查
+    -- 检查出口是否堵塞
 
     -- 【极限优化】直接从缓存读取绝对世界坐标，0 计算，0 内存分配！
     local spawn_pos = exit_portaldata.cached_spawn_pos

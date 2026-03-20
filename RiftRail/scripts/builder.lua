@@ -5,6 +5,8 @@
 local Builder = {}
 ---@type StateModule
 local State = nil
+---@type table
+local TeleportMath = nil
 
 local log_debug = function() end
 
@@ -13,6 +15,7 @@ function Builder.init(deps)
     State = deps.State
     Logic = deps.Logic
     Util = deps.Util
+    TeleportMath = deps.TeleportMath
     if deps.log_debug then
         log_debug = deps.log_debug
     end
@@ -336,7 +339,7 @@ function Builder.on_built(event)
         end
     end
 
-    local cached_spawn, cached_area = Util.calculate_teleport_cache(shell.position, shell.direction)
+    local cached_spawn, cached_area = TeleportMath.calculate_teleport_cache(shell.position, shell.direction)
 
     storage.rift_rails[shell.unit_number] = {
         id = custom_id,
@@ -620,11 +623,11 @@ function Builder.on_cloned(event)
 
     -- 【核心修复】：克隆后，必须重新计算绝对坐标缓存！
     -- 假设你的 Builder.lua 顶部已经 require 了 "scripts.util" 并命名为 Util
-    local cached_spawn, cached_area = Util.calculate_teleport_cache(new_entity.position, new_entity.direction)
+    local cached_spawn, cached_area = TeleportMath.calculate_teleport_cache(new_entity.position, new_entity.direction)
     new_data.cached_spawn_pos = cached_spawn
     new_data.cached_check_area = cached_area
     -- 深拷贝会带出旧门的 can_place 查询表；克隆后强制失效，交给 teleport 懒加载重建
-    new_data.cached_place_query = nil
+
 
     -- 保存新数据，清理旧数据
     storage.rift_rails[new_unit_number] = new_data

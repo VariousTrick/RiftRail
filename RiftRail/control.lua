@@ -66,6 +66,7 @@ if Builder.init then
         State = State,
         Logic = Logic,
         Util = Util,
+        TeleportMath = TeleportMath,
     })
 end
 
@@ -89,7 +90,7 @@ if Schedule.init then
 end
 
 if Util.init then
-    Util.init({ log_debug = log_debug })
+    Util.init({ log_debug = log_debug, TeleportMath = TeleportMath })
 end
 
 if AWCompat and AWCompat.init then
@@ -148,6 +149,7 @@ if Migrations.init then
         log_debug = log_debug,
         LTN = LTN,
         Util = Util,
+        TeleportMath = TeleportMath,
     })
 end
 
