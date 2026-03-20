@@ -60,3 +60,5 @@
 ---@field cached_destination_stop LuaEntity|nil
 ---@field cached_exit_drive_sign integer|nil
 ---@field cached_intent_vector table|nil
+---@field cached_entry_radius number|nil
+---@field cached_exit_radius number|nil

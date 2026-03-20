@@ -737,9 +737,13 @@ end
 ---@param geo table 几何设置信息
 ---@param force LuaForce 新车厢的阵营
 local function spawn_leader_train(exit_portaldata, geo, force)
-    local leadertrain_pos = Util.add_offset(exit_portaldata.shell.position, geo.leadertrain_offset)
+    -- 通过刚刚克隆出来的新车外接圆半径，动态推算最完美的引导车挤压距离
+    local exit_radius = exit_portaldata.cached_exit_radius or 2.8
+    -- 使用静态的门朝向和动态的安全距离推导向量
+    local leader_offset = Math.get_dynamic_leader_offset(exit_portaldata.shell.direction, exit_radius)
+    local leadertrain_pos = Util.add_offset(exit_portaldata.shell.position, leader_offset)
     if RiftRail.DEBUG_MODE_ENABLED then
-        log_tp("正在创建引导车 (Leader)... 坐标偏移: x=" .. geo.leadertrain_offset.x .. ", y=" .. geo.leadertrain_offset.y)
+        log_tp("正在创建引导车 (Leader)... 动态坐标偏移: x=" .. leader_offset.x .. ", y=" .. leader_offset.y)
     end
     local leadertrain = exit_portaldata.surface.create_entity({
         name = "rift-rail-leader-train",
@@ -819,12 +823,12 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     end
 
     -- =========================================================================
-    -- 【核心优化区】零 GC 纯数学距离护盾碰撞检测
-    -- 替代原有高开销的 surface.can_place_entity 查询
+    -- 基于外接圆与重叠距离的刚体碰撞验证
+    -- 用于确认出生点坐标已经安全让出空间
     -- =========================================================================
     local entry_radius = entry_portaldata.cached_entry_radius or Math.get_carriage_radius(car)
     local exit_radius = exit_portaldata.cached_exit_radius or 2.8
-    
+
     if not Math.is_spawn_clear_math(spawn_pos, entry_radius, entry_portaldata.exit_car, exit_radius) then
         return -- 距离护盾未通过，等待前车驶离
     end
@@ -945,11 +949,9 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     car.destroy()
 
     -- 更新链表指针
-    entry_portaldata.exit_car = new_car -- 记录入口侧最近生成的出口替身（用于首节判定与流程状态）
-    exit_portaldata.exit_car = new_car  -- 记录出口的最前头 (用于拉动)
-    
-    -- 缓存刚组装新车的极限外接圆尺寸，供下一帧的安全碰撞判定
-    exit_portaldata.cached_exit_radius = Math.get_carriage_radius(new_car)
+    entry_portaldata.exit_car = new_car                                    -- 记录入口侧最近生成的出口替身（用于首节判定与流程状态）
+    exit_portaldata.exit_car = new_car                                     -- 记录出口的最前头 (用于拉动)
+    exit_portaldata.cached_exit_radius = Math.get_carriage_radius(new_car) -- 缓存刚组装新车的极限外接圆尺寸，供下一帧的安全碰撞判定
 
     -- 准备下一节
     -- =========================================================================
@@ -970,14 +972,10 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
             -- 在每次拼接后，清空方向和目的地的双重缓存
             -- 这将强制 maintain_exit_speed 在下一帧进行完整的重新验证和计算
             exit_portaldata.cached_exit_drive_sign = nil  -- 清理出口意图方向缓存
-            -- exit_portaldata.cached_destination_stop = nil -- 清理目的地站点缓存
-            -- exit_portaldata.cached_speed_sign = nil       -- 清理速度方向缓存
-
             local target_index = index_before_spawn or exit_portaldata.saved_schedule_index
             if RiftRail.DEBUG_MODE_ENABLED then
                 log_tp("【创建后】准备恢复: index_before_spawn=" .. tostring(index_before_spawn) .. ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index) .. ", 使用target=" .. tostring(target_index))
             end
-            
             restore_train_state(merged_train, exit_portaldata, false, target_index)
         end
     end
@@ -1194,7 +1192,6 @@ local function process_rebuild_collider(portaldata)
     if new_collider and portaldata.children then
 
         if new_collider.unit_number then
-            
             storage.collider_to_portal[new_collider.unit_number] = portaldata.unit_number
         end
 

@@ -210,11 +210,11 @@ function TeleportMath.calculate_arrival_orientation(entry_shell_dir, exit_geo_di
 end
 
 -- =================================================================================
--- 【新增】AABB 动静分离碰撞检测 (零 GC)
+-- 动静分离距离碰撞验证模块
 -- =================================================================================
---- 获取实体碰撞箱的“外接圆半径”用于二维碰撞判定缓存
----@param entity LuaEntity
----@return number radius 外界圆半径
+--- 获取实体碰撞箱的“外接圆半径”用于二维碰撞判定缓存 / Get the circumscribed circle radius of the entity collision box for 2D collision determination caching
+---@param entity LuaEntity 实体 / Entity
+---@return number radius 外界圆半径 / Circumscribed circle radius
 function TeleportMath.get_carriage_radius(entity)
 	if not (entity and entity.valid) then return 2.8 end -- 兜底，假定原版半长2.4，半宽0.6 -> 外接圆半径约2.47
 	local box = entity.bounding_box
@@ -231,13 +231,13 @@ function TeleportMath.get_carriage_radius(entity)
 	return math.sqrt(half_w * half_w + half_h * half_h)
 end
 
---- 纯 Lua 距离护盾判定前车是否让出了指定的出生点
+--- 纯 Lua 距离护盾判定前车是否让出了指定的出生点 / Pure Lua distance shield determines whether the front car has given way to the specified spawn position
 --- 摒弃了多余的 AABB 投影，直接使用外接圆模型：这是最严格的安全边界，彻底免疫出轨和弯道旋转
----@param spawn_pos table 出生点坐标 {x, y}
----@param entry_radius number 新车外接圆半径
----@param exit_car LuaEntity 已经生成的出口前车
----@param exit_radius number 前车外接圆半径
----@return boolean 是否安全可生成
+---@param spawn_pos table 出生点坐标 / Spawn position {x, y}
+---@param entry_radius number 新车外接圆半径 / New car circumscribed circle radius
+---@param exit_car LuaEntity 已经生成的出口前车 / Already generated exit front car
+---@param exit_radius number 前车外接圆半径 / Front car circumscribed circle radius
+---@return boolean 是否安全可生成 / Is it safe to spawn
 function TeleportMath.is_spawn_clear_math(spawn_pos, entry_radius, exit_car, exit_radius)
 	if not (exit_car and exit_car.valid) then
 		return true -- 前车已经脱节或销毁，判定为绝对安全
@@ -252,6 +252,33 @@ function TeleportMath.is_spawn_clear_math(spawn_pos, entry_radius, exit_car, exi
 	local safe_dist = entry_radius + exit_radius + 0.1 -- 0.1格微小间隙容差
 	
 	return dist_sq >= (safe_dist * safe_dist)
+end
+
+--- 动态计算引导车的挤压滑脱生成点偏移向量 / Dynamically calculate the offset vector of the squeeze-slip spawn point of the leader train
+---@param shell_direction integer 建筑物的方向 / Building direction 0/4/8/12
+---@param exit_car_radius number 刚刚克隆出来的第一节车的物理外接圆半径 / The physical circumscribed circle radius of the newly cloned first car
+---@return table offset 二维坐标偏移向量 / 2D coordinate offset vector {x,y}
+function TeleportMath.get_dynamic_leader_offset(shell_direction, exit_car_radius)
+    -- 引导车（原版机车）的固定最大安全半径约为 2.8
+    -- 通过 0.5 的主动侵入重叠量迫使底层引擎自动向铁轨前方滑脱至最近合法连接器
+    local base_distance = exit_car_radius + 2.8 - 0.5
+
+    -- 维持对原版的向下兼容，强制不小于原有的 4.0 绝不让步
+    if base_distance < 4.0 then
+        base_distance = 4.0
+    end
+
+    if shell_direction == 0 then
+        return { x = 0, y = base_distance }
+    elseif shell_direction == 4 then
+        return { x = -base_distance, y = 0 }
+    elseif shell_direction == 8 then
+        return { x = 0, y = -base_distance }
+    elseif shell_direction == 12 then
+        return { x = base_distance, y = 0 }
+    else
+        return { x = 0, y = base_distance }
+    end
 end
 
 return TeleportMath
