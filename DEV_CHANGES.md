@@ -6,6 +6,26 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+## 2026-03-21（v0.13.2：架构净身与底层废弃缓存重构）
+
+**核心聚焦**：全面清除历史迭代中残留的“代码结石”与跨模块滥用的通用函数，彻底剥离为旧版 `can_place_entity` 而服役的数据结构。
+
+- **死代码火化**：彻底删除了全工程0调用的冗余工具函数 `position_in_rect`、`get_rolling_stock_train_id`，为大杂烩模块 `util.lua` 瘦身。
+- **传送几何法则归位**：将负责计算传送门包围盒核心坐标的 `calculate_teleport_cache` 函数从非相关的 `util.lua` 中抽离，完璧归赵至专属数学模型物理库 `teleport_math.lua`，理顺了调用层级关系。
+- **旧版碰撞体系缓存（Cache Purge）连根拔除**：旧时代 `can_place_entity` 会引发显著 GC 的机制已被纯数学外接圆平替，因此我们连根拔除了服务于前者的所有预设字典和数据表打包，包含：
+  - 取消了 `teleport.lua` 和 `builder.lua` 跨文件维护的 `cached_place_query`（原引擎实体放置指令打包缓存）。
+  - 干掉了 `TeleportMath.GEOMETRY` 中多余的魔法向物理常量映射（如旧版速度修正因子、相对防碰撞区域硬编码偏移）。
+  - 消灭了打包性质的 `cached_geo` 结构体，所有相关计算改为透明直读。
+- **模块依赖清晰化**：为 `Builder`、`Migrations` 以及 `Util` 子模块全部实装了对最新版本 `TeleportMath` 的精确单向依赖注入层级，解决了代码分散隐患。
+
+### 具体改动
+- `RiftRail/scripts/util.lua`：移除 3 个冗余函数；初始化阶段增加 `TeleportMath` 依赖注入。
+- `RiftRail/scripts/teleport_system/teleport_math.lua`：收纳 `TeleportMath.calculate_teleport_cache`；精简 `GEOMETRY` 常量枚举字段。
+- `RiftRail/scripts/teleport.lua`：抹除涉及 `cached_place_query` 的相关缓存声明；移除了由于 `ensure_geometry_cache` 删去导致的 `geo` 对象获取断链。
+- `RiftRail/scripts/builder.lua`：`Util.calculate_teleport_cache` 所有访问点转义为 `TeleportMath.calculate_teleport_cache`；移除多余的缓存重置指令。
+- `RiftRail/scripts/migrations.lua`：向旧版缓存刷新接口引注入模块专属 API。
+- `RiftRail/control.lua`：初始化引导链树补充传递 `TeleportMath` 到各个业务方。
+
 ## 2026-03-20（v0.13.1 开发中：零 GC 无视种类动静碰撞算法与无限车厢长度支持）
 
 ### 改动摘要

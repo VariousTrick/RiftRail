@@ -12,36 +12,20 @@ local TeleportMath = {}
 -- 基于 "车厢生成在建筑中心 (y=0)" 的设定
 TeleportMath.GEOMETRY = {
     [0] = { -- North (出口在下方 Y+)
-        spawn_offset = { x = 0, y = 0 },
         direction = defines.direction.south,
-        leadertrain_offset = { x = 0, y = 4.0 },
-        velocity_mult = { x = 0, y = 1 },
         collider_offset = { x = 0, y = -2 },
-        check_area_rel = { lt = { x = -1, y = 0 }, rb = { x = 1, y = 10 } },
     },
     [4] = { -- East (出口在左方 X-)
-        spawn_offset = { x = 0, y = 0 },
         direction = defines.direction.west,
-        leadertrain_offset = { x = -4.0, y = 0 },
-        velocity_mult = { x = -1, y = 0 },
         collider_offset = { x = 2, y = 0 },
-        check_area_rel = { lt = { x = -10, y = -1 }, rb = { x = 0, y = 1 } },
     },
     [8] = { -- South (出口在上方 Y-)
-        spawn_offset = { x = 0, y = 0 },
         direction = defines.direction.north,
-        leadertrain_offset = { x = 0, y = -4.0 },
-        velocity_mult = { x = 0, y = -1 },
         collider_offset = { x = 0, y = 2 },
-        check_area_rel = { lt = { x = -1, y = -10 }, rb = { x = 1, y = 0 } },
     },
     [12] = { -- West (出口在右方 X+)
-        spawn_offset = { x = 0, y = 0 },
         direction = defines.direction.east,
-        leadertrain_offset = { x = 4.0, y = 0 },
-        velocity_mult = { x = 1, y = 0 },
         collider_offset = { x = -2, y = 0 },
-        check_area_rel = { lt = { x = 0, y = -1 }, rb = { x = 10, y = 1 } },
     },
 }
 
@@ -281,6 +265,28 @@ function TeleportMath.get_dynamic_leader_offset(shell_direction, exit_car_radius
     else
         return { x = 0, y = base_distance }
     end
+end
+
+--- 计算传送门的绝对放置坐标和第一节车厢的堵塞检测区域
+---@param position table 建筑中心坐标 {x, y}
+---@param direction integer 建筑朝向 0/4/8/12
+---@return table spawn_pos 放置坐标
+---@return table check_area 堵塞检测包围盒
+function TeleportMath.calculate_teleport_cache(position, direction)
+    local spawn_pos = { x = position.x, y = position.y }
+    local check_area = {}
+
+    if direction == 0 then
+        check_area = { left_top = { x = spawn_pos.x - 1, y = spawn_pos.y }, right_bottom = { x = spawn_pos.x + 1, y = spawn_pos.y + 10 } }
+    elseif direction == 4 then
+        check_area = { left_top = { x = spawn_pos.x - 10, y = spawn_pos.y - 1 }, right_bottom = { x = spawn_pos.x, y = spawn_pos.y + 1 } }
+    elseif direction == 8 then
+        check_area = { left_top = { x = spawn_pos.x - 1, y = spawn_pos.y - 10 }, right_bottom = { x = spawn_pos.x + 1, y = spawn_pos.y } }
+    elseif direction == 12 then
+        check_area = { left_top = { x = spawn_pos.x, y = spawn_pos.y - 1 }, right_bottom = { x = spawn_pos.x + 10, y = spawn_pos.y + 1 } }
+    end
+
+    return spawn_pos, check_area
 end
 
 return TeleportMath

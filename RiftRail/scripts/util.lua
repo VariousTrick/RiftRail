@@ -5,15 +5,17 @@
 
 local Util = {}
 
--- 默认日志函数，会被 init 注入覆盖
 local log_debug = function(msg)
     log(msg)
 end
+---@type table
+local TeleportMath = nil
 
 function Util.init(deps)
     if deps.log_debug then
         log_debug = deps.log_debug
     end
+    TeleportMath = deps.TeleportMath
 end
 
 -- 本地日志包装 (统一前缀)
@@ -32,21 +34,6 @@ function Util.add_offset(base, offset)
     return { x = base.x + offset.x, y = base.y + offset.y }
 end
 
--- 判断坐标是否在矩形区域内
-function Util.position_in_rect(rect, pos)
-    if not (rect and rect.left_top and rect.right_bottom and pos) then
-        return false
-    end
-    return pos.x >= rect.left_top.x and pos.x <= rect.right_bottom.x and pos.y >= rect.left_top.y and pos.y <= rect.right_bottom.y
-end
-
--- 获取车辆所属的火车ID (安全获取)
-function Util.get_rolling_stock_train_id(rolling_stock)
-    if rolling_stock and rolling_stock.valid and rolling_stock.train and rolling_stock.train.valid then
-        return rolling_stock.train.id
-    end
-    return nil
-end
 
 
 ---------------------------------------------------------------------------
@@ -133,7 +120,7 @@ function Util.rebuild_all_colliders()
                         })
 
                         -- 重建碰撞器的同时，必须重建它家的坐标缓存！
-                        local cached_spawn, cached_area = Util.calculate_teleport_cache(portaldata.shell.position, portaldata.shell.direction)
+                        local cached_spawn, cached_area = TeleportMath.calculate_teleport_cache(portaldata.shell.position, portaldata.shell.direction)
                         portaldata.cached_spawn_pos = cached_spawn
                         portaldata.cached_check_area = cached_area
                         
@@ -146,26 +133,6 @@ function Util.rebuild_all_colliders()
             end
         end
     end
-end
-
--- 计算绝对的放置坐标和堵塞检测区域 (0表分配优化)
-function Util.calculate_teleport_cache(position, direction)
-    -- spawn_offset 永远是 {0,0}，所以放置坐标等于建筑中心坐标
-    local spawn_pos = { x = position.x, y = position.y }
-    local check_area = {}
-
-    -- 根据 16 方向制精确计算绝对坐标的包围盒 (左上角, 右下角)
-    if direction == 0 then
-        check_area = { left_top = { x = spawn_pos.x - 1, y = spawn_pos.y }, right_bottom = { x = spawn_pos.x + 1, y = spawn_pos.y + 10 } }
-    elseif direction == 4 then
-        check_area = { left_top = { x = spawn_pos.x - 10, y = spawn_pos.y - 1 }, right_bottom = { x = spawn_pos.x, y = spawn_pos.y + 1 } }
-    elseif direction == 8 then
-        check_area = { left_top = { x = spawn_pos.x - 1, y = spawn_pos.y - 10 }, right_bottom = { x = spawn_pos.x + 1, y = spawn_pos.y } }
-    elseif direction == 12 then
-        check_area = { left_top = { x = spawn_pos.x, y = spawn_pos.y - 1 }, right_bottom = { x = spawn_pos.x + 10, y = spawn_pos.y + 1 } }
-    end
-
-    return spawn_pos, check_area
 end
 
 return Util

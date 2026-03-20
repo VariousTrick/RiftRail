@@ -9,7 +9,7 @@ local Migrations = {}
 -- ============================================================================
 -- 依赖注入
 -- ============================================================================
-local State, log_debug, CybersynSE, LTN
+local State, log_debug, CybersynSE, LTN, TeleportMath
 
 function Migrations.init(deps)
     State = deps.State
@@ -17,6 +17,7 @@ function Migrations.init(deps)
     CybersynSE = deps.CybersynSE
     LTN = deps.LTN
     Util = deps.Util
+    TeleportMath = deps.TeleportMath
 end
 
 -- ============================================================================
@@ -386,9 +387,8 @@ function Migrations.calculate_teleport_cache()
         if storage.rift_rails then
             for _, portaldata in pairs(storage.rift_rails) do
                 if portaldata.shell and portaldata.shell.valid then
-                    -- 如果还没有缓存，就算一次并存入
                     if not portaldata.cached_check_area then
-                        local spawn_pos, check_area = Util.calculate_teleport_cache(portaldata.shell.position, portaldata.shell.direction)
+                        local spawn_pos, check_area = TeleportMath.calculate_teleport_cache(portaldata.shell.position, portaldata.shell.direction)
                         portaldata.cached_spawn_pos = spawn_pos
                         portaldata.cached_check_area = check_area
                     end
