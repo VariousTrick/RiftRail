@@ -6,6 +6,24 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+## 2026-03-20（v0.13.1 开发中：零 GC 无视种类动静碰撞算法与无限车厢长度支持）
+
+### 改动摘要
+- **无限车厢长度兼容**：彻底解除了底层引擎对于“列车标准长度”的刻板印象。不管是小于原生尺寸的微型车厢，还是半长达到 6.0 的极限拼装车（总长 12 格），系统均能通过读取实际体积完美自适应安全距离。
+- **动态引导车生成系统**：重写了原版固定死板的 `4.0` 偏移值生成引导机车的硬编码。改为基于最新一节真实克隆车厢的精确外接圆半径（`get_carriage_radius`），实施精准切入。在保留原生 `0.5` 的侵入挤压量的同时，利用游戏内的物理滑脱机制实现自然对接。
+- **纯粹的纯数学零 GC 测距护盾**：这是本次更新最核心的提升。彻底删除了昂贵的跨引擎 API 调用 `can_place_entity`（它会触发大规模 C++ 构建和 GC 垃圾），用极为轻量的两点外接圆几何碰撞检测（`is_spawn_clear_math`）平替，单次检测性能开销极低。
+- **完全解耦与缓存闭环**：伴随着新算法，我们将新车生成时刻的车厢尺寸和安全距离参数即时录入 `portaldata` 缓存，仅在一帧内发生读写，并在队列完成极速销毁，不再产生残留的历史脏数据。
+
+### 具体改动
+- `RiftRail/scripts/teleport.lua`
+  - 核心循环的距离判定由 `surface.can_place_entity(...)` 替换为 `Math.is_spawn_clear_math(...)`。
+  - 生成 `leader_train` 时，将硬编码 `4.0` 替换为了调用 `Math.get_dynamic_leader_offset(...)`。
+  - 在 `process_transfer_step` 环节追加了新生成车厢的 `cached_exit_radius` 参数录入。
+- `RiftRail/scripts/teleport_system/teleport_math.lua`
+  - 新增 `TeleportMath.get_carriage_radius`。
+  - 新增 `TeleportMath.is_spawn_clear_math`。
+  - 新增 `TeleportMath.get_dynamic_leader_offset` 并附带了对车身参数计算中 `2.8` 的保守平替支持。
+
 ## 2026-03-19（v0.13.0 开发中：传送事件重构与LTN兼容优化）
 
 ### 改动摘要
