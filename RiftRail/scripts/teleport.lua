@@ -711,7 +711,9 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         entry_portaldata.gui_map = nil                 -- 清理 GUI 观看者映射表
         entry_portaldata.restored_guis = nil           -- 阅后即焚，清理恢复名单
         entry_portaldata.placement_interval = nil      -- 清理入口放置间隔缓存（process_teleport_sequence 读取入口侧）
-        entry_portaldata.cached_entry_radius = nil     -- 清除外接圆半径缓存
+        entry_portaldata.cached_entry_radius = nil     -- 兼容性清理旧版预缓存逻辑产生的无用字段
+        entry_portaldata.last_car_name = nil           -- 阅后即焚，销毁列车类型的短时记忆
+        entry_portaldata.last_car_radius = nil         -- 阅后即焚，销毁列车尺寸的短时记忆
 
     -- 6. 标记需要重建入口碰撞器
     -- 我们不在这里直接创建，而是交给 on_tick 去计算正确的坐标并创建
@@ -750,6 +752,21 @@ local function spawn_leader_train(exit_portaldata, geo, force)
             log_tp("引导车创建成功 ID: " .. leadertrain.unit_number)
         end
     end
+end
+
+-- =================================================================================
+-- JIT 动态半径会话级缓存获取器 (O(1) 极速命中)
+-- =================================================================================
+local function get_memoized_radius(portaldata, car)
+    -- O(1) 极速命中同类型车厢的短时记忆
+    if portaldata.last_car_name == car.name and portaldata.last_car_radius then
+        return portaldata.last_car_radius
+    end
+    -- 缓存未命中（首节车，或更换了异形车厢类型），重新穿透引擎跨层算并更新短时记忆
+    local r = Math.get_carriage_radius(car)
+    portaldata.last_car_name = car.name
+    portaldata.last_car_radius = r
+    return r
 end
 
 -- =================================================================================
@@ -818,7 +835,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     -- 基于外接圆与重叠距离的刚体碰撞验证
     -- 用于确认出生点坐标已经安全让出空间
     -- =========================================================================
-    local entry_radius = entry_portaldata.cached_entry_radius or Math.get_carriage_radius(car)
+    local entry_radius = get_memoized_radius(entry_portaldata, car)
     local exit_radius = exit_portaldata.cached_exit_radius or 2.8
 
     if not Math.is_spawn_clear_math(spawn_pos, entry_radius, entry_portaldata.exit_car, exit_radius) then
@@ -937,7 +954,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     -- 更新链表指针
     entry_portaldata.exit_car = new_car                                    -- 记录入口侧最近生成的出口替身（用于首节判定与流程状态）
     exit_portaldata.exit_car = new_car                                     -- 记录出口的最前头 (用于拉动)
-    exit_portaldata.cached_exit_radius = Math.get_carriage_radius(new_car) -- 缓存刚组装新车的极限外接圆尺寸，供下一帧的安全碰撞判定
+    exit_portaldata.cached_exit_radius = entry_radius                      -- 物理数据完美接力：从入口复制准确的几何半径给出口，无需重算
 
     -- 准备下一节
     -- =========================================================================
@@ -969,7 +986,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     -- 2. 准备下一节 (简化版：只更新指针，不再生成引导车)
     if next_car and next_car.valid then
         entry_portaldata.entry_car = next_car
-        entry_portaldata.cached_entry_radius = Math.get_carriage_radius(next_car)
+        -- 旧版冗余预计算 cached_entry_radius 这里已被删除，交由下周期的 get_memoized_radius 推演
         -- 旧车厢消失后，给剩下半截列车补一脚脉冲油门
         apply_entry_pulse(entry_portaldata, exit_portaldata)
         return
