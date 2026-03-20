@@ -13,16 +13,25 @@
 - **动态引导车生成系统**：重写了原版固定死板的 `4.0` 偏移值生成引导机车的硬编码。改为基于最新一节真实克隆车厢的精确外接圆半径（`get_carriage_radius`），实施精准切入。在保留原生 `0.5` 的侵入挤压量的同时，利用游戏内的物理滑脱机制实现自然对接。
 - **纯粹的纯数学零 GC 测距护盾**：这是本次更新最核心的提升。彻底删除了昂贵的跨引擎 API 调用 `can_place_entity`（它会触发大规模 C++ 构建和 GC 垃圾），用极为轻量的两点外接圆几何碰撞检测（`is_spawn_clear_math`）平替，单次检测性能开销极低。
 - **完全解耦与缓存闭环**：伴随着新算法，我们将新车生成时刻的车厢尺寸和安全距离参数即时录入 `portaldata` 缓存，仅在一帧内发生读写，并在队列完成极速销毁，不再产生残留的历史脏数据。
+- **JIT 内存化与局部性优化**：针对 `get_carriage_radius` 实现了基于 `car.name` 的半径查找表。同名车厢在传送时将直接命中缓存，彻底规避了对 `prototype` 属性的重复高频访问，计算密度进一步压降。
+- **模块化瘦身与调用链扁平化**：将 GUI 追踪、时刻表索引读取、状态恢复等 5 个非核心辅助逻辑迁移至 `teleport_utils.lua`。同时移除了 `teleport.lua` 中的转发包装器，改为直接调用，消除了不必要的 Lua 栈帧压栈开销。
 
 ### 具体改动
 - `RiftRail/scripts/teleport.lua`
   - 核心循环的距离判定由 `surface.can_place_entity(...)` 替换为 `Math.is_spawn_clear_math(...)`。
   - 生成 `leader_train` 时，将硬编码 `4.0` 替换为了调用 `Math.get_dynamic_leader_offset(...)`。
   - 在 `process_transfer_step` 环节追加了新生成车厢的 `cached_exit_radius` 参数录入。
+  - 实现了 `get_memoized_radius`，利用 `portaldata.last_car_name` 建立车厢尺寸 JIT 缓存。
+  - 移除了 5 个辅助函数的转发包装器，所有调用点改为直连 `TeleportUtils` 模块。
 - `RiftRail/scripts/teleport_system/teleport_math.lua`
   - 新增 `TeleportMath.get_carriage_radius`。
   - 新增 `TeleportMath.is_spawn_clear_math`。
   - 新增 `TeleportMath.get_dynamic_leader_offset` 并附带了对车身参数计算中 `2.8` 的保守平替支持。
+- `RiftRail/scripts/teleport_system/teleport_utils.lua` [NEW]
+  - 承载 `read_train_schedule_index`、`get_real_station_name`、`collect_gui_watchers`、`reopen_car_gui`、`restore_train_state` 等辅助逻辑。
+  - 内部实现 `find_child_entity` 以保持模块自闭环。
+- `RiftRail/control.lua`
+  - 注册并注入 `TeleportUtils` 模块。
 
 ## 2026-03-19（v0.13.0 开发中：传送事件重构与LTN兼容优化）
 
