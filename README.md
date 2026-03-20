@@ -35,6 +35,7 @@
 
 🚂 **全类型支持**
 完美支持机车、货运车厢、流体车厢和大炮车厢。坐在车内的玩家也会随车辆瞬间传送。
+**极限兼容声明**：完美兼容各路模组中的特殊列车配置！最短支持单格迷你车厢，最长支持达到 **12 格**（约为原生长度的 2 倍）的极限巨型车辆，依然保持毫秒级丝滑护盾穿行。
 
 🎨 **管理与交互**
 - **自定义标识**：为传送门设置自定义名称和图标，便于识别。
@@ -108,6 +109,7 @@ Configure each portal as **Entry** or **Exit** via a simple GUI. This flexibilit
 
 🚂 **Full Transport Support**
 Works flawlessly with locomotives, cargo wagons, fluid wagons, and artillery wagons. Players inside the train are teleported instantly along with the vehicle.
+**Extreme Compatibility Statement**: Unmatched support for modded trains! Whether you have adorable 1-tile mini-wagons or massive behemoths up to **12 tiles** long (double the vanilla length), Rift Rail effortlessly adapts to let them glide through portals smoothly.
 
 🎨 **Organization & UX**
 - **Customization**: Assign custom names and icons to portals for easy identification.
