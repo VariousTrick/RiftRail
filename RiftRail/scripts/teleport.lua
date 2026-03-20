@@ -763,10 +763,10 @@ local function get_memoized_radius(portaldata, car)
         return portaldata.last_car_radius
     end
     -- 缓存未命中（首节车，或更换了异形车厢类型），重新穿透引擎跨层算并更新短时记忆
-    local r = Math.get_carriage_radius(car)
+    local calculated_radius = Math.get_carriage_radius(car)
     portaldata.last_car_name = car.name
-    portaldata.last_car_radius = r
-    return r
+    portaldata.last_car_radius = calculated_radius
+    return calculated_radius
 end
 
 -- =================================================================================
