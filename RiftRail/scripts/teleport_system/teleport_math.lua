@@ -209,4 +209,49 @@ function TeleportMath.calculate_arrival_orientation(entry_shell_dir, exit_geo_di
 	return target_ori, is_nose_in
 end
 
+-- =================================================================================
+-- 【新增】AABB 动静分离碰撞检测 (零 GC)
+-- =================================================================================
+--- 获取实体碰撞箱的“外接圆半径”用于二维碰撞判定缓存
+---@param entity LuaEntity
+---@return number radius 外界圆半径
+function TeleportMath.get_carriage_radius(entity)
+	if not (entity and entity.valid) then return 2.8 end -- 兜底，假定原版半长2.4，半宽0.6 -> 外接圆半径约2.47
+	local box = entity.bounding_box
+	if not box or not box.left_top or not box.right_bottom then
+		return 2.8
+	end
+	
+	local width = box.right_bottom.x - box.left_top.x
+	local height = box.right_bottom.y - box.left_top.y
+	local half_w = width * 0.5
+	local half_h = height * 0.5
+	
+	-- 计算外接圆半径：sqrt(w^2 + h^2)
+	return math.sqrt(half_w * half_w + half_h * half_h)
+end
+
+--- 纯 Lua 距离护盾判定前车是否让出了指定的出生点
+--- 摒弃了多余的 AABB 投影，直接使用外接圆模型：这是最严格的安全边界，彻底免疫出轨和弯道旋转
+---@param spawn_pos table 出生点坐标 {x, y}
+---@param entry_radius number 新车外接圆半径
+---@param exit_car LuaEntity 已经生成的出口前车
+---@param exit_radius number 前车外接圆半径
+---@return boolean 是否安全可生成
+function TeleportMath.is_spawn_clear_math(spawn_pos, entry_radius, exit_car, exit_radius)
+	if not (exit_car and exit_car.valid) then
+		return true -- 前车已经脱节或销毁，判定为绝对安全
+	end
+	
+	local exit_pos = exit_car.position
+	local dx = exit_pos.x - spawn_pos.x
+	local dy = exit_pos.y - spawn_pos.y
+	local dist_sq = dx * dx + dy * dy
+	
+	-- 只要两车中心点距离的平方，大于两者外接圆半径之和的平方，两车在物理层面就绝对不可能接触！
+	local safe_dist = entry_radius + exit_radius + 0.1 -- 0.1格微小间隙容差
+	
+	return dist_sq >= (safe_dist * safe_dist)
+end
+
 return TeleportMath

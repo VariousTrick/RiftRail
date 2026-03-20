@@ -560,6 +560,7 @@ local function initialize_teleport_session(entry_portal, exit_portal)
 
     -- 2. 迁移车厢引用
     entry_portal.entry_car = entry_portal.waiting_car
+    entry_portal.cached_entry_radius = Math.get_carriage_radius(entry_portal.entry_car)
     entry_portal.waiting_car = nil
     entry_portal.waiting_target_exit_id = nil
 
@@ -706,7 +707,7 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         exit_portaldata.saved_schedule_index = nil    -- 清理时刻表索引缓存
         exit_portaldata.locking_entry_id = nil        -- 释放互斥锁,允许其他入口使用
         exit_portaldata.saved_manual_mode = nil       -- 清理手动/自动模式缓存
-        exit_portaldata.cached_place_query = nil      -- 清理 can_place 查询缓存，防止过期数据干扰下一次传送
+        exit_portaldata.cached_exit_radius = nil      -- 清除外接圆半径缓存
         exit_portaldata.cached_destination_stop = nil -- 清理缓存的目的地站点数据
         exit_portaldata.cached_intent_vector = nil    -- 清理缓存的意图向量
     end
@@ -718,6 +719,7 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         entry_portaldata.gui_map = nil                 -- 清理 GUI 观看者映射表
         entry_portaldata.restored_guis = nil           -- 阅后即焚，清理恢复名单
         entry_portaldata.placement_interval = nil      -- 清理入口放置间隔缓存（process_teleport_sequence 读取入口侧）
+        entry_portaldata.cached_entry_radius = nil     -- 清除外接圆半径缓存
     
     -- 6. 标记需要重建入口碰撞器
     -- 我们不在这里直接创建，而是交给 on_tick 去计算正确的坐标并创建
@@ -816,32 +818,15 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         return -- 必须返回，中断传送
     end
 
-    -- 动态拼接检测
-    -- 询问引擎：当前位置是否已经空出来，可以放置新车厢了？
-    -- 获取或初始化查询复用表 (全局只分配一次内存)
-    -- 1. 如果还没有缓存表，创建一个，并填入【永恒不变】的数据
-    if not exit_portaldata.cached_place_query then
-        exit_portaldata.cached_place_query = {
-            -- 该查询表只在“当前门坐标/朝向”下稳定有效；
-            -- 如果建筑被克隆/重建，需要失效并懒加载重建。
-            position = spawn_pos,
-            direction = geo.direction
-        }
-    end
-
-    local query = exit_portaldata.cached_place_query
-
-    -- 2.只有当【原型名称(即模型)】或者【阵营】变了，才更新表(不用type检查，因为不能识别不同模组的车辆类型差异)
-    if query.name ~= car.name or query.force ~= car.force then
-        query.name = car.name
-        query.force = car.force
-    end
-
-    -- 3. 扔给引擎去查
-    local can_place = exit_portaldata.surface.can_place_entity(query)
-
-    if not can_place then
-        return -- 位置没空出来，跳过本次循环，等待下一帧
+    -- =========================================================================
+    -- 【核心优化区】零 GC 纯数学距离护盾碰撞检测
+    -- 替代原有高开销的 surface.can_place_entity 查询
+    -- =========================================================================
+    local entry_radius = entry_portaldata.cached_entry_radius or Math.get_carriage_radius(car)
+    local exit_radius = exit_portaldata.cached_exit_radius or 2.8
+    
+    if not Math.is_spawn_clear_math(spawn_pos, entry_radius, entry_portaldata.exit_car, exit_radius) then
+        return -- 距离护盾未通过，等待前车驶离
     end
 
     -- 开始传送当前车厢
@@ -962,6 +947,9 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     -- 更新链表指针
     entry_portaldata.exit_car = new_car -- 记录入口侧最近生成的出口替身（用于首节判定与流程状态）
     exit_portaldata.exit_car = new_car  -- 记录出口的最前头 (用于拉动)
+    
+    -- 缓存刚组装新车的极限外接圆尺寸，供下一帧的安全碰撞判定
+    exit_portaldata.cached_exit_radius = Math.get_carriage_radius(new_car)
 
     -- 准备下一节
     -- =========================================================================
@@ -997,6 +985,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     -- 2. 准备下一节 (简化版：只更新指针，不再生成引导车)
     if next_car and next_car.valid then
         entry_portaldata.entry_car = next_car
+        entry_portaldata.cached_entry_radius = Math.get_carriage_radius(next_car)
         -- 旧车厢消失后，给剩下半截列车补一脚脉冲油门
         apply_entry_pulse(entry_portaldata, exit_portaldata)
         return
