@@ -4,6 +4,7 @@ local Util = nil
 local LTN = nil
 local CS2 = nil
 local State = nil
+local Builder = nil
 
 local log_debug = function() end
 
@@ -12,6 +13,7 @@ function Maintenance.init(deps)
     LTN = deps.LTN
     CS2 = deps.CS2
     State = deps.State
+    Builder = deps.Builder
     if deps.log_debug then
         log_debug = deps.log_debug
     end
@@ -21,7 +23,7 @@ end
 function Maintenance.on_settings_changed(event)
     -- 1. 重建碰撞器
     if event.setting == "rift-rail-reset-colliders" and settings.global["rift-rail-reset-colliders"].value then
-        Util.rebuild_all_colliders()
+        Builder.rebuild_all_colliders()
         settings.global["rift-rail-reset-colliders"] = { value = false }
         game.print({ "messages.rift-rail-colliders-reset" })
     end

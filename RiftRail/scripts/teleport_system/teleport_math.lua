@@ -267,26 +267,4 @@ function TeleportMath.get_dynamic_leader_offset(shell_direction, exit_car_radius
     end
 end
 
---- 计算传送门的绝对放置坐标和第一节车厢的堵塞检测区域
----@param position table 建筑中心坐标 {x, y}
----@param direction integer 建筑朝向 0/4/8/12
----@return table spawn_pos 放置坐标
----@return table check_area 堵塞检测包围盒
-function TeleportMath.calculate_teleport_cache(position, direction)
-    local spawn_pos = { x = position.x, y = position.y }
-    local check_area = {}
-
-    if direction == 0 then
-        check_area = { left_top = { x = spawn_pos.x - 1, y = spawn_pos.y }, right_bottom = { x = spawn_pos.x + 1, y = spawn_pos.y + 10 } }
-    elseif direction == 4 then
-        check_area = { left_top = { x = spawn_pos.x - 10, y = spawn_pos.y - 1 }, right_bottom = { x = spawn_pos.x, y = spawn_pos.y + 1 } }
-    elseif direction == 8 then
-        check_area = { left_top = { x = spawn_pos.x - 1, y = spawn_pos.y - 10 }, right_bottom = { x = spawn_pos.x + 1, y = spawn_pos.y } }
-    elseif direction == 12 then
-        check_area = { left_top = { x = spawn_pos.x, y = spawn_pos.y - 1 }, right_bottom = { x = spawn_pos.x + 10, y = spawn_pos.y + 1 } }
-    end
-
-    return spawn_pos, check_area
-end
-
 return TeleportMath

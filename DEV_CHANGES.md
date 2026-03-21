@@ -6,6 +6,22 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+## 2026-03-21（v0.13.2：工具架构分层净化与依赖倒置）
+
+**核心聚焦**：根据分层架构（Layered Architecture）规范，重新审视并净化全工程的模块职能，彻底杜绝下层对上层的反向业务依赖。
+
+- **底层库黑盒化 (`util.lua`)**：作为被全工程踩在脚下的"零业务认知地基"，我们剪切了侵入它内部的 `rebuild_all_colliders` 业务逻辑，并拔除了它对 `TeleportMath` 等特定业务的倒置注入。现在 `util.lua` 实现了真正的完全脱敏。
+- **功能所有权审计 (`teleport_system`)**：针对该隔离区执行了极其严格的高内聚排查。将唯一一个不被热路径调用、而是被初始化建筑调用的 `calculate_teleport_cache` 强制退回并让渡给 `builder.lua`（同时采用更高语意的名称 `Builder.compute_portal_geometry`）。
+- **跨层级调用梳理 (`builder.lua` & `control.lua`)**：由 `Builder` 完全接管所有关于“建筑创建、重建与附带缓存计算”的底层工作，修正 `migrations.lua` 的异常越权索取，斩除不必要的依赖连线。
+- **死代码极限压缩**：彻底移除全工程 0 调用的历史废弃渲染函数 `signal_to_richtext`。
+
+### 具体改动
+- `RiftRail/scripts/util.lua`：移除 `rebuild_all_colliders` 和 `signal_to_richtext`；完全移除 `TeleportMath` 的依赖注入。
+- `RiftRail/scripts/builder.lua`：接手新增 `Builder.compute_portal_geometry`，并接管 `Builder.rebuild_all_colliders`；全面修正内部调用；移除对 `TeleportMath` 的使用。
+- `RiftRail/scripts/teleport_system/teleport_math.lua`：删除越权的坐标计算逻辑 `calculate_teleport_cache`。
+- `RiftRail/scripts/maintenance.lua` & `migrations.lua`：重建碰撞体的方法全部改道去呼叫 `Builder.rebuild_all_colliders`，同时在依赖中补充注入 `Builder`。
+- `RiftRail/control.lua`：移除 `Util` 接收的 `TeleportMath` 和 `Builder` 接收的 `TeleportMath`；向 `Maintenance` 和 `Migrations` 新增 `Builder` 的依赖传递。
+
 ## 2026-03-21（v0.13.2：架构净身与底层废弃缓存重构）
 
 **核心聚焦**：全面清除历史迭代中残留的“代码结石”与跨模块滥用的通用函数，彻底剥离为旧版 `can_place_entity` 而服役的数据结构。
