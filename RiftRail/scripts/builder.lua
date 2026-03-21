@@ -5,8 +5,6 @@
 local Builder = {}
 ---@type StateModule
 local State = nil
----@type table
-local TeleportMath = nil
 
 local log_debug = function() end
 
@@ -15,7 +13,6 @@ function Builder.init(deps)
     State = deps.State
     Logic = deps.Logic
     Util = deps.Util
-    TeleportMath = deps.TeleportMath
     if deps.log_debug then
         log_debug = deps.log_debug
     end
@@ -339,7 +336,7 @@ function Builder.on_built(event)
         end
     end
 
-    local cached_spawn, cached_area = TeleportMath.calculate_teleport_cache(shell.position, shell.direction)
+    local cached_spawn, cached_area = Builder.compute_portal_geometry(shell.position, shell.direction)
 
     storage.rift_rails[shell.unit_number] = {
         id = custom_id,
@@ -623,7 +620,7 @@ function Builder.on_cloned(event)
 
     -- 【核心修复】：克隆后，必须重新计算绝对坐标缓存！
     -- 假设你的 Builder.lua 顶部已经 require 了 "scripts.util" 并命名为 Util
-    local cached_spawn, cached_area = TeleportMath.calculate_teleport_cache(new_entity.position, new_entity.direction)
+    local cached_spawn, cached_area = Builder.compute_portal_geometry(new_entity.position, new_entity.direction)
     new_data.cached_spawn_pos = cached_spawn
     new_data.cached_check_area = cached_area
     -- 深拷贝会带出旧门的 can_place 查询表；克隆后强制失效，交给 teleport 懒加载重建
@@ -807,6 +804,98 @@ function Builder.on_settings_pasted(event)
         -- 6. Debug 信息
         if RiftRail.DEBUG_MODE_ENABLED then
             log_debug("设置已粘贴: " .. source_data.name .. " -> " .. dest_data.name)
+        end
+    end
+end
+
+-- 根据建筑位置和方向，计算传送门的世界坐标包围盒（生成点 + 第一节车厢的堵塞检测区域）
+---@param position table 建筑中心坐标 {x, y}
+---@param direction integer 建筑朝向 0/4/8/12
+---@return table spawn_pos 生成点世界坐标
+---@return table check_area 第一节车厢的堵塞检测包围盒
+function Builder.compute_portal_geometry(position, direction)
+    local spawn_pos = { x = position.x, y = position.y }
+    local check_area = {}
+    if direction == 0 then
+        check_area = { left_top = { x = spawn_pos.x - 1, y = spawn_pos.y }, right_bottom = { x = spawn_pos.x + 1, y = spawn_pos.y + 10 } }
+    elseif direction == 4 then
+        check_area = { left_top = { x = spawn_pos.x - 10, y = spawn_pos.y - 1 }, right_bottom = { x = spawn_pos.x, y = spawn_pos.y + 1 } }
+    elseif direction == 8 then
+        check_area = { left_top = { x = spawn_pos.x - 1, y = spawn_pos.y - 10 }, right_bottom = { x = spawn_pos.x + 1, y = spawn_pos.y } }
+    elseif direction == 12 then
+        check_area = { left_top = { x = spawn_pos.x, y = spawn_pos.y - 1 }, right_bottom = { x = spawn_pos.x + 10, y = spawn_pos.y + 1 } }
+    end
+    return spawn_pos, check_area
+end
+
+-- 重建全图所有碰撞器，同时修复坐标缓存（用于维护指令与迁移任务）
+function Builder.rebuild_all_colliders()
+    -- 1. 销毁全图所有的旧碰撞器，同时清理全局字典记录
+    for _, surface in pairs(game.surfaces) do
+        local old_colliders = surface.find_entities_filtered({ name = "rift-rail-collider" })
+        for _, c in pairs(old_colliders) do
+            if c.valid then
+                if c.unit_number then
+                    storage.collider_to_portal[c.unit_number] = nil
+                end
+                c.destroy()
+            end
+        end
+    end
+
+    -- 2. 在正确位置重新生成碰撞器并刷新坐标缓存
+    if storage.rift_rails then
+        for _, portaldata in pairs(storage.rift_rails) do
+            if portaldata.shell and portaldata.shell.valid then
+                if not portaldata.children then
+                    portaldata.children = {}
+                end
+                -- 清理 children 列表中失效的 collider 引用（第1步已全部销毁）
+                for i = #portaldata.children, 1, -1 do
+                    local child_data = portaldata.children[i]
+                    if child_data.entity and (not child_data.entity.valid or child_data.entity.name == "rift-rail-collider") then
+                        table.remove(portaldata.children, i)
+                    end
+                end
+
+                -- 只有入口和中立模式需要碰撞器
+                if portaldata.mode == "entry" or portaldata.mode == "neutral" then
+                    local dir = portaldata.shell.direction
+                    local offset = { x = 0, y = 0 }
+                    if dir == 0 then
+                        offset = { x = 0, y = -2 }
+                    elseif dir == 4 then
+                        offset = { x = 2, y = 0 }
+                    elseif dir == 8 then
+                        offset = { x = 0, y = 2 }
+                    elseif dir == 12 then
+                        offset = { x = -2, y = 0 }
+                    end
+
+                    local new_collider = portaldata.surface.create_entity({
+                        name = "rift-rail-collider",
+                        position = { x = portaldata.shell.position.x + offset.x, y = portaldata.shell.position.y + offset.y },
+                        force = portaldata.shell.force,
+                    })
+
+                    if new_collider then
+                        if new_collider.unit_number then
+                            storage.collider_to_portal[new_collider.unit_number] = portaldata.unit_number
+                        end
+                        table.insert(portaldata.children, {
+                            entity = new_collider,
+                            relative_pos = offset,
+                        })
+                        local cached_spawn, cached_area = Builder.compute_portal_geometry(portaldata.shell.position, portaldata.shell.direction)
+                        portaldata.cached_spawn_pos = cached_spawn
+                        portaldata.cached_check_area = cached_area
+
+                        if portaldata.state == 3 then -- Teleport.STATE.REBUILDING
+                            portaldata.state = 0 -- Teleport.STATE.DORMANT
+                        end
+                    end
+                end
+            end
         end
     end
 end

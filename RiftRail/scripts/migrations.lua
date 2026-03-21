@@ -9,7 +9,7 @@ local Migrations = {}
 -- ============================================================================
 -- 依赖注入
 -- ============================================================================
-local State, log_debug, CybersynSE, LTN, TeleportMath
+local State, log_debug, CybersynSE, LTN, TeleportMath, Builder
 
 function Migrations.init(deps)
     State = deps.State
@@ -18,6 +18,7 @@ function Migrations.init(deps)
     LTN = deps.LTN
     Util = deps.Util
     TeleportMath = deps.TeleportMath
+    Builder = deps.Builder
 end
 
 -- ============================================================================
@@ -388,7 +389,7 @@ function Migrations.calculate_teleport_cache()
             for _, portaldata in pairs(storage.rift_rails) do
                 if portaldata.shell and portaldata.shell.valid then
                     if not portaldata.cached_check_area then
-                        local spawn_pos, check_area = TeleportMath.calculate_teleport_cache(portaldata.shell.position, portaldata.shell.direction)
+                        local spawn_pos, check_area = Builder.compute_portal_geometry(portaldata.shell.position, portaldata.shell.direction)
                         portaldata.cached_spawn_pos = spawn_pos
                         portaldata.cached_check_area = check_area
                     end
@@ -433,8 +434,8 @@ end
 -- 触发条件：标志位 storage.collider_migration_done 不为 true
 function Migrations.rebuild_legacy_colliders()
     if not storage.collider_migration_done then
-        if Util and Util.rebuild_all_colliders then
-            Util.rebuild_all_colliders()
+        if Builder and Builder.rebuild_all_colliders then
+            Builder.rebuild_all_colliders()
             log_debug("[Migration] 已完成历史遗留的全图碰撞器实体化重建。")
         end
         storage.collider_migration_done = true
