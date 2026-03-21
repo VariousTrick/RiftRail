@@ -6,6 +6,55 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+## 2026-03-21（v0.13.2：列车中断机制（Interrupt）兼容性修复）
+
+**核心聚焦**：正确处理 Factorio 引擎在列车逐节传送期间因货物不足而同步触发的「假中断」站点，确保指针正确、速度不丢失、LTN 能正常接管。
+
+### 问题根源
+
+Rift Rail 采用逐节传送模式：每一节车厢以独立实体生成于出口，然后依次拼接。在相邻两节车厢完成对接的瞬间，游戏引擎会因列车货仓尚未装满而立即同步评估中断条件。若玩家在时刻表中配置了「货物 < 1000 则前往 X 站」类型的中断，该判断在这一帧内通过，引擎随即在当前时刻表指针之前强制插入一个 `temporary = true`、无 `rail` 字段的临时站点，将原本正确的目标站顶后一位。
+
+这直接导致以下问题链：
+1. **指针错位**：传送期间的中断站占据了指针位置，列车以为自己该去"中断站"而非真正的目标。
+2. **LTN 路标失效**：LTN 的 `get_or_create_next_temp_stop` API 遍历时刻表，见到已有 `temporary = true` 的站点就认定"路点已存在"，跳过插入真正的 rail 路标，造成跨地表调度失败。
+3. **清洗索引位移**：传送完毕后的清洗函数使用「清洗前」记录的旧索引调用 `restore_train_state`，但清洗本身删除站点导致索引位移，旧索引所对应的站点已经不再是预期目标。
+4. **速度骤降**：`restore_train_state`（恢复速度）在 `cleanup_interrupt_garbage`（内部调用 `go_to_station`，触发寻路重置）之前执行，使刚恢复的速度被立即打断。
+
+### 解决方案
+
+#### 新增 `Schedule.snap_pointer_past_interrupt`（`schedule.lua`）
+
+不删除中断站，只用 `go_to_station` 单独移动指针跳过它：
+- 检测当前 `schedule.current` 所指的站是否为假中断（`temporary = true` 且无 `rail`，且非传送门入口站名）。
+- 若是，向后方向扫描，找到第一个合法的真实站点并调用 `go_to_station` 跳过去。
+- **不调用 `set_records`**，避免触发引擎重新评估并立即重插中断站。
+
+#### 修改 `spawn_car`（`teleport.lua`）
+
+每节车厢拼接后都调用 `snap_pointer_past_interrupt`：
+- 原逻辑：只在第一节车厢的 `copy_schedule` 之后执行一次清洗。
+- 现逻辑：首节完成触发 LTN 移交事件后，以及后续每一节拼接完毕，统一执行 `snap_pointer_past_interrupt`，确保引擎每次重新触发的中断都能被及时跳过。
+- `saved_schedule_index` 的备份紧跟在 snap 之后、而非在它之前，以保存矫正后的干净索引。
+
+#### 修改 `finalize_sequence`（`teleport.lua`）
+
+调整最终阶段的操作顺序：
+1. **先 `cleanup_interrupt_garbage`**：全列车传送完毕、货仓已满，此时引擎不再会重插中断，可以安全地执行 `set_records` 彻底删除所有假中断站。
+2. **读取清洗后的真实索引**：`cleanup_interrupt_garbage` 内部已经按删除后的正确偏移量调用了 `go_to_station` 并校正了 `schedule.current`，传送完毕后直接读取它，而不再使用「清洗前」记录的旧索引。
+3. **后 `restore_train_state`**：速度恢复在所有时刻表操作完成之后，为最后一步，不会被任何后续 `go_to_station` 打断。
+
+#### 文档与提示（Informatron）
+
+- 在 LTN Informatron 页面新增了一段「中断机制兼容性说明」（中英文各一份），告知玩家：若 LTN 列车带中断条件，请在传送门设置中开启"传送后清理站"选项，使传送门提供无 `temporary` 属性的专用站点，消除引擎误判触发源头。
+
+### 具体改动
+
+- `RiftRail/scripts/schedule.lua`：新增 `Schedule.snap_pointer_past_interrupt` 函数；修复 `Schedule.cleanup_interrupt_garbage` 中指针校正的边界条件（`<=` 改为 `<`）。
+- `RiftRail/scripts/teleport.lua`（`spawn_car`）：将每节车厢的 cleanup 替换为 `snap_pointer_past_interrupt`；`saved_schedule_index` 备份移至 snap 之后。
+- `RiftRail/scripts/teleport.lua`（`finalize_sequence`）：调整顺序为「先 cleanup → 读取清洗后索引 → 再 restore_train_state 恢复速度」。
+- `RiftRail/locale/zh-CN/informatron.cfg`、`locale/en/informatron.cfg`：LTN 页面新增中断机制使用说明。
+- `RiftRail/scripts/compat/informatron.lua`：LTN 页面渲染追加 `text_2` 节点。
+
 ## 2026-03-21（v0.13.2：工具架构分层净化与依赖倒置）
 
 **核心聚焦**：根据分层架构（Layered Architecture）规范，重新审视并净化全工程的模块职能，彻底杜绝下层对上层的反向业务依赖。

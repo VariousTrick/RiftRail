@@ -183,4 +183,121 @@ function Schedule.copy_schedule(old_train, new_train, entry_portal_station_name,
     old_train.schedule = nil ]]
 end
 
+--- 轻量版指针拨正：传送过程中每节车厢拼接后调用。
+--- 检测当前时刻表指针是否落在了因缺货强插的假中断临时站上，如果是，
+--- 则向后扫描找到第一个合法的真实站点并跳转过去。
+--- 不修改 records 表（避免触发引擎重新评估并立即重插），仅移动指针。
+---
+---@param train LuaTrain 已拼接的出口列车
+---@param entry_station_name string 传送门入口站名（此站不算假中断，跳过它但不视为垃圾）
+---@return boolean 是否执行了指针跳转
+function Schedule.snap_pointer_past_interrupt(train, entry_station_name)
+    if not (train and train.valid) then
+        return false
+    end
+
+    local sched = train.get_schedule()
+    if not sched then
+        return false
+    end
+
+    local records = sched.get_records()
+    if not records or #records == 0 then
+        return false
+    end
+
+    local current_index = sched.current
+    local current_record = records[current_index]
+
+    -- 判断当前站是否为假中断临时站（无 rail，有名字，且名字不是传送门入口）
+    if not (current_record and current_record.temporary and not current_record.rail and current_record.station ~= entry_station_name) then
+        return false
+    end
+
+    -- 向后扫描，找到第一个非假中断的真实站点
+    local n = #records
+    local target_index = nil
+    for offset = 1, n do
+        local probe = (current_index - 1 + offset) % n + 1
+        local r = records[probe]
+        -- 合法站的判断：不是"无 rail 的临时站"（或者就是传送门入口，直接跳过也可以）
+        if not (r.temporary and not r.rail and r.station ~= entry_station_name) then
+            target_index = probe
+            break
+        end
+    end
+
+    if not target_index then
+        return false
+    end
+
+    sched.go_to_station(target_index)
+    return true
+end
+
+--- 清洗函数：在列车全部车厢合并完毕（货物补满）后调用。
+--- 遍历当前时刻表，识别并移除因缺货误判而由引擎强塞的假中断临时站点。
+--- 判别标准：`temporary = true` 且 `rail == nil`（有 rail 坐标的是 LTN 的合法路轨，不动）。
+---
+---@param train LuaTrain 已合并完毕的满编列车实体
+---@param entry_station_name string 传送门入口站的名字（保护此站不被误删）
+---@return boolean 是否执行了清洗并重写了时刻表
+function Schedule.cleanup_interrupt_garbage(train, entry_station_name)
+    if not (train and train.valid) then
+        return false
+    end
+
+    local sched = train.get_schedule()
+    if not sched then
+        return false
+    end
+
+    local records = sched.get_records()
+    if not records or #records == 0 then
+        return false
+    end
+
+    local current_index = sched.current
+    local removed_count = 0
+
+    -- 倒序遍历，避免 table.remove 执行后数组下标前移导致跳跃漏查
+    for i = #records, 1, -1 do
+        local record = records[i]
+        -- 判别条件：是临时站、没有 rail 坐标（有 rail 是 LTN 的合法路轨节点，绝不误删）
+        -- 且不是传送门本身的入口站（理论上不该存在，双重保险）
+        if record.temporary and not record.rail and record.station ~= entry_station_name then
+            table.remove(records, i)
+            removed_count = removed_count + 1
+            -- 只有当被删的站严格在当前指针之前，指针才需要向前移动以保持对齐。
+            -- 若被删的站正好是 current 本身（i == current_index），删除后原下一站填位至同一索引，
+            -- current 不变即可正确指向真实目标，无需 -1。
+            if i < current_index then
+                current_index = current_index - 1
+            end
+        end
+    end
+
+    if removed_count == 0 then
+        return false
+    end
+
+    -- 安全钳制：防止索引越界
+    if current_index < 1 then
+        current_index = 1
+    end
+    if current_index > #records then
+        current_index = 1
+    end
+
+    -- 将净化后的时刻表覆盖回列车（触发引擎重新评估中断条件，此时货满不再误判）
+    sched.set_records(records)
+    sched.go_to_station(current_index)
+
+    if RiftRail.DEBUG_MODE_ENABLED then
+        log_schedule("[cleanup] 清洗完毕，移除了 " .. removed_count .. " 个假中断临时站，当前指针: " .. current_index)
+    end
+
+    return true
+end
+
 return Schedule
