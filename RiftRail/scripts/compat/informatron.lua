@@ -26,6 +26,7 @@ function Info.page_content(page_name, player_index, element)
         element.add({ type = "label", name = "text_2", caption = { "rift_rail_informatron.page_routing_text_2" } })
     elseif page_name == "rr_ltn" then
         element.add({ type = "label", name = "text_1", caption = { "rift_rail_informatron.page_ltn_text_1" } })
+        element.add({ type = "label", name = "text_2", caption = { "rift_rail_informatron.page_ltn_text_2" } })
     elseif page_name == "rr_cs2" then
         element.add({ type = "label", name = "text_1", caption = { "rift_rail_informatron.page_cs2_text_1" } })
     elseif page_name == "rr_ups" then

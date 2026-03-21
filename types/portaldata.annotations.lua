@@ -64,3 +64,4 @@
 ---@field cached_exit_radius number|nil
 ---@field last_car_name string|nil
 ---@field last_car_radius number|nil
+---@field safe_interrupt_names table<string, boolean>|nil

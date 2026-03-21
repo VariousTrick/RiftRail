@@ -509,10 +509,21 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
             if RiftRail.DEBUG_MODE_ENABLED then
                 log_tp("【销毁后】准备恢复: actual_index=" .. tostring(actual_index_before_cleanup) .. ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index))
             end
-            -- 使用统一函数恢复状态 (参数 true 代表同时恢复速度)
-            TeleportUtils.restore_train_state(final_train, exit_portaldata, true, actual_index_before_cleanup)
+            -- 传送完全结束，货仓补满。在恢复速度前先清除所有假中断临时站，
+            -- 避免 cleanup 内部的 go_to_station 在恢复速度之后重置寻路动作。
+            local entry_station_name_final = TeleportUtils.get_real_station_name(entry_portaldata)
+            local safe_set = exit_portaldata.safe_interrupt_names
+            Schedule.cleanup_interrupt_garbage(final_train, entry_station_name_final, safe_set)
 
-            -- 触发“抵达”事件
+            -- cleanup 已经按删除后的正确索引调用了 go_to_station，读取它作为最终目标。
+            -- 不能继续使用 actual_index_before_cleanup，那是清洗前记录的旧索引，
+            -- 若有假站被删除导致索引位移，旧值会指向错误的下一个站点。
+            local sched_after_cleanup = final_train.get_schedule()
+            local final_target_index = sched_after_cleanup and sched_after_cleanup.current
+
+            -- 使用统一函数恢复状态 (参数 true 代表同时恢复速度，必须在 cleanup 之后执行)
+            TeleportUtils.restore_train_state(final_train, exit_portaldata, true, final_target_index)
+
             raise_arrived_event(entry_portaldata, exit_portaldata, final_train, entry_portaldata.restored_guis)
         end
 
@@ -525,6 +536,7 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         exit_portaldata.cached_speed_sign = nil       -- 清理速度方向缓存
         exit_portaldata.cached_exit_drive_sign = nil  -- 清理新的出口意图方向缓存
         exit_portaldata.saved_schedule_index = nil    -- 清理时刻表索引缓存
+        exit_portaldata.safe_interrupt_names = nil    -- 清理合法临时站白名单缓冲
         exit_portaldata.locking_entry_id = nil        -- 释放互斥锁,允许其他入口使用
         exit_portaldata.saved_manual_mode = nil       -- 清理手动/自动模式缓存
         exit_portaldata.cached_exit_radius = nil      -- 清除外接圆半径缓存
@@ -636,7 +648,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     -- 如果前面有车 (exit_car)，说明正在传送中，不需要检查堵塞 (我们是接在它后面的)
     -- 只有当 exit_car 为空 (第一节) 时才检查堵塞
     local is_clear = true
-    if not entry_portaldata.exit_car then
+    if is_first_car then
         local count = exit_portaldata.surface.count_entities_filtered({
             area = check_area,
             type = { "locomotive", "cargo-wagon", "fluid-wagon", "artillery-wagon" },
@@ -738,20 +750,23 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     end
 
     -- 转移时刻表与保存索引
-    if not entry_portaldata.exit_car then
-        -- 1. 获取带图标的真实站名 (解决比对失败问题)
-        local real_station_name = TeleportUtils.get_real_station_name(entry_portaldata)
+    local real_station_name = TeleportUtils.get_real_station_name(entry_portaldata)
 
-        -- 2. 转移时刻表
-        Schedule.copy_schedule(car.train, new_car.train, real_station_name, exit_portaldata.saved_schedule_index, exit_portaldata.saved_manual_mode)
+    if is_first_car then
+        -- 1. 转移时刻表
+        local safe_set = Schedule.copy_schedule(car.train, new_car.train, real_station_name, exit_portaldata.saved_schedule_index, exit_portaldata.saved_manual_mode)
 
-        -- 在被引导车重置前，立刻备份正确的索引！
+        -- 2. 新旧实体物理交接完毕，触发移交事件（除了传递ID，必须传递 new_train 实体供 LTN 使用）
+        raise_teleport_transfer_event(car.train.id, new_car.train)
+
+        -- 3. 仅在第一节车厢拨正指针，传入护符白名单
+        Schedule.snap_pointer_past_interrupt(new_car.train, real_station_name, safe_set)
+
+        -- 备份当前无污染的真实指针，以及白名单
         if new_car.train and new_car.train.schedule then
             exit_portaldata.saved_schedule_index = new_car.train.schedule.current
         end
-
-        -- 新旧实体物理交接完毕，触发移交事件（除了传递ID，必须传递 new_train 实体供 LTN 使用）
-        raise_teleport_transfer_event(car.train.id, new_car.train)
+        exit_portaldata.safe_interrupt_names = safe_set
     end
 
     -- 立即恢复查看这节车厢的玩家界面

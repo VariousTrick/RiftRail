@@ -140,6 +140,7 @@
 ---@field back_end LuaTrainEnd|nil
 ---@field object_name string
 ---@field go_to_station fun(index: integer)
+---@field get_schedule fun(): LuaSchedule
 function LuaTrain:go_to_station(index) end
 function LuaTrain:get_item_count(item) end
 function LuaTrain:get_contents() end
@@ -163,6 +164,14 @@ function LuaTrain:get_schedule() end
 ---@class LuaSchedule
 ---@field current integer
 ---@field records table[]
+---@field get_records fun(): table[]
+---@field add_record fun(record: table)
+---@field set_records fun(records: table[])
+---@field set_current fun(index: integer)
+---@field set_interrupts fun(interrupts: table)
+---@field get_interrupts fun(): table
+---@field go_to_station fun(index: integer)
+---@field group string
 
 ---@class LuaSurfaceCreateEntityParam
 ---@field name string
