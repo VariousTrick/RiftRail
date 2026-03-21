@@ -6,6 +6,31 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+## 2026-03-21（v0.13.2：列车中断指针抢夺战——极客级架构融合优化）
+
+**核心聚焦**：基于此前完成的 `snap_pointer` 拨正逻辑，通过实机底层日志的解剖分析，确立了“首节净化 + 后续原生防线硬抗”的终极性能优化方案。
+
+### 痛点与觉醒
+
+在上一版修复中，我们通过在**每一节车厢拼接后**都执行一遍极其高效的 `snap_pointer_past_interrupt` 遍历，强行把引擎在对接瞬间新塞入的假中断站从执行指针上拨走。这虽然防备了引擎，但在机制上有点多余。
+
+通过深度开启无视调试模式的强力日志检测，发现了一个惊人的事实：原有的核心数据暂存与恢复系统（`index_before_spawn` -> `restore_train_state`）**一直是完美且能自动抗击引擎打乱机制的**！它过去之所以失效，仅仅是因为它在第一节车厢错误地读取了被引擎污染的假中断指针当作“正确起点”。
+
+### 终极方案
+
+结合原有的状态同步恢复架构，对执行链实施了完美剥离：
+
+1. **首节净化**：仅在第一节引导车厢完成 `copy_schedule` 后，调用一次 `snap_pointer_past_interrupt`。当引擎因货空强塞假中断站时，它能第一时间将指针推回真实的合法站点，并将这个**绝对正确的干净指针**存入 `saved_schedule_index`（作为后续全队列状态同步的纯净种子）。
+2. **后续接力与硬抗**：从第二节车厢开始往后所有步骤，**彻底停用 `snap` 拨正函数**，完全沿用原先优秀的抗击打防线。每节车厢在拼接前准确读取了上一帧传承过来的干净指针（`index_before_spawn`）。在物理拼接瞬间（引擎此时虽然会再次发疯把指针跳回到假中断站）之后，原有的 `restore_train_state` 逻辑雷霆出击，把指针强硬、精准地恢复回刚刚安全读取到的真实目标。
+
+### 优化成果
+
+这套方案极其优雅地结合了“新写的单次查杀（净化源头）”与系统固有的“指针恢复体系（维持正确态）”。
+不仅一劳永逸死死拿捏了指针漂移造成的死锁，也把后续哪怕长达几百节的星际重型列车的 CPU 对抗压力，从多重条件轮询扫描降维到了最极致的 $O(1)$ 标量级单纯内存赋值（真正的绝对 $0$ UPS 损耗）。
+
+### 具体改动
+- `RiftRail/scripts/teleport.lua`（`spawn_car`）：将 `Schedule.snap_pointer_past_interrupt` 函数调用及其附带的 `saved_schedule_index` 备份操作严格限制在首节车厢判定内（`if not exit_car then` 块内），后续车厢彻底放权给原生的 `restore_train_state` 进行状态防守。
+
 ## 2026-03-21（v0.13.2：列车中断机制（Interrupt）兼容性修复）
 
 **核心聚焦**：正确处理 Factorio 引擎在列车逐节传送期间因货物不足而同步触发的「假中断」站点，确保指针正确、速度不丢失、LTN 能正常接管。

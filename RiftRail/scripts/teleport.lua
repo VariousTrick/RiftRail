@@ -756,14 +756,14 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
 
         -- 2. 新旧实体物理交接完毕，触发移交事件（除了传递ID，必须传递 new_train 实体供 LTN 使用）
         raise_teleport_transfer_event(car.train.id, new_car.train)
-    end
 
-    -- 每节车厢拼接后执行轻量版指针拨正，只移动指针、不修改 records，
-    -- 避免 set_records 触发引擎重新评估并立即重插假中断站。
-    Schedule.snap_pointer_past_interrupt(new_car.train, real_station_name)
-    -- 备份当前无污染的真实指针
-    if new_car.train and new_car.train.schedule then
-        exit_portaldata.saved_schedule_index = new_car.train.schedule.current
+        -- 3. 仅在第一节车厢拨正指针
+        Schedule.snap_pointer_past_interrupt(new_car.train, real_station_name)
+
+        -- 备份当前无污染的真实指针
+        if new_car.train and new_car.train.schedule then
+            exit_portaldata.saved_schedule_index = new_car.train.schedule.current
+        end
     end
 
     -- 立即恢复查看这节车厢的玩家界面
