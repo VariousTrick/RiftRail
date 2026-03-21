@@ -6,6 +6,26 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+## 2026-03-21（v0.13.2：列车中断机制极客级优化——白名单靶向洗脱与语义重构）
+
+**核心聚焦**：深入修复方案边缘死角，建立传送前的“合法临时站”快照护符机制，防止跨界时误删玩家合法存在的临时手操路标，并对相关高频核对代码域进行语义清洗。
+
+### 白名单靶向洗脱（Selective Pruning）
+在确认了“首节净化 + 后续硬抗”的终极机制后，发现原初阶段旨在全面扫除引擎强插假中断站的 `cleanup_interrupt_garbage` 与 `snap` 函数存在广撒网的误伤隐患：如果玩家在过门前临时手动增加了一个无真实轨道坐标的纯名字临时站，该站在过闸时也会被牵连删除而导致列车短暂失忆。
+- **护身前置快照**：在引导车厢获取时刻表并即将挂载引爆引擎底层的“缺货假中断警报”的前一瞬间，先对原车厢时刻表进行合法特征提取。将所有已天然存在的合法“纯名字临时站”记录为 `safe_interrupt_names` 散列表册。
+- **免死金牌下发**：将此护身册存入跨帧传输数据层 `portaldata` 并向下穿透传递给 `snap_pointer_past_interrupt` 拨正模块与终期 `cleanup_interrupt_garbage` 模块。判定逻辑全面升级：仅当排查游标不仅满足特征、且不在白名单内时，才精准定性为由引擎夹带的违禁私有产物并予以坚决铲除，实现精确清创。
+
+### 代码可读性重构
+- 为提升日后的模块化审查体验，全面消除了底层过滤器中因命名缩略带来的指代不明。将 `schedule.lua` 内横跨各个清洗、扫描遍历核心环节的单字母判定形参与迭代游标 `r` 统一重构为标准全拼 `record`，一举清扫了多级嵌套作用域内的心智盲区。
+
+### 具体改动
+- `RiftRail/scripts/schedule.lua`：
+  - 在 `copy_schedule` 中增加在时刻表赋值前夕遍历建立 `safe_interrupt_names` 白名单图册，并将其作为返回值抛出。
+  - 修改 `snap_pointer_past_interrupt` 与 `cleanup_interrupt_garbage` 签出，新增 `safe_set` 拦截网；并执行了无死角的全文件 `record` 变量重命名字段清洗。
+- `RiftRail/scripts/teleport.lua`：
+  - 在首节引导车 `spawn_car` 中接收 `copy_schedule` 的新增白名单返回值，并作为“一次性护符”锁入 `exit_portaldata.safe_interrupt_names`。
+  - 全面改造 `spawn_car` 中对 `snap` 的调用，以及 `finalize_sequence` 末端对 `cleanup` 的调用，接驳并消耗白名单。随后在清理传送门状态对象时，同步实施了 `safe_interrupt_names = nil` 的析构动作。
+
 ## 2026-03-21（v0.13.2：列车中断指针抢夺战——极客级架构融合优化）
 
 **核心聚焦**：基于此前完成的 `snap_pointer` 拨正逻辑，通过实机底层日志的解剖分析，确立了“首节净化 + 后续原生防线硬抗”的终极性能优化方案。

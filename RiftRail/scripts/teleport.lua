@@ -512,7 +512,8 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
             -- 传送完全结束，货仓补满。在恢复速度前先清除所有假中断临时站，
             -- 避免 cleanup 内部的 go_to_station 在恢复速度之后重置寻路动作。
             local entry_station_name_final = TeleportUtils.get_real_station_name(entry_portaldata)
-            Schedule.cleanup_interrupt_garbage(final_train, entry_station_name_final)
+            local safe_set = exit_portaldata.safe_interrupt_names
+            Schedule.cleanup_interrupt_garbage(final_train, entry_station_name_final, safe_set)
 
             -- cleanup 已经按删除后的正确索引调用了 go_to_station，读取它作为最终目标。
             -- 不能继续使用 actual_index_before_cleanup，那是清洗前记录的旧索引，
@@ -535,6 +536,7 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         exit_portaldata.cached_speed_sign = nil       -- 清理速度方向缓存
         exit_portaldata.cached_exit_drive_sign = nil  -- 清理新的出口意图方向缓存
         exit_portaldata.saved_schedule_index = nil    -- 清理时刻表索引缓存
+        exit_portaldata.safe_interrupt_names = nil    -- 清理合法临时站白名单缓冲
         exit_portaldata.locking_entry_id = nil        -- 释放互斥锁,允许其他入口使用
         exit_portaldata.saved_manual_mode = nil       -- 清理手动/自动模式缓存
         exit_portaldata.cached_exit_radius = nil      -- 清除外接圆半径缓存
@@ -752,18 +754,19 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
 
     if not entry_portaldata.exit_car then
         -- 1. 转移时刻表
-        Schedule.copy_schedule(car.train, new_car.train, real_station_name, exit_portaldata.saved_schedule_index, exit_portaldata.saved_manual_mode)
+        local safe_set = Schedule.copy_schedule(car.train, new_car.train, real_station_name, exit_portaldata.saved_schedule_index, exit_portaldata.saved_manual_mode)
 
         -- 2. 新旧实体物理交接完毕，触发移交事件（除了传递ID，必须传递 new_train 实体供 LTN 使用）
         raise_teleport_transfer_event(car.train.id, new_car.train)
 
-        -- 3. 仅在第一节车厢拨正指针
-        Schedule.snap_pointer_past_interrupt(new_car.train, real_station_name)
+        -- 3. 仅在第一节车厢拨正指针，传入护符白名单
+        Schedule.snap_pointer_past_interrupt(new_car.train, real_station_name, safe_set)
 
-        -- 备份当前无污染的真实指针
+        -- 备份当前无污染的真实指针，以及白名单
         if new_car.train and new_car.train.schedule then
             exit_portaldata.saved_schedule_index = new_car.train.schedule.current
         end
+        exit_portaldata.safe_interrupt_names = safe_set
     end
 
     -- 立即恢复查看这节车厢的玩家界面

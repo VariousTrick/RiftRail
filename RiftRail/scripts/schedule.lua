@@ -129,6 +129,16 @@ function Schedule.copy_schedule(old_train, new_train, entry_portal_station_name,
         end
     end
 
+    -- 收集原有的合法临时站名（不带 rail 的临时站）
+    -- 在挂载并触发引擎刚性插入"假中断"前获取快照，作为后续护符
+    local safe_interrupt_names = {}
+    for i = 1, #records do
+        local record = records[i]
+        if record.temporary and not record.rail and record.station then
+            safe_interrupt_names[record.station] = true
+        end
+    end
+
     -- ========================================================================
     -- 步骤 3: 应用到新火车
     -- ========================================================================
@@ -179,8 +189,7 @@ function Schedule.copy_schedule(old_train, new_train, entry_portal_station_name,
         end
     end
 
-    --[[ -- 清空旧火车时刻表
-    old_train.schedule = nil ]]
+    return safe_interrupt_names
 end
 
 --- 轻量版指针拨正：传送过程中每节车厢拼接后调用。
@@ -190,8 +199,9 @@ end
 ---
 ---@param train LuaTrain 已拼接的出口列车
 ---@param entry_station_name string 传送门入口站名（此站不算假中断，跳过它但不视为垃圾）
+---@param safe_set table 允许保留的临时命名站白名单
 ---@return boolean 是否执行了指针跳转
-function Schedule.snap_pointer_past_interrupt(train, entry_station_name)
+function Schedule.snap_pointer_past_interrupt(train, entry_station_name, safe_set)
     if not (train and train.valid) then
         return false
     end
@@ -209,8 +219,21 @@ function Schedule.snap_pointer_past_interrupt(train, entry_station_name)
     local current_index = sched.current
     local current_record = records[current_index]
 
-    -- 判断当前站是否为假中断临时站（无 rail，有名字，且名字不是传送门入口）
-    if not (current_record and current_record.temporary and not current_record.rail and current_record.station ~= entry_station_name) then
+    -- 判断当前站是否为假中断临时站
+    local function is_fake_interrupt(record)
+        if not (record and record.temporary and not record.rail and record.station) then
+            return false
+        end
+        if record.station == entry_station_name then
+            return false
+        end
+        if safe_set and safe_set[record.station] then
+            return false
+        end
+        return true
+    end
+
+    if not is_fake_interrupt(current_record) then
         return false
     end
 
@@ -219,9 +242,8 @@ function Schedule.snap_pointer_past_interrupt(train, entry_station_name)
     local target_index = nil
     for offset = 1, n do
         local probe = (current_index - 1 + offset) % n + 1
-        local r = records[probe]
-        -- 合法站的判断：不是"无 rail 的临时站"（或者就是传送门入口，直接跳过也可以）
-        if not (r.temporary and not r.rail and r.station ~= entry_station_name) then
+        local record = records[probe]
+        if not is_fake_interrupt(record) then
             target_index = probe
             break
         end
@@ -241,8 +263,9 @@ end
 ---
 ---@param train LuaTrain 已合并完毕的满编列车实体
 ---@param entry_station_name string 传送门入口站的名字（保护此站不被误删）
+---@param safe_set table 传送前已存在的临时命名站白名单
 ---@return boolean 是否执行了清洗并重写了时刻表
-function Schedule.cleanup_interrupt_garbage(train, entry_station_name)
+function Schedule.cleanup_interrupt_garbage(train, entry_station_name, safe_set)
     if not (train and train.valid) then
         return false
     end
@@ -260,12 +283,25 @@ function Schedule.cleanup_interrupt_garbage(train, entry_station_name)
     local current_index = sched.current
     local removed_count = 0
 
+    -- 判断当前站是否为假中断临时站
+    local function is_fake_interrupt(record)
+        if not (record and record.temporary and not record.rail and record.station) then
+            return false
+        end
+        if record.station == entry_station_name then
+            return false
+        end
+        if safe_set and safe_set[record.station] then
+            return false
+        end
+        return true
+    end
+
     -- 倒序遍历，避免 table.remove 执行后数组下标前移导致跳跃漏查
     for i = #records, 1, -1 do
         local record = records[i]
-        -- 判别条件：是临时站、没有 rail 坐标（有 rail 是 LTN 的合法路轨节点，绝不误删）
-        -- 且不是传送门本身的入口站（理论上不该存在，双重保险）
-        if record.temporary and not record.rail and record.station ~= entry_station_name then
+        -- 判别条件：是由引擎生成的假中断站（不在白名单中）
+        if is_fake_interrupt(record) then
             table.remove(records, i)
             removed_count = removed_count + 1
             -- 只有当被删的站严格在当前指针之前，指针才需要向前移动以保持对齐。

@@ -50,7 +50,9 @@
 ---@field set_cs2_enabled fun(player_index: uint, portal_id: integer, enabled: boolean)
 
 ---@class ScheduleModule
----@field copy_schedule fun(old_train: LuaTrain, new_train: LuaTrain, station_name: string, saved_index: integer|nil, saved_manual_mode: boolean|nil)
+---@field copy_schedule fun(old_train: LuaTrain, new_train: LuaTrain, station_name: string, saved_index: integer|nil, saved_manual_mode: boolean|nil): table<string, boolean>|nil
+---@field snap_pointer_past_interrupt fun(train: LuaTrain, entry_station_name: string, safe_set: table<string, boolean>|nil): boolean
+---@field cleanup_interrupt_garbage fun(train: LuaTrain, entry_station_name: string, safe_set: table<string, boolean>|nil): boolean
 
 ---@class AwCompatModule
 ---@field on_car_replaced fun(old_car: LuaEntity, new_car: LuaEntity)|nil
