@@ -17,12 +17,14 @@
 
 ### 代码可读性重构
 - 为提升日后的模块化审查体验，全面消除了底层过滤器中因命名缩略带来的指代不明。将 `schedule.lua` 内横跨各个清洗、扫描遍历核心环节的单字母判定形参与迭代游标 `r` 统一重构为标准全拼 `record`，一举清扫了多级嵌套作用域内的心智盲区。
+- 统一了首节车厢的判定语义：在 `teleport.lua` 的堵塞检测和时刻表转移逻辑中，移除了历史遗留的 `if not entry_portaldata.exit_car then` 间接判断，全面替换为已有的 `is_first_car` 变量，保持了代码风格的整体一致性。
 
 ### 具体改动
 - `RiftRail/scripts/schedule.lua`：
   - 在 `copy_schedule` 中增加在时刻表赋值前夕遍历建立 `safe_interrupt_names` 白名单图册，并将其作为返回值抛出。
   - 修改 `snap_pointer_past_interrupt` 与 `cleanup_interrupt_garbage` 签出，新增 `safe_set` 拦截网；并执行了无死角的全文件 `record` 变量重命名字段清洗。
 - `RiftRail/scripts/teleport.lua`：
+  - 将核心传送循环中判断首节车厢的 `not entry_portaldata.exit_car` 统一替换为 `is_first_car`。
   - 在首节引导车 `spawn_car` 中接收 `copy_schedule` 的新增白名单返回值，并作为“一次性护符”锁入 `exit_portaldata.safe_interrupt_names`。
   - 全面改造 `spawn_car` 中对 `snap` 的调用，以及 `finalize_sequence` 末端对 `cleanup` 的调用，接驳并消耗白名单。随后在清理传送门状态对象时，同步实施了 `safe_interrupt_names = nil` 的析构动作。
 
