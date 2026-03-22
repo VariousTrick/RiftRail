@@ -200,11 +200,13 @@ function GUI.build_or_update(player, entity)
     local content_flow = frame.add({ type = "flow", direction = "horizontal" })
     content_flow.style.vertical_align = "top"
 
-    local inner_flow = content_flow.add({ type = "flow", direction = "vertical" })
-    inner_flow.style.padding = 8
+    local left_pane = content_flow.add({ type = "flow", direction = "vertical" })
+    left_pane.style.padding = 8
+    left_pane.style.minimal_width = 300
+    left_pane.style.maximal_width = 300
 
     -- 4. 名称区域
-    local name_flow = inner_flow.add({ type = "flow", name = "name_flow", direction = "horizontal" })
+    local name_flow = left_pane.add({ type = "flow", name = "name_flow", direction = "horizontal" })
     name_flow.style.vertical_align = "center"
     name_flow.style.bottom_margin = 8
     GUI.build_display_name_flow(name_flow, my_data)
@@ -218,8 +220,8 @@ function GUI.build_or_update(player, entity)
         switch_state = "right"
     end
 
-    inner_flow.add({ type = "label", caption = { "gui.rift-rail-mode-label" } })
-    local mode_switch = inner_flow.add({
+    left_pane.add({ type = "label", caption = { "gui.rift-rail-mode-label" } })
+    local mode_switch = left_pane.add({
         type = "switch",
         name = "rift_rail_mode_switch",
         switch_state = switch_state,
@@ -234,8 +236,8 @@ function GUI.build_or_update(player, entity)
     local any_connection_exists = (connection_count > 0)
 
     -- 6. 连接状态
-    inner_flow.add({ type = "line", direction = "horizontal" })
-    local status_flow = inner_flow.add({ type = "flow", direction = "vertical" })
+    left_pane.add({ type = "line", direction = "horizontal" })
+    local status_flow = left_pane.add({ type = "flow", direction = "vertical" })
     status_flow.add({ type = "label", caption = { "gui.rift-rail-status-label" } })
 
     -- 重构连接状态显示
@@ -260,16 +262,15 @@ function GUI.build_or_update(player, entity)
         else
             status_flow.add({ type = "label", caption = { "gui.rift-rail-status-unpaired" }, style = "bold_label" })
         end
-    else -- neutral
         status_flow.add({ type = "label", caption = { "gui.rift-rail-status-unpaired" }, style = "bold_label" })
     end
     status_flow.style.bottom_margin = 12
 
     -- 7. 连接控制
-    inner_flow.add({ type = "label", caption = { "gui.rift-rail-connections-label" } }) -- 你可能需要去 locale 添加 "Connections" 或 "连接列表"
+    left_pane.add({ type = "label", caption = { "gui.rift-rail-connections-label" } }) -- 你可能需要去 locale 添加 "Connections" 或 "连接列表"
 
     -- 创建一个水平容器，用于并排显示下拉框和默认按钮
-    local drop_flow = inner_flow.add({ type = "flow", direction = "horizontal" })
+    local drop_flow = left_pane.add({ type = "flow", direction = "horizontal" })
     drop_flow.style.vertical_align = "center"
 
     local dropdown = drop_flow.add({ type = "drop-down", name = "rift_rail_target_dropdown" })
@@ -388,7 +389,7 @@ function GUI.build_or_update(player, entity)
     end
 
     -- 统一的动态主操作按钮
-    local btn_flow = inner_flow.add({ type = "flow", direction = "horizontal" })
+    local btn_flow = left_pane.add({ type = "flow", direction = "horizontal" })
     btn_flow.style.top_margin = 4
 
     btn_flow.add({
@@ -419,9 +420,10 @@ function GUI.build_or_update(player, entity)
 
     -- 8. CS2 开关 (仅在安装 cybersyn2 时显示)
     if script.active_mods["cybersyn2"] then
-        inner_flow.add({ type = "line", direction = "horizontal" })
-        local cs2_flow = inner_flow.add({ type = "flow", direction = "horizontal" })
+        left_pane.add({ type = "line", direction = "horizontal" })
+        local cs2_flow = left_pane.add({ type = "flow", direction = "horizontal" })
         cs2_flow.style.vertical_align = "center"
+        cs2_flow.style.bottom_margin = 4
 
         local cs2_btn_enabled = any_connection_exists
 
@@ -437,9 +439,10 @@ function GUI.build_or_update(player, entity)
 
     -- 9. LTN 开关 (适配多对一启用条件)
     if script.active_mods["LogisticTrainNetwork"] then
-        inner_flow.add({ type = "line", direction = "horizontal" })
-        local ltn_flow = inner_flow.add({ type = "flow", direction = "horizontal" })
+        -- 移除此处额外横向线，和 CS2 紧凑贴合
+        local ltn_flow = left_pane.add({ type = "flow", direction = "horizontal" })
         ltn_flow.style.vertical_align = "center"
+        ltn_flow.style.bottom_margin = 4
 
         -- LTN 开关启用条件
         local ltn_btn_enabled = any_connection_exists
@@ -455,7 +458,7 @@ function GUI.build_or_update(player, entity)
     end
 
     -- 10. 远程预览 (适配 Exit 模式下的来源预览)
-    inner_flow.add({ type = "line", direction = "horizontal" })
+    left_pane.add({ type = "line", direction = "horizontal" })
 
     -- 统一预览逻辑：直接使用下拉框选中的目标
     -- dropdown_ids 和 selected_idx 是我们在上面构建列表时生成的局部变量
@@ -466,7 +469,7 @@ function GUI.build_or_update(player, entity)
 
     -- 只要有目标 ID，就允许显示勾选框（无论是管理模式还是添加模式）
     if preview_target_id then
-        inner_flow.add({
+        left_pane.add({
             type = "checkbox",
             name = "rift_rail_preview_check",
             state = player_settings.show_preview,
@@ -474,46 +477,50 @@ function GUI.build_or_update(player, entity)
         })
     end
 
-    local tool_flow = inner_flow.add({ type = "flow", direction = "horizontal" })
+    local tool_flow = left_pane.add({ type = "flow", direction = "horizontal" })
+    tool_flow.style.top_margin = 8
 
-    -- 传送玩家按钮
+    -- 传送玩家按钮 (左下方唯一的孤独坚守者)
     tool_flow.add({
         type = "button",
         name = "rift_rail_tp_player_button",
         caption = { "gui.rift-rail-btn-player-teleport" },
     })
 
-    -- 远程观察按钮
-    -- 【修改】新的显示条件：只要选中的是已连接的伙伴，就显示
-    if preview_target_id and dropdown_is_paired[selected_idx] == true then
-        tool_flow.add({
-            type = "button",
-            name = "rift_rail_remote_view_button",
-            caption = { "gui.rift-rail-btn-view" },
-        })
-    end
-
-    -- 11. 摄像头预览窗口
+    -- 11. 摄像头预览窗口 & 独立抽屉
     -- 只要有目标 ID 且 玩家勾选了预览，就显示
     if preview_target_id and player_settings.show_preview then
         local partner = State.get_portaldata_by_id(preview_target_id)
         if partner and partner.shell and partner.shell.valid then
-            -- 插入视觉分割线
+            -- 插入垂直切割线，分割操作台与屏幕区
             content_flow.add({ type = "line", direction = "vertical" })
+            
             local right_pane = content_flow.add({ type = "flow", direction = "vertical" })
             right_pane.style.padding = 8
+            
+            local title_flow = right_pane.add({ type = "flow", direction = "horizontal" })
+            title_flow.style.vertical_align = "center"
+            title_flow.style.bottom_margin = 6
 
-            right_pane.add({
+            -- 优先使用原本的【远程观察】按钮作为功能性大图标标题
+            if dropdown_is_paired[selected_idx] == true then
+                title_flow.add({
+                    type = "button",
+                    name = "rift_rail_remote_view_button",
+                    caption = { "gui.rift-rail-btn-view" },
+                })
+            end
+
+            -- 将原本的名字文字作为补全紧随其后
+            title_flow.add({
                 type = "label",
-                name = "rift_rail_preview_title",
-                style = "frame_title",
-                caption = { "gui.rift-rail-preview-title", partner.name, partner.shell.surface.name },
-            }).style.left_padding = 8
+                style = "bold_label",
+                caption = " " .. partner.name .. " [" .. partner.shell.surface.name .. "]",
+            })
 
             local preview_frame = right_pane.add({ type = "frame", style = "inside_shallow_frame" })
-            preview_frame.style.minimal_width = 280
-            preview_frame.style.minimal_height = 400
-            preview_frame.style.horizontally_stretchable = true
+            preview_frame.style.minimal_width = 300
+            preview_frame.style.maximal_width = 300
             preview_frame.style.vertically_stretchable = true
 
             local cam = preview_frame.add({
@@ -523,7 +530,7 @@ function GUI.build_or_update(player, entity)
                 surface_index = partner.shell.surface.index,
                 zoom = 0.2,
             })
-            cam.style.horizontally_stretchable = true
+            cam.style.minimal_width = 300
             cam.style.vertically_stretchable = true
         end
     end
