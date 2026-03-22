@@ -228,7 +228,7 @@ function GUI.build_or_update(player, entity)
     content_flow.style.vertical_align = "top"
 
     -- 左侧深层容器底座 (The Left "坑")
-    local left_inset = content_flow.add({ type = "frame", style = "inside_shallow_frame" })
+    local left_inset = content_flow.add({ type = "frame", style = "inside_deep_frame" })
     left_inset.style.minimal_width = 300
     left_inset.style.maximal_width = 300
 
@@ -293,7 +293,6 @@ function GUI.build_or_update(player, entity)
         else
             status_flow.add({ type = "label", caption = { "gui.rift-rail-status-unpaired" }, style = "bold_label" })
         end
-        status_flow.add({ type = "label", caption = { "gui.rift-rail-status-unpaired" }, style = "bold_label" })
     end
     status_flow.style.bottom_margin = 12
 
@@ -528,7 +527,7 @@ function GUI.build_or_update(player, entity)
             spacer.style.width = 4
             
             -- 右侧监控室大底座 (The Right "坑")
-            local right_inset = content_flow.add({ type = "frame", style = "inside_shallow_frame" })
+            local right_inset = content_flow.add({ type = "frame", style = "inside_deep_frame" })
             local right_pane = right_inset.add({ type = "flow", direction = "vertical" })
             right_pane.style.padding = 8
             
