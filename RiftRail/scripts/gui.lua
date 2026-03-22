@@ -5,6 +5,38 @@
 
 local GUI = {}
 
+function GUI.clear_preview_render(player_index)
+    if storage.rift_rail_player_settings and storage.rift_rail_player_settings[player_index] then
+        local render_obj = storage.rift_rail_player_settings[player_index].preview_render_id
+        if render_obj and render_obj.valid then
+            render_obj.destroy()
+        end
+        storage.rift_rail_player_settings[player_index].preview_render_id = nil
+    end
+end
+
+function GUI.draw_preview_render(player, shell)
+    if not (shell and shell.valid) then return end
+    
+    if not storage.rift_rail_player_settings then storage.rift_rail_player_settings = {} end
+    if not storage.rift_rail_player_settings[player.index] then storage.rift_rail_player_settings[player.index] = {} end
+    
+    GUI.clear_preview_render(player.index)
+    
+    local rid = rendering.draw_rectangle({
+        color = {r = 0, g = 1, b = 1, a = 0.5}, -- 亮青色全息锁定雷达框
+        width = 4,
+        filled = false,
+        left_top = {entity = shell, offset = {-2.5, -2.5}},
+        right_bottom = {entity = shell, offset = {2.5, 2.5}},
+        surface = shell.surface,
+        players = {player},
+        draw_on_ground = false,
+    })
+    
+    storage.rift_rail_player_settings[player.index].preview_render_id = rid
+end
+
 local State = nil
 
 local log_debug = function() end
@@ -143,6 +175,9 @@ function GUI.build_or_update(player, entity)
             end
         end
     end
+
+    -- 每次重新构建或打开 GUI 时，先清空可能遗留的旧高亮锁
+    GUI.clear_preview_render(player.index)
 
     -- 3. 创建/清理 GUI
     -- 3.1. 改用 screen (屏幕) 容器，不再使用 relative
@@ -561,6 +596,9 @@ function GUI.build_or_update(player, entity)
             })
             cam.style.minimal_width = 300
             cam.style.vertically_stretchable = true
+
+            -- 在目标传送门外壳上打一个仅自己可见的全息高亮框
+            GUI.draw_preview_render(player, partner.shell)
         end
     end
 
@@ -812,6 +850,8 @@ function GUI.handle_close(event)
 
     if element and element.valid and element.name == "rift_rail_main_frame" then
         log_gui("[RiftRail:GUI] 检测到关闭事件，销毁窗口。")
+        -- 玩家关闭主界面时，彻底清空远程实体上的全息高亮锁定框
+        GUI.clear_preview_render(event.player_index)
         element.destroy()
     end
 end
@@ -948,6 +988,10 @@ function GUI.update_camera_preview(player, frame, target_id)
     -- 修改摄像头视角 (Factorio 引擎会自动处理跨地表切换)
     camera_widget.position = partner.shell.position
     camera_widget.surface_index = partner.shell.surface.index
+
+    -- 切换摄像头目标后，立刻补发更新雷达高亮锁定框
+    GUI.draw_preview_render(player, partner.shell)
+
     -- 如果需要，也可以重置缩放
     -- camera_widget.zoom = 0.2
 
