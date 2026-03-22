@@ -5,6 +5,23 @@
 >
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
+## 2026-03-22（v0.13.3：GUI 彻底原生化重构与 Z 轴深坑美学）
+
+**核心聚焦**：彻底抛弃早期悬浮、扁平的粗糙 UI 组件堆砌，全面引入 Factorio 官方重工业控制台的架构语言。通过精确剖析 `inside_shallow_frame` 的“挖坑”嵌套手法和 `frame_header` 等原生控件的直接复用，实现了控制面板界面在结构上的内嵌感和动态自适应。
+
+### 真正的硬核沉浸感 (Layered UI & Insets)
+通过给侧边栏限定死 `300px` 的装甲宽度，彻底处决了不同字号和多语言切换导致界面横向鬼畜抖动的顽疾。整个面板上空被加盖了一层包含隐形拖拽弹簧与原生 `[X]` 按钮的独立 Title Bar。
+除此以外，核心参数区（左首）、功能操控区（右上）以及全息监控屏幕区（右下）被暴力开凿成了三个互不干扰但又紧密咬合的暗灰色下陷槽。现在，这台传送仪器的点击反馈、交互层次、乃至微操按钮的悬停底色与物理音效，均达到了与游戏原生加工厂界面 `100%` 毫无二致的真假难辨境界。
+
+### 具体改动
+- `RiftRail/scripts/gui.lua`：重构了 `GUI.build_or_update` 树形结构，拔除根节点 `caption` 强制接管外壳，自行注入完美匹配原版尺寸的 `frame_header` 与 `draggable_space_header`。
+- `RiftRail/scripts/gui.lua`：实施多级 `inside_shallow_frame` / `inside_deep_frame` 嵌套，建立左右对称但深度独立的功能大坑。
+- `RiftRail/scripts/gui.lua`：将 CS2 与 LTN 古板的拨动 `switch` 升级为紧凑聚合的 `checkbox` 复选结构。
+- `RiftRail/scripts/gui.lua`：为重命名组件挖掘游戏底层，挂载了 `mini_button_aligned_to_text_vertically_when_centered` 原生样式。
+- `RiftRail/scripts/gui.lua`：利用原生 `rendering.draw_circle` 黑科技，实现了跨地表监控摄像头内的单体视野目标高亮“双彩雷达”锁定效果，且生命周期与 GUI 开关彻底绑定。
+- `RiftRail/scripts/state.lua`：移除了旧版 GUI 临时变量的懒加载防空逻辑，直接通过 `state.lua` 将 `storage.rift_rail_preview_renders` 字典拍平并兜底初始化，极大地提高了架构维度的查错收敛度。
+- `RiftRail/locale/*/strings.cfg`：全域支持了包含 Japanese、English、Chinese 在内的新版控件术语（含 `Standby` 待机模式补全）。
+
 ## 2026-03-22（v0.13.3：蓝图系统与内部车站架构精简）
 
 **核心聚焦**：由于现代 Factorio 的蓝图系统原生支持利用 `tags` 功能携带实体属性，本版本彻底废弃了“强行往蓝图中注入带位移的内部车站幽灵来保存数据”的历史冗余操作，蓝图机制变得空前清爽。

@@ -20,7 +20,7 @@ function State.setup_new_game()
     storage.collider_map = {}
     storage.active_teleporter_list = {}
     storage.active_teleporters = {} -- 添加了缺失的字典缓存
-    storage.rift_rail_player_settings = {} -- 玩家 GUI 设置
+    storage.rift_rail_preview_renders = {} -- GUI 全息高亮雷达缓存
 
     -- LTN 兼容数据
     storage.rift_rail_ltn_routing_table = {}
@@ -55,7 +55,7 @@ function State.patch_missing_root_tables()
     if not storage.collider_map then storage.collider_map = {} end
     if not storage.active_teleporter_list then storage.active_teleporter_list = {} end
     if not storage.active_teleporters then storage.active_teleporters = {} end
-    if not storage.rift_rail_player_settings then storage.rift_rail_player_settings = {} end
+    if not storage.rift_rail_preview_renders then storage.rift_rail_preview_renders = {} end
 
     -- LTN 兼容数据兜底
     if not storage.rift_rail_ltn_routing_table then storage.rift_rail_ltn_routing_table = {} end
