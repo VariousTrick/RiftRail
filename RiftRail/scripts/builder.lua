@@ -160,7 +160,7 @@ function Builder.on_built(event)
             -- 未来如果需要设置其他运行时属性，也可以加在这里
         end
 
-        table.insert(children, { entity = child_entity, relative_pos = relative_pos })
+        table.insert(children, { entity = child_entity, relative_pos = relative_pos, unit_number = child_entity.unit_number })
         return child_entity
     end
 
@@ -359,6 +359,17 @@ function Builder.on_built(event)
 
     -- 维护 id_map 缓存
     storage.rift_rail_id_map[custom_id] = shell.unit_number
+
+    -- 注册外壳与核心的销毁事件监听
+    if shell and shell.valid then
+        script.register_on_entity_destroyed(shell)
+    end
+    for _, child in pairs(children) do
+        if child.entity and child.entity.valid and child.entity.name == "rift-rail-core" then
+            script.register_on_entity_destroyed(child.entity)
+            break
+        end
+    end
 end
 
 -- 强制清理区域内的火车 (防止拆除铁轨后留下幽灵车厢)
@@ -603,9 +614,15 @@ function Builder.on_cloned(event)
                     table.insert(new_data.children, {
                         entity = found_clone[1],
                         relative_pos = old_child_data.relative_pos,
+                        unit_number = found_clone[1].unit_number
                     })
 
-                    -- 【重要】如果是碰撞器，必须给克隆体上户口！
+                    -- 为克隆出的新核心注册销毁事件
+                    if child_name == "rift-rail-core" then
+                        script.register_on_entity_destroyed(found_clone[1])
+                    end
+
+                    -- 登记克隆体碰撞器的全局映射
                     if child_name == "rift-rail-collider" and found_clone[1].unit_number then
                         
                         storage.collider_to_portal[found_clone[1].unit_number] = new_unit_number
@@ -625,6 +642,11 @@ function Builder.on_cloned(event)
     new_data.cached_check_area = cached_area
     -- 深拷贝会带出旧门的 can_place 查询表；克隆后强制失效，交给 teleport 懒加载重建
 
+
+    -- 为克隆出的新外壳注册销毁事件
+    if new_entity and new_entity.valid then
+        script.register_on_entity_destroyed(new_entity)
+    end
 
     -- 保存新数据，清理旧数据
     storage.rift_rails[new_unit_number] = new_data
@@ -898,6 +920,67 @@ function Builder.rebuild_all_colliders()
             end
         end
     end
+end
+-- ============================================================================
+-- 处理 entity_destroyed 回调触发的销毁逻辑
+-- ============================================================================
+function Builder.on_silent_destroyed(unit_number)
+    local target_data = storage.rift_rails[unit_number]
+    
+    -- 如果外壳没死，那就是核心死了，遍历所有 children 查找
+    if not target_data then
+        for _, portal in pairs(storage.rift_rails) do
+            if portal.children then
+                for _, child in pairs(portal.children) do
+                    if child.unit_number == unit_number then
+                        target_data = portal
+                        break
+                    end
+                end
+            end
+            if target_data then break end
+        end
+    end
+
+    -- 如果都查不到，说明已经被常规的 on_mined_handler 清理掉了，静默退出
+    if not target_data then return end
+
+    -- 找到了受害者所在的传送门，执行无情地清理
+    if RiftRail and RiftRail.DEBUG_MODE_ENABLED and log_debug then
+        log_debug("[Builder] triggered silent destroyed mechanism for portal unit_number: " .. unit_number)
+    end
+
+    -- 移除失效的配网连接
+    if Logic and Logic.unpair_portals_specific then
+        if target_data.mode == "entry" and target_data.target_ids then
+            for target_id, _ in pairs(target_data.target_ids) do
+                Logic.unpair_portals_specific(nil, target_data.id, target_id)
+            end
+        elseif target_data.mode == "exit" and target_data.source_ids then
+            for source_id, _ in pairs(target_data.source_ids) do
+                Logic.unpair_portals_specific(nil, source_id, target_data.id)
+            end
+        end
+    end
+
+    -- 销毁残存的附属件
+    if target_data.children then
+        for _, child_data in pairs(target_data.children) do
+            if child_data.entity and child_data.entity.valid then
+                child_data.entity.destroy()
+            end
+        end
+    end
+    -- 销毁外壳本身 (如果它还活着)
+    if target_data.shell and target_data.shell.valid then
+        target_data.shell.destroy()
+    end
+
+    -- 回收各种映射表内存
+    if storage.rift_rail_id_map then
+        storage.rift_rail_id_map[target_data.id] = nil
+    end
+    storage.rift_rails[target_data.unit_number] = nil
 end
 
 return Builder

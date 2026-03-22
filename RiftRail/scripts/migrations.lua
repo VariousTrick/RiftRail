@@ -472,6 +472,34 @@ function Migrations.state_machine_refactor()
 end
 
 -- ============================================================================
+-- [迁移任务 12] v0.13.2+ Hub-and-Spoke Registration 迁移方案
+-- ============================================================================
+function Migrations.patch_hub_and_spoke_registration()
+    if not storage.hub_and_spoke_migrated and storage.rift_rails then
+        log_debug("[Migration] 正在为旧存档补打实体死亡注册钢印...")
+        for _, portaldata in pairs(storage.rift_rails) do
+            if portaldata.shell and portaldata.shell.valid then
+                script.register_on_entity_destroyed(portaldata.shell)
+            end
+            if portaldata.children then
+                for _, child_data in pairs(portaldata.children) do
+                    if child_data.entity and child_data.entity.valid then
+                        -- 补齐 unit_number
+                        child_data.unit_number = child_data.entity.unit_number
+                        -- 为旧核心补打钢印
+                        if child_data.entity.name == "rift-rail-core" then
+                            script.register_on_entity_destroyed(child_data.entity)
+                        end
+                    end
+                end
+            end
+        end
+        storage.hub_and_spoke_migrated = true
+        log_debug("[Migration] Hub-and-Spoke 旧档无缝转移完成。")
+    end
+end
+
+-- ============================================================================
 -- 主入口：按顺序执行所有迁移任务
 -- ============================================================================
 function Migrations.run_all()
@@ -495,6 +523,7 @@ function Migrations.run_all()
     Migrations.patch_cs2_enabled_default()
     Migrations.rebuild_legacy_colliders()
     Migrations.state_machine_refactor()
+    Migrations.patch_hub_and_spoke_registration()
 end
 
 return Migrations
