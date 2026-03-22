@@ -362,11 +362,11 @@ function Builder.on_built(event)
 
     -- 注册外壳与核心的销毁事件监听
     if shell and shell.valid then
-        script.register_on_entity_destroyed(shell)
+        script.register_on_object_destroyed(shell)
     end
     for _, child in pairs(children) do
         if child.entity and child.entity.valid and child.entity.name == "rift-rail-core" then
-            script.register_on_entity_destroyed(child.entity)
+            script.register_on_object_destroyed(child.entity)
             break
         end
     end
@@ -619,7 +619,7 @@ function Builder.on_cloned(event)
 
                     -- 为克隆出的新核心注册销毁事件
                     if child_name == "rift-rail-core" then
-                        script.register_on_entity_destroyed(found_clone[1])
+                        script.register_on_object_destroyed(found_clone[1])
                     end
 
                     -- 登记克隆体碰撞器的全局映射
@@ -645,7 +645,7 @@ function Builder.on_cloned(event)
 
     -- 为克隆出的新外壳注册销毁事件
     if new_entity and new_entity.valid then
-        script.register_on_entity_destroyed(new_entity)
+        script.register_on_object_destroyed(new_entity)
     end
 
     -- 保存新数据，清理旧数据

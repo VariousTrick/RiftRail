@@ -479,7 +479,7 @@ function Migrations.patch_hub_and_spoke_registration()
         log_debug("[Migration] 正在为旧存档补打实体死亡注册钢印...")
         for _, portaldata in pairs(storage.rift_rails) do
             if portaldata.shell and portaldata.shell.valid then
-                script.register_on_entity_destroyed(portaldata.shell)
+                script.register_on_object_destroyed(portaldata.shell)
             end
             if portaldata.children then
                 for _, child_data in pairs(portaldata.children) do
@@ -488,7 +488,7 @@ function Migrations.patch_hub_and_spoke_registration()
                         child_data.unit_number = child_data.entity.unit_number
                         -- 为旧核心补打钢印
                         if child_data.entity.name == "rift-rail-core" then
-                            script.register_on_entity_destroyed(child_data.entity)
+                            script.register_on_object_destroyed(child_data.entity)
                         end
                     end
                 end
