@@ -18,7 +18,7 @@ station.selectable_in_game = false
 station.collision_mask = { layers = {} }
 station.selection_box = util.create_centered_box(1, 1)
 
-station.placeable_by = { item = "rift-rail-station-item", count = 1 }
+-- station.placeable_by = { item = "rift-rail-station-item", count = 1 }
 
 station.animations = sprites.blank_sprite
 station.top_animations = sprites.blank_sprite
