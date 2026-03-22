@@ -563,9 +563,9 @@ function CS2.train_topology_callback(origin_surface_index)
     return nil
 end
 
--- 可达性 veto 回调：返回 true 表示不可达（阻止 CS2 生成该方向任务）。
-function CS2.reachable_callback(_, _, _, _, train_home_surface_index, from_stop_entity, to_stop_entity)
-
+-- 可达性 veto 回调：返回 true 表示不可达（阻止 CS2 生成该方向任务,如果其他模组可以完成任务也会被一票否决）。
+-- 我们的原则是：我不接管，但我不阻拦别人（返回 nil）。
+function CS2.reachable_callback(_, _, _, _, _, from_stop_entity, to_stop_entity)
     if not (from_stop_entity and from_stop_entity.valid and to_stop_entity and to_stop_entity.valid) then
         return nil
     end
@@ -573,18 +573,13 @@ function CS2.reachable_callback(_, _, _, _, train_home_surface_index, from_stop_
     local from_surface_index = from_stop_entity.surface.index
     local to_surface_index = to_stop_entity.surface.index
 
+    -- 同地表内部运输，不涉及跨表，放行
     if from_surface_index == to_surface_index then
         return nil
     end
 
-    if not has_direct_route(from_surface_index, to_surface_index) then
-        return true
-    end
-
-    if train_home_surface_index and train_home_surface_index ~= to_surface_index and not has_direct_route(to_surface_index, train_home_surface_index) then
-        return true
-    end
-
+    -- 无论 RiftRail 自己有没有路线，都直接返回 nil。
+    -- 把控制权交还给 CS2 主程序和其他插件，不投否决票。
     return nil
 end
 
