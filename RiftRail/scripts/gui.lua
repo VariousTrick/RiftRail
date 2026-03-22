@@ -197,7 +197,10 @@ function GUI.build_or_update(player, entity)
 
     log_gui("[RiftRail:GUI] 已创建独立窗口并接管 player.opened")
 
-    local inner_flow = frame.add({ type = "flow", direction = "vertical" })
+    local content_flow = frame.add({ type = "flow", direction = "horizontal" })
+    content_flow.style.vertical_align = "top"
+
+    local inner_flow = content_flow.add({ type = "flow", direction = "vertical" })
     inner_flow.style.padding = 8
 
     -- 4. 名称区域
@@ -419,16 +422,14 @@ function GUI.build_or_update(player, entity)
         inner_flow.add({ type = "line", direction = "horizontal" })
         local cs2_flow = inner_flow.add({ type = "flow", direction = "horizontal" })
         cs2_flow.style.vertical_align = "center"
-        cs2_flow.add({ type = "label", caption = { "gui.rift-rail-cs2-label" } })
 
         local cs2_btn_enabled = any_connection_exists
 
         cs2_flow.add({
-            type = "switch",
-            name = "rift_rail_cs2_switch",
-            switch_state = my_data.cs2_enabled and "right" or "left",
-            right_label_caption = { "gui.rift-rail-cs2-connected" },
-            left_label_caption = { "gui.rift-rail-cs2-disconnected" },
+            type = "checkbox",
+            name = "rift_rail_cs2_checkbox",
+            state = my_data.cs2_enabled == true,
+            caption = { "gui.rift-rail-cs2-checkbox" },
             tooltip = { "gui.rift-rail-cs2-tooltip" },
             enabled = cs2_btn_enabled,
         })
@@ -439,17 +440,15 @@ function GUI.build_or_update(player, entity)
         inner_flow.add({ type = "line", direction = "horizontal" })
         local ltn_flow = inner_flow.add({ type = "flow", direction = "horizontal" })
         ltn_flow.style.vertical_align = "center"
-        ltn_flow.add({ type = "label", caption = { "gui.rift-rail-ltn-label" } })
 
         -- LTN 开关启用条件
         local ltn_btn_enabled = any_connection_exists
 
         ltn_flow.add({
-            type = "switch",
-            name = "rift_rail_ltn_switch",
-            switch_state = my_data.ltn_enabled and "right" or "left",
-            right_label_caption = { "gui.rift-rail-ltn-connected" },
-            left_label_caption = { "gui.rift-rail-ltn-disconnected" },
+            type = "checkbox",
+            name = "rift_rail_ltn_checkbox",
+            state = my_data.ltn_enabled == true,
+            caption = { "gui.rift-rail-ltn-checkbox" },
             tooltip = { "gui.rift-rail-ltn-tooltip" },
             enabled = ltn_btn_enabled,
         })
@@ -499,14 +498,19 @@ function GUI.build_or_update(player, entity)
     if preview_target_id and player_settings.show_preview then
         local partner = State.get_portaldata_by_id(preview_target_id)
         if partner and partner.shell and partner.shell.valid then
-            inner_flow.add({
+            -- 插入视觉分割线
+            content_flow.add({ type = "line", direction = "vertical" })
+            local right_pane = content_flow.add({ type = "flow", direction = "vertical" })
+            right_pane.style.padding = 8
+
+            right_pane.add({
                 type = "label",
                 name = "rift_rail_preview_title",
                 style = "frame_title",
                 caption = { "gui.rift-rail-preview-title", partner.name, partner.shell.surface.name },
             }).style.left_padding = 8
 
-            local preview_frame = inner_flow.add({ type = "frame", style = "inside_shallow_frame" })
+            local preview_frame = right_pane.add({ type = "frame", style = "inside_shallow_frame" })
             preview_frame.style.minimal_width = 280
             preview_frame.style.minimal_height = 400
             preview_frame.style.horizontally_stretchable = true
@@ -717,26 +721,26 @@ function GUI.handle_switch_state_changed(event)
             mode = "exit"
         end
         remote.call("RiftRail", "set_portal_mode", player.index, my_data.id, mode)
-    elseif el_name == "rift_rail_ltn_switch" then
-        local enabled = (event.element.switch_state == "right")
-        remote.call("RiftRail", "set_ltn_enabled", player.index, my_data.id, enabled)
-    elseif el_name == "rift_rail_cs2_switch" then
-        local enabled = (event.element.switch_state == "right")
-        remote.call("RiftRail", "set_cs2_enabled", player.index, my_data.id, enabled)
     end
 end
 
 function GUI.handle_checked_state_changed(event)
+    if not (event.element and event.element.valid) then return end
+    local player = game.get_player(event.player_index)
+    local frame = player.gui.screen.rift_rail_main_frame
+    if not frame then return end
+    local my_data = State.get_portaldata_by_unit_number(frame.tags.unit_number)
+    if not my_data then return end
+
     if event.element.name == "rift_rail_preview_check" then
-        local player = game.get_player(event.player_index)
         if storage.rift_rail_player_settings[player.index] then
             storage.rift_rail_player_settings[player.index].show_preview = event.element.state
-            local frame = player.gui.screen.rift_rail_main_frame
-            if frame then
-                local my_data = State.get_portaldata_by_unit_number(frame.tags.unit_number)
-                GUI.build_or_update(player, my_data.shell) -- 传入实体刷新
-            end
+            GUI.build_or_update(player, my_data.shell) -- 传入实体刷新
         end
+    elseif event.element.name == "rift_rail_cs2_checkbox" then
+        remote.call("RiftRail", "set_cs2_enabled", player.index, my_data.id, event.element.state)
+    elseif event.element.name == "rift_rail_ltn_checkbox" then
+        remote.call("RiftRail", "set_ltn_enabled", player.index, my_data.id, event.element.state)
     end
 end
 
