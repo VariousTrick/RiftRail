@@ -73,7 +73,7 @@ function GUI.build_display_name_flow(parent_flow, my_data)
         name = "rift_rail_rename_button",
         sprite = "utility/rename_icon",
         tooltip = { "gui.rift-rail-rename-tooltip" },
-        style = "tool_button",
+        style = "mini_button_aligned_to_text_vertically_when_centered",
     })
 end
 
@@ -102,7 +102,7 @@ function GUI.build_edit_name_flow(parent_flow, my_data)
         type = "sprite-button",
         name = "rift_rail_confirm_rename_button",
         sprite = "utility/check_mark",
-        style = "tool_button_green",
+        style = "mini_button_aligned_to_text_vertically_when_centered",
     })
 end
 
@@ -181,7 +181,7 @@ function GUI.build_or_update(player, entity)
         type = "frame",
         name = "rift_rail_main_frame",
         direction = "vertical",
-        caption = title_caption, -- 使用带图标的标题
+        -- 核心改动：绝不给外层 frame 传 caption，否则引擎会强行生成内置且无法自定义控件的 title_bar
     })
 
     -- 6. 让窗口自动居中
@@ -197,15 +197,46 @@ function GUI.build_or_update(player, entity)
 
     log_gui("[RiftRail:GUI] 已创建独立窗口并接管 player.opened")
 
+    -- 3.5. 纯正原生系统标题栏 (Global Title Bar)
+    local title_bar = frame.add({ type = "flow", name = "rift_rail_title_bar", direction = "horizontal" })
+    
+    -- 我们自己把总标题写进这个 header 里
+    title_bar.add({
+        type = "label",
+        caption = title_caption,
+        style = "frame_title",
+        ignored_by_interaction = true,
+    })
+
+    -- 原生拖拽弹簧区
+    local drag_space = title_bar.add({ type = "empty-widget", style = "draggable_space_header" })
+    drag_space.style.horizontally_stretchable = true
+    drag_space.style.minimal_height = 24
+    drag_space.style.minimal_width = 24
+    drag_space.drag_target = frame -- 关键魔法：让弹簧成为整个窗口的把手
+
+    -- 绝对原生的关闭按钮
+    title_bar.add({
+        type = "sprite-button",
+        name = "rift_rail_close_button",
+        style = "frame_action_button",
+        sprite = "utility/close",
+    })
+
+    -- 主体大框架
     local content_flow = frame.add({ type = "flow", direction = "horizontal" })
     content_flow.style.vertical_align = "top"
 
-    local left_pane = content_flow.add({ type = "flow", direction = "vertical" })
-    left_pane.style.padding = 8
-    left_pane.style.minimal_width = 300
-    left_pane.style.maximal_width = 300
+    -- 左侧深层容器底座 (The Left "坑")
+    local left_inset = content_flow.add({ type = "frame", style = "inside_shallow_frame" })
+    left_inset.style.minimal_width = 300
+    left_inset.style.maximal_width = 300
 
-    -- 4. 名称区域
+    local left_pane = left_inset.add({ type = "flow", direction = "vertical" })
+    left_pane.style.padding = 8
+    left_pane.style.horizontally_stretchable = true
+
+    -- 4. 专属参数门牌号 (Rename Area) - 回归左侧内陷大坑！
     local name_flow = left_pane.add({ type = "flow", name = "name_flow", direction = "horizontal" })
     name_flow.style.vertical_align = "center"
     name_flow.style.bottom_margin = 8
@@ -487,15 +518,18 @@ function GUI.build_or_update(player, entity)
         caption = { "gui.rift-rail-btn-player-teleport" },
     })
 
-    -- 11. 摄像头预览窗口 & 独立抽屉
+    -- 11. 摄像头预览窗口 & 独立抽屉深入
     -- 只要有目标 ID 且 玩家勾选了预览，就显示
     if preview_target_id and player_settings.show_preview then
         local partner = State.get_portaldata_by_id(preview_target_id)
         if partner and partner.shell and partner.shell.valid then
-            -- 插入垂直切割线，分割操作台与屏幕区
-            content_flow.add({ type = "line", direction = "vertical" })
+            -- 取消纯细线，用一点间距将左右坑隔开
+            local spacer = content_flow.add({ type = "empty-widget" })
+            spacer.style.width = 4
             
-            local right_pane = content_flow.add({ type = "flow", direction = "vertical" })
+            -- 右侧监控室大底座 (The Right "坑")
+            local right_inset = content_flow.add({ type = "frame", style = "inside_shallow_frame" })
+            local right_pane = right_inset.add({ type = "flow", direction = "vertical" })
             right_pane.style.padding = 8
             
             local title_flow = right_pane.add({ type = "flow", direction = "horizontal" })
@@ -518,12 +552,8 @@ function GUI.build_or_update(player, entity)
                 caption = " " .. partner.name .. " [" .. partner.shell.surface.name .. "]",
             })
 
-            local preview_frame = right_pane.add({ type = "frame", style = "inside_shallow_frame" })
-            preview_frame.style.minimal_width = 300
-            preview_frame.style.maximal_width = 300
-            preview_frame.style.vertically_stretchable = true
-
-            local cam = preview_frame.add({
+            -- 摄像头不套任何多余的包裹，直接吃满下凹式监控底座
+            local cam = right_pane.add({
                 type = "camera",
                 name = "rift_rail_preview_camera",
                 position = partner.shell.position,
@@ -557,6 +587,11 @@ function GUI.handle_click(event)
 
     local frame = player.gui.screen.rift_rail_main_frame
     if not (frame and frame.valid) then
+        return
+    end
+
+    if el_name == "rift_rail_close_button" then
+        frame.destroy()
         return
     end
 
