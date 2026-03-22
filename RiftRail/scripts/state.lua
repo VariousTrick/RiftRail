@@ -40,6 +40,7 @@ function State.setup_new_game()
     storage.rift_rail_cybersyn_fully_purged = true
     storage.rift_rail_ltn_remote_purged = true
     storage.rift_rail_ltn_table_migrated = true
+    storage.hub_and_spoke_migrated = true
 end
 
 --- [阶段二：老兵补丁]
@@ -74,6 +75,7 @@ function State.patch_missing_root_tables()
     if storage.rift_rail_cybersyn_fully_purged == nil then storage.rift_rail_cybersyn_fully_purged = false end
     if storage.rift_rail_ltn_remote_purged == nil then storage.rift_rail_ltn_remote_purged = false end
     if storage.rift_rail_ltn_table_migrated == nil then storage.rift_rail_ltn_table_migrated = false end
+    if storage.hub_and_spoke_migrated == nil then storage.hub_and_spoke_migrated = false end
 end
 
 -- ============================================================================

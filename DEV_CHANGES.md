@@ -5,6 +5,31 @@
 >
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
+## 2026-03-22（v0.13.3：蓝图系统与内部车站架构精简）
+
+**核心聚焦**：由于现代 Factorio 的蓝图系统原生支持利用 `tags` 功能携带实体属性，本版本彻底废弃了“强行往蓝图中注入带位移的内部车站幽灵来保存数据”的历史冗余操作，蓝图机制变得空前清爽。
+
+### 废弃蓝图车站幽灵注入
+现在的配置恢复工作完全由外壳本身的持久化 `tags` 独立包办。这意味着无论玩家使用何种被加料的老蓝图，或者蓝图机器人参与修补，都不会再有任何游离于数据树之外的“孤儿隐形车站”遗留在地图上。此外去除了内部车站原型的 `placeable_by` 属性，从根源上断绝了机器人凭空违规建造该隐藏零件的可能。
+
+### 具体改动
+- `RiftRail/scripts/builder.lua`：删除了 `on_setup_blueprint` 中对 `rift-rail-station` 的强行注入与空间位移。
+- `RiftRail/scripts/builder.lua`：清除了 `on_built` 阶段对旁侧空地的 `entity-ghost` 扫描与回读逻辑。
+- `RiftRail/prototypes/internal/station.lua`：移除了 `placeable_by` 属性。
+
+
+## 2026-03-22（v0.13.3：拆除监听与底层生命周期重构）
+
+**核心聚焦**：为了极限压榨游戏 UPS 性能，永久性地移除了未配备原生过滤器的全局毁坏监听事件（`script_raised_destroy`），全面转型拥抱开销极低的底层兜底防线 —— `on_object_destroyed`。
+
+### 底层静默清道夫机制
+当传送门遭遇（如：地图编辑器强制选区刷除、SE跨星系强杀切片等）单纯的底层脚本突发死亡时，被销毁的注册对象会精准触发高响应级别的 `on_silent_destroyed` 清道夫机制。它将直接回溯数据树，对原本不在常规销毁队列中的核心轨道、信号灯、内部车站以及隐形物理碰撞壁（Collider）执行同步定点清算，实现真正的物理同生共死。
+
+### 具体改动
+- `RiftRail/control.lua`：移除了旧全局事件监听，全面接入 `on_object_destroyed`。
+- `RiftRail/scripts/builder.lua`：新增 `on_silent_destroyed` 静态死亡回收控制器。
+- `RiftRail/scripts/builder.lua`：在 `on_built` 与 `on_cloned` 中追加了相应的对象级防线注册器。
+- `RiftRail/scripts/migrations.lua`：为全图旧档残存实体补发了生命周期钢印与主键结构向后兼容修补。
 
 ## 2026-03-21（v0.13.2：列车中断机制极客级优化——白名单靶向洗脱与语义重构）
 

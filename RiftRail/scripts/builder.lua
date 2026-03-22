@@ -160,7 +160,7 @@ function Builder.on_built(event)
             -- 未来如果需要设置其他运行时属性，也可以加在这里
         end
 
-        table.insert(children, { entity = child_entity, relative_pos = relative_pos })
+        table.insert(children, { entity = child_entity, relative_pos = relative_pos, unit_number = child_entity.unit_number })
         return child_entity
     end
 
@@ -184,68 +184,7 @@ function Builder.on_built(event)
     -- 4. 创建车站
     local st_offset = rotate_point(MASTER_LAYOUT.station, direction)
 
-    -- 计算搜索坐标
-    -- 这样搜索点就位于 (2, 7) 而不是 (0, 6.5)，完美避开铁轨
-    local search_pos = { x = position.x, y = position.y }
-
-    if direction == 0 then
-        search_pos.x = search_pos.x + 2
-        search_pos.y = search_pos.y + 7
-    elseif direction == 4 then
-        search_pos.x = search_pos.x - 7
-        search_pos.y = search_pos.y + 2
-    elseif direction == 8 then
-        search_pos.x = search_pos.x - 2
-        search_pos.y = search_pos.y - 7
-    elseif direction == 12 then
-        search_pos.x = search_pos.x + 7
-        search_pos.y = search_pos.y - 2
-    end
-
-    if RiftRail.DEBUG_MODE_ENABLED then
-        log_debug("[Builder] 正在侧面安全区搜寻幽灵: " .. search_pos.x .. ", " .. search_pos.y)
-    end
-
-    local ghosts = surface.find_entities_filtered({
-        type = "entity-ghost",
-        ghost_name = "rift-rail-station",
-        position = search_pos,
-        radius = 2, -- 范围 1.0 足够覆盖了
-        limit = 1,
-    })
-
     local prefix = recovered_prefix
-
-    -- 幽灵数据解析与重组
-    if ghosts[1] and ghosts[1].valid then
-        local ghost = ghosts[1]
-        local snatched_str = ghost.backer_name
-
-        if snatched_str and snatched_str ~= "" then
-            if RiftRail.DEBUG_MODE_ENABLED then
-                log_debug("[Builder] 窃取到原始名字: " .. snatched_str)
-            end
-
-            -- 1. 清洗：移除专用图标
-            local clean_str = string.gsub(snatched_str, "%[item=rift%-rail%-placer%]", "")
-
-            -- 2. 解析：提取自定义图标和名字
-            local prefix, icon_type, icon_name, separator, plain_name = string.match(clean_str,
-                "^(%s*)%[([%w%-]+)=([%w%-]+)%](%s*)(.*)")
-
-            if icon_type and icon_name then
-                recovered_icon = { type = icon_type, name = icon_name }
-                recovered_name = (separator or "") .. (plain_name or "")
-            else
-                recovered_icon = nil
-                -- 纯文本模式也要分离出 prefix
-                local p_space, p_name = string.match(clean_str, "^(%s*)(.*)")
-                prefix = p_space
-                recovered_name = p_name or ""
-            end
-        end
-        ghost.destroy()
-    end
 
     -- 3. 标准化重组 (这一步确保了无论蓝图怎么改，生成的格式永远是标准的)
     local master_icon = "[item=rift-rail-placer]"
@@ -359,6 +298,17 @@ function Builder.on_built(event)
 
     -- 维护 id_map 缓存
     storage.rift_rail_id_map[custom_id] = shell.unit_number
+
+    -- 注册外壳与核心的销毁事件监听
+    if shell and shell.valid then
+        script.register_on_object_destroyed(shell)
+    end
+    for _, child in pairs(children) do
+        if child.entity and child.entity.valid and child.entity.name == "rift-rail-core" then
+            script.register_on_object_destroyed(child.entity)
+            break
+        end
+    end
 end
 
 -- 强制清理区域内的火车 (防止拆除铁轨后留下幽灵车厢)
@@ -603,9 +553,15 @@ function Builder.on_cloned(event)
                     table.insert(new_data.children, {
                         entity = found_clone[1],
                         relative_pos = old_child_data.relative_pos,
+                        unit_number = found_clone[1].unit_number
                     })
 
-                    -- 【重要】如果是碰撞器，必须给克隆体上户口！
+                    -- 为克隆出的新核心注册销毁事件
+                    if child_name == "rift-rail-core" then
+                        script.register_on_object_destroyed(found_clone[1])
+                    end
+
+                    -- 登记克隆体碰撞器的全局映射
                     if child_name == "rift-rail-collider" and found_clone[1].unit_number then
                         
                         storage.collider_to_portal[found_clone[1].unit_number] = new_unit_number
@@ -625,6 +581,11 @@ function Builder.on_cloned(event)
     new_data.cached_check_area = cached_area
     -- 深拷贝会带出旧门的 can_place 查询表；克隆后强制失效，交给 teleport 懒加载重建
 
+
+    -- 为克隆出的新外壳注册销毁事件
+    if new_entity and new_entity.valid then
+        script.register_on_object_destroyed(new_entity)
+    end
 
     -- 保存新数据，清理旧数据
     storage.rift_rails[new_unit_number] = new_data
@@ -690,56 +651,7 @@ function Builder.on_setup_blueprint(event)
             end
             table.insert(new_entities, placer_entity)
 
-            -- 2. 注入内部车站 (实现蓝图参数化)
-            if data and data.children then
-                for _, child_data in pairs(data.children) do
-                    local child = child_data.entity
-                    if child and child.valid and child.name == "rift-rail-station" then
-                        -- 计算原始相对坐标 (保留横向偏移 x=2)
-                        local offset_x = child.position.x - source_entity.position.x
-                        local offset_y = child.position.y - source_entity.position.y
-                        local dir = source_entity.direction
-
-                        -- 纵向保持 6.5 (红绿灯下方)
-                        -- 横向从 2.0 改为 3.5 (确保边缘不重叠)
-                        if dir == 0 then -- North
-                            offset_x = 2 -- 向右更远一点
-                            offset_y = 7
-                        elseif dir == 4 then -- East
-                            offset_x = -7
-                            offset_y = 2 -- 向下更远一点
-                        elseif dir == 8 then -- South
-                            offset_x = -2 -- 向左更远一点
-                            offset_y = -7
-                        elseif dir == 12 then -- West
-                            offset_x = 7
-                            offset_y = -2 -- 向上更远一点
-                        end
-
-                        max_entity_number = max_entity_number + 1
-
-                        local station_bp_entity = {
-                            entity_number = max_entity_number,
-                            name = "rift-rail-station",
-                            position = {
-                                x = bp_entity.position.x + offset_x,
-                                y = bp_entity.position.y + offset_y,
-                            },
-                            direction = child.direction,
-                            station = child.backer_name,
-                        }
-
-                        table.insert(new_entities, station_bp_entity)
-                        if RiftRail.DEBUG_MODE_ENABLED then
-                            log_debug("[Control] 蓝图注入车站: 偏移修正 (" .. offset_x .. ", " .. offset_y .. ")")
-                        end
-                        break
-                    end
-                end
-            end
-
-            -- [重要] 允许车站通过过滤器
-        elseif not (source_entity and source_entity.valid and source_entity.name:find("rift-rail-")) or (source_entity.name == "rift-rail-station") then
+        elseif not (source_entity and source_entity.valid and source_entity.name:find("rift-rail-")) then
             table.insert(new_entities, bp_entity)
         end
     end
@@ -898,6 +810,67 @@ function Builder.rebuild_all_colliders()
             end
         end
     end
+end
+-- ============================================================================
+-- 处理 entity_destroyed 回调触发的销毁逻辑
+-- ============================================================================
+function Builder.on_silent_destroyed(unit_number)
+    local target_data = storage.rift_rails[unit_number]
+    
+    -- 如果外壳没死，那就是核心死了，遍历所有 children 查找
+    if not target_data then
+        for _, portal in pairs(storage.rift_rails) do
+            if portal.children then
+                for _, child in pairs(portal.children) do
+                    if child.unit_number == unit_number then
+                        target_data = portal
+                        break
+                    end
+                end
+            end
+            if target_data then break end
+        end
+    end
+
+    -- 如果都查不到，说明已经被常规的 on_mined_handler 清理掉了，静默退出
+    if not target_data then return end
+
+    -- 找到了受害者所在的传送门，执行无情地清理
+    if RiftRail and RiftRail.DEBUG_MODE_ENABLED and log_debug then
+        log_debug("[Builder] triggered silent destroyed mechanism for portal unit_number: " .. unit_number)
+    end
+
+    -- 移除失效的配网连接
+    if Logic and Logic.unpair_portals_specific then
+        if target_data.mode == "entry" and target_data.target_ids then
+            for target_id, _ in pairs(target_data.target_ids) do
+                Logic.unpair_portals_specific(nil, target_data.id, target_id)
+            end
+        elseif target_data.mode == "exit" and target_data.source_ids then
+            for source_id, _ in pairs(target_data.source_ids) do
+                Logic.unpair_portals_specific(nil, source_id, target_data.id)
+            end
+        end
+    end
+
+    -- 销毁残存的附属件
+    if target_data.children then
+        for _, child_data in pairs(target_data.children) do
+            if child_data.entity and child_data.entity.valid then
+                child_data.entity.destroy()
+            end
+        end
+    end
+    -- 销毁外壳本身 (如果它还活着)
+    if target_data.shell and target_data.shell.valid then
+        target_data.shell.destroy()
+    end
+
+    -- 回收各种映射表内存
+    if storage.rift_rail_id_map then
+        storage.rift_rail_id_map[target_data.id] = nil
+    end
+    storage.rift_rails[target_data.unit_number] = nil
 end
 
 return Builder

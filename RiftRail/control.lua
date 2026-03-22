@@ -218,8 +218,11 @@ script.on_event(defines.events.on_player_mined_entity, on_mined_handler, rr_filt
 -- 2. 原生拆除 (机器人): 单独注册 + 过滤器
 script.on_event(defines.events.on_robot_mined_entity, on_mined_handler, rr_filters)
 
--- 3. 脚本拆除: 不使用过滤器 (无变化)
-script.on_event(defines.events.script_raised_destroy, on_mined_handler)
+-- 3. 基于注册的实体销毁监听
+-- 处理不支持过滤器的底层强制销毁事件
+script.on_event(defines.events.on_object_destroyed, function(event)
+    Builder.on_silent_destroyed(event.useful_id)
+end)
 
 -- C. 死亡事件分流 (on_entity_died)
 -- 加入过滤器，此时虫子死亡绝对不会触发此函数，彻底消除战斗卡顿
