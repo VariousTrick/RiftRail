@@ -6,35 +6,57 @@
 local GUI = {}
 
 function GUI.clear_preview_render(player_index)
-    if storage.rift_rail_player_settings and storage.rift_rail_player_settings[player_index] then
-        local render_obj = storage.rift_rail_player_settings[player_index].preview_render_id
-        if render_obj and render_obj.valid then
+    if not storage.rift_rail_preview_renders then
+        return
+    end
+
+    local render_obj = storage.rift_rail_preview_renders[player_index]
+    if render_obj then
+        if type(render_obj) == "table" then
+            for _, rid in pairs(render_obj) do
+                if rid and rid.valid then
+                    rid.destroy()
+                end
+            end
+        elseif render_obj.valid then
             render_obj.destroy()
         end
-        storage.rift_rail_player_settings[player_index].preview_render_id = nil
+        storage.rift_rail_preview_renders[player_index] = nil
     end
 end
 
 function GUI.draw_preview_render(player, shell)
-    if not (shell and shell.valid) then return end
-    
-    if not storage.rift_rail_player_settings then storage.rift_rail_player_settings = {} end
-    if not storage.rift_rail_player_settings[player.index] then storage.rift_rail_player_settings[player.index] = {} end
-    
+    if not (shell and shell.valid) then
+        return
+    end
+
     GUI.clear_preview_render(player.index)
-    
-    local rid = rendering.draw_rectangle({
-        color = {r = 0, g = 1, b = 1, a = 0.5}, -- 亮青色全息锁定雷达框
+
+    -- 第一层：内圈（粗壮的高亮主锁定环）
+    local rid_inner = rendering.draw_circle({
+        color = { r = 0, g = 1, b = 1, a = 1 },
+        radius = 3.5,
         width = 4,
         filled = false,
-        left_top = {entity = shell, offset = {-2.5, -2.5}},
-        right_bottom = {entity = shell, offset = {2.5, 2.5}},
+        target = shell,
         surface = shell.surface,
-        players = {player},
+        players = { player },
         draw_on_ground = false,
     })
-    
-    storage.rift_rail_player_settings[player.index].preview_render_id = rid
+
+    -- 第二层：外圈（轻薄的辅助瞄准环，增加层次感和体积感）
+    local rid_outer = rendering.draw_circle({
+        color = { r = 0, g = 1, b = 1, a = 0.3 },
+        radius = 4.0,
+        width = 1,
+        filled = false,
+        target = shell,
+        surface = shell.surface,
+        players = { player },
+        draw_on_ground = false,
+    })
+
+    storage.rift_rail_preview_renders[player.index] = { rid_inner, rid_outer }
 end
 
 local State = nil
@@ -210,8 +232,6 @@ function GUI.build_or_update(player, entity)
         " (ID: " .. my_data.id .. ")", -- 后面拼接 ID
     }
 
-    log_gui("[RiftRail:GUI] 标题已更新为本地化名称 (ID: " .. my_data.id .. ")")
-
     local frame = gui.add({
         type = "frame",
         name = "rift_rail_main_frame",
@@ -222,15 +242,13 @@ function GUI.build_or_update(player, entity)
     -- 6. 让窗口自动居中
     frame.auto_center = true
 
-    -- 7. [核心] 存储 Unit Number，用于后续逻辑
+    -- 7. 存储 Unit Number，用于后续逻辑
     -- 同时保存 unit_number 和 view_mode
     frame.tags = { unit_number = my_data.unit_number }
 
-    -- 8. [关键一步] 欺骗引擎：告诉游戏“现在玩家打开的是这个窗口”
+    -- 8. 欺骗引擎：告诉游戏“现在玩家打开的是这个窗口”
     -- 这会自动关闭原本的箱子界面！
     player.opened = frame
-
-    log_gui("[RiftRail:GUI] 已创建独立窗口并接管 player.opened")
 
     -- 3.5. 纯正原生系统标题栏 (Global Title Bar)
     local title_bar = frame.add({ type = "flow", name = "rift_rail_title_bar", direction = "horizontal" })
@@ -248,7 +266,7 @@ function GUI.build_or_update(player, entity)
     drag_space.style.horizontally_stretchable = true
     drag_space.style.minimal_height = 24
     drag_space.style.minimal_width = 24
-    drag_space.drag_target = frame -- 关键魔法：让弹簧成为整个窗口的把手
+    drag_space.drag_target = frame
 
     -- 绝对原生的关闭按钮
     title_bar.add({
@@ -332,7 +350,7 @@ function GUI.build_or_update(player, entity)
     status_flow.style.bottom_margin = 12
 
     -- 7. 连接控制
-    left_pane.add({ type = "label", caption = { "gui.rift-rail-connections-label" } }) -- 你可能需要去 locale 添加 "Connections" 或 "连接列表"
+    left_pane.add({ type = "label", caption = { "gui.rift-rail-connections-label" } })
 
     -- 创建一个水平容器，用于并排显示下拉框和默认按钮
     local drop_flow = left_pane.add({ type = "flow", direction = "horizontal" })
@@ -379,8 +397,8 @@ function GUI.build_or_update(player, entity)
         -- 2. 添加分隔符 (仅当列表不为空时)
         if #ordered_ids > 0 then
             table.insert(dropdown_items, "──────────")
-            table.insert(dropdown_ids, 0) -- 【修复】使用 0 占位，保证索引对齐
-            table.insert(dropdown_is_paired, "separator") -- 【修复】使用字符串占位
+            table.insert(dropdown_ids, 0)
+            table.insert(dropdown_is_paired, "separator")
         end
 
         -- 3. 添加未连接的伙伴 (统一逻辑)
@@ -460,8 +478,8 @@ function GUI.build_or_update(player, entity)
     btn_flow.add({
         type = "button",
         name = "rift_rail_action_button",
-        caption = "...", -- 稍后由事件更新
-        style = "red_button", -- 默认样式
+        caption = "...",
+        style = "red_button",
         enabled = (#dropdown_items > 0),
     })
 
@@ -639,8 +657,6 @@ function GUI.handle_click(event)
         return
     end
 
-    log_gui("[RiftRail:GUI] 点击: " .. el_name .. " (ID: " .. unit_number .. ")")
-
     -- 配对
     if el_name == "rift_rail_action_button" then
         local dropdown = find_element_recursively(frame, "rift_rail_target_dropdown")
@@ -653,7 +669,6 @@ function GUI.handle_click(event)
         local target_id = dropdown.tags.ids[selected_index]
         local status = is_paired_map[selected_index]
 
-        -- 【修复】检查占位符
         if not target_id or target_id == 0 or status == "separator" then
             return
         end
@@ -849,7 +864,6 @@ function GUI.handle_close(event)
     local element = event.element
 
     if element and element.valid and element.name == "rift_rail_main_frame" then
-        log_gui("[RiftRail:GUI] 检测到关闭事件，销毁窗口。")
         -- 玩家关闭主界面时，彻底清空远程实体上的全息高亮锁定框
         GUI.clear_preview_render(event.player_index)
         element.destroy()
@@ -985,16 +999,12 @@ function GUI.update_camera_preview(player, frame, target_id)
     -- 修改标题文字
     title_label.caption = { "gui.rift-rail-preview-title", partner.name, partner.shell.surface.name }
 
-    -- 修改摄像头视角 (Factorio 引擎会自动处理跨地表切换)
+    -- 修改摄像头视角
     camera_widget.position = partner.shell.position
     camera_widget.surface_index = partner.shell.surface.index
 
     -- 切换摄像头目标后，立刻补发更新雷达高亮锁定框
     GUI.draw_preview_render(player, partner.shell)
-
-    -- 如果需要，也可以重置缩放
-    -- camera_widget.zoom = 0.2
-
     return true
 end
 
