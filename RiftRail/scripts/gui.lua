@@ -571,41 +571,49 @@ function GUI.build_or_update(player, entity)
     })
 
     -- 11. 摄像头预览窗口 & 独立抽屉深入
-    -- 只要有目标 ID 且 玩家勾选了预览，就显示
     if preview_target_id and player_settings.show_preview then
         local partner = State.get_portaldata_by_id(preview_target_id)
         if partner and partner.shell and partner.shell.valid then
-            -- 取消纯细线，用一点间距将左右坑隔开
-            local spacer = content_flow.add({ type = "empty-widget" })
-            spacer.style.width = 4
-            
-            -- 右侧监控室大底座 (The Right "坑")
-            local right_inset = content_flow.add({ type = "frame", style = "inside_deep_frame" })
-            local right_pane = right_inset.add({ type = "flow", direction = "vertical" })
-            right_pane.style.padding = 8
-            
-            local title_flow = right_pane.add({ type = "flow", direction = "horizontal" })
-            title_flow.style.vertical_align = "center"
-            title_flow.style.bottom_margin = 6
+            -- 左右面板之间的间距 (这就是你看到的竖直分界线)
+            local spacer_h = content_flow.add({ type = "empty-widget" })
+            spacer_h.style.width = 8
 
-            -- 优先使用原本的【远程观察】按钮作为功能性大图标标题
-            if dropdown_is_paired[selected_idx] == true then
-                title_flow.add({
-                    type = "button",
-                    name = "rift_rail_remote_view_button",
-                    caption = { "gui.rift-rail-btn-view" },
-                })
-            end
+            -- 【核心修改1】：右侧主列改用完全透明的 flow 包裹，不再使用统一的深色底座
+            local right_column = content_flow.add({ type = "flow", direction = "vertical" })
+            right_column.style.vertically_stretchable = true
 
-            -- 将原本的名字文字作为补全紧随其后
-            title_flow.add({
-                type = "label",
-                style = "bold_label",
-                caption = " " .. partner.name .. " [" .. partner.shell.surface.name .. "]",
+            local is_paired = (dropdown_is_paired[selected_idx] == true)
+
+            -- ==========================================
+            -- 模块 1：上半部独立的标题按钮
+            -- ==========================================
+            local title_btn = right_column.add({
+                type = "button",
+                name = "rift_rail_remote_view_button",
+                caption = partner.name .. " [" .. partner.shell.surface.name .. "]",
+                tooltip = is_paired and { "gui.rift-rail-btn-view" } or "",
+                enabled = is_paired,
             })
+            title_btn.style.horizontally_stretchable = true
+            title_btn.style.font = "default-bold"
 
-            -- 摄像头不套任何多余的包裹，直接吃满下凹式监控底座
-            local cam = right_pane.add({
+            -- ==========================================
+            -- 模块 2：完美复刻缝隙！(这就是你要的横向分界)
+            -- ==========================================
+            -- 高度设为和左边 spacer_h 的宽度一致(8)，就能形成极其工整的十字型底板缝隙
+            local spacer_v = right_column.add({ type = "empty-widget" })
+            spacer_v.style.height = 8
+
+            -- ==========================================
+            -- 模块 3：下半部独立的摄像头大坑
+            -- ==========================================
+            -- 给摄像头单独挖一个深色坑
+            local cam_inset = right_column.add({ type = "frame", style = "inside_deep_frame" })
+            cam_inset.style.horizontally_stretchable = true
+            cam_inset.style.vertically_stretchable = true
+            cam_inset.style.padding = 0 -- 消除内边距，让摄像头无死角贴紧边框
+
+            local cam = cam_inset.add({
                 type = "camera",
                 name = "rift_rail_preview_camera",
                 position = partner.shell.position,
@@ -613,6 +621,9 @@ function GUI.build_or_update(player, entity)
                 zoom = 0.2,
             })
             cam.style.minimal_width = 300
+            cam.style.minimal_height = 300
+            -- 【核心修改2】：恢复摄像头的完全自动拉伸！
+            cam.style.horizontally_stretchable = true
             cam.style.vertically_stretchable = true
 
             -- 在目标传送门外壳上打一个仅自己可见的全息高亮框
@@ -978,12 +989,12 @@ function GUI.update_camera_preview(player, frame, target_id)
         return nil
     end
 
-    -- 2. 查找 标题(Label) 和 摄像头(Camera)
-    local title_label = find_element_recursively(frame, "rift_rail_preview_title")
+    -- 2. 查找 标题按钮(Button) 和 摄像头(Camera)
+    local title_btn = find_element_recursively(frame, "rift_rail_remote_view_button")
     local camera_widget = find_element_recursively(frame, "rift_rail_preview_camera")
 
     -- 如果找不到控件（说明之前可能没勾选预览），返回 false，让外部去执行完整的 build_or_update
-    if not (title_label and title_label.valid and camera_widget and camera_widget.valid) then
+    if not (title_btn and title_btn.valid and camera_widget and camera_widget.valid) then
         return false
     end
 
@@ -996,8 +1007,16 @@ function GUI.update_camera_preview(player, frame, target_id)
 
     -- 4. 【核心】直接修改属性（无闪烁切换）
 
-    -- 修改标题文字
-    title_label.caption = { "gui.rift-rail-preview-title", partner.name, partner.shell.surface.name }
+    -- 修改标题按钮文字
+    title_btn.caption = partner.name .. " [" .. partner.shell.surface.name .. "]"
+
+    -- 【新增】：同步更新按钮的可点击状态（防瞎点）
+    local dropdown = find_element_recursively(frame, "rift_rail_target_dropdown")
+    if dropdown and dropdown.tags and dropdown.tags.is_paired_map then
+        local is_paired = (dropdown.tags.is_paired_map[dropdown.selected_index] == true)
+        title_btn.enabled = is_paired
+        title_btn.tooltip = is_paired and { "gui.rift-rail-btn-view" } or ""
+    end
 
     -- 修改摄像头视角
     camera_widget.position = partner.shell.position
