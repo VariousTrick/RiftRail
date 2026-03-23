@@ -609,16 +609,6 @@ function GUI.build_or_update(player, entity)
         preview_target_id = dropdown_ids[selected_idx]
     end
 
-    -- 只要有目标 ID，就允许显示勾选框（无论是管理模式还是添加模式）
-    if preview_target_id then
-        left_pane.add({
-            type = "checkbox",
-            name = "rift_rail_preview_check",
-            state = player_settings.show_preview,
-            caption = { "gui.rift-rail-preview-checkbox" },
-        })
-    end
-
     -- 11. 摄像头预览窗口 & 独立抽屉深入
     if preview_target_id and player_settings.show_preview then
         local partner = State.get_portaldata_by_id(preview_target_id)
@@ -893,12 +883,7 @@ function GUI.handle_checked_state_changed(event)
         return
     end
 
-    if event.element.name == "rift_rail_preview_check" then
-        if storage.rift_rail_player_settings[player.index] then
-            storage.rift_rail_player_settings[player.index].show_preview = event.element.state
-            GUI.build_or_update(player, my_data.shell) -- 传入实体刷新
-        end
-    elseif event.element.name == "rift_rail_cs2_checkbox" then
+    if event.element.name == "rift_rail_cs2_checkbox" then
         remote.call("RiftRail", "set_cs2_enabled", player.index, my_data.id, event.element.state)
     elseif event.element.name == "rift_rail_ltn_checkbox" then
         remote.call("RiftRail", "set_ltn_enabled", player.index, my_data.id, event.element.state)
