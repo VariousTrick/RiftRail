@@ -357,10 +357,6 @@ function GUI.build_or_update(player, entity)
     })
     preview_btn.style.padding = 0
 
-    -- 两个图标之间的微小间距
-    local mid_spacer = mode_flow.add({ type = "empty-widget" })
-    mid_spacer.style.width = 2
-
     -- 右侧：传送玩家按钮 (使用透明的 tool_button 样式，消除丑陋黑框)
     local tp_btn = mode_flow.add({
         type = "sprite-button",

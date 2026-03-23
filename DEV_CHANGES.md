@@ -6,6 +6,18 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+###  2026-03-24（v0.13.5：GUI 专属工具栏与状态机图标化）
+
+**核心聚焦**：为了将左下角的宝贵空间彻底释放给未来的“数据统计仪表盘”，对冗杂的操作控件实施了降维打击。
+- **“双子星”快捷指令**：在“运行模式（入口/出口）”栏的最右侧，利用弹簧排版开辟了专属的工具栏区域。将原本占用极大的“传送玩家”文字按钮，以及用于控制右侧监控的“显示目标预览”复选框，全部重构为扁平、无框的 `tool_button` 图标（跑步小人与状态眼睛）。
+- **无缝状态翻转**：彻底移除了底层的 Checkbox 控件与对应的 `on_gui_checked_state_changed` 监听。现在，监控画面的开关由“眼睛”图标的点击事件接管。通过纯代码驱动的布尔值翻转与瞬间重绘，实现了睁眼/闭眼图标的平滑切换，交互逻辑更加契合硬核工业控制台的直觉。
+
+### 具体改动
+- `RiftRail/scripts/gui.lua`：在 `build_or_update` 的模式切换流（`mode_flow`）最右侧，新增了基于 `sprite-button` 的 `rift_rail_toggle_preview_button` 和 `rift_rail_tp_player_button`。
+- `RiftRail/scripts/gui.lua`：移除了旧版左下方的 `tool_flow` 传送按钮，以及 `rift_rail_preview_check` 复选框的渲染代码。
+- `RiftRail/scripts/gui.lua`：在 `handle_click` 事件流末端接管了预览状态翻转逻辑（`show_preview = not show_preview`）并触发重绘；在 `handle_checked_state_changed` 中清除了已废弃的复选框事件拦截分支。
+
+
 ## 2026-03-23（v0.13.4：GUI 交互极简进化与视觉层级重构）
 
 **核心聚焦**：深入挖掘 Factorio UI 引擎的 `ignored_by_interaction` 穿透特性与负边距排版魔法，彻底消灭了冗余的操作控件，并将左右面板的视觉层级与工业质感推向了新的高度。
