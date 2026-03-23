@@ -79,7 +79,6 @@ local MAX_CONNECTIONS = 5
 function GUI.init(dependencies)
     State = dependencies.State
     log_debug = dependencies.log_debug
-    log_gui("[RiftRail:GUI] 模块初始化完成 (Relative Mode)。")
 end
 
 -- =================================================================================
@@ -111,7 +110,7 @@ function GUI.build_display_name_flow(parent_flow, my_data)
     parent_flow.clear()
 
     -- 1. 确定图标字符串 (如果有自定义用自定义，没有则用默认)
-    local icon_str = "[item=rift-rail-placer]" -- 默认图标
+    local icon_str = "[item=rift-rail-placer]"
     if my_data.icon and my_data.icon.type and my_data.icon.name then
         icon_str = "[" .. my_data.icon.type .. "=" .. my_data.icon.name .. "]"
     end
@@ -172,7 +171,6 @@ function GUI.build_or_update(player, entity)
     -- 1. 获取数据
     local my_data = State.get_portaldata(entity)
     if not my_data then
-        log_gui("[RiftRail:GUI] 错误: 无法找到实体关联的数据。")
         return
     end
 
@@ -228,7 +226,7 @@ function GUI.build_or_update(player, entity)
         "", -- 空字符串开头，表示这是一个拼接列表
         title_icon, -- 图标字符串 "[item=...]"
         " ", -- 空格
-        { "entity-name.rift-rail-core" }, -- 读取 locale 中的中文名
+        { "entity-name.rift-rail-core" },
         " (ID: " .. my_data.id .. ")", -- 后面拼接 ID
     }
 
@@ -236,7 +234,6 @@ function GUI.build_or_update(player, entity)
         type = "frame",
         name = "rift_rail_main_frame",
         direction = "vertical",
-        -- 核心改动：绝不给外层 frame 传 caption，否则引擎会强行生成内置且无法自定义控件的 title_bar
     })
 
     -- 6. 让窗口自动居中
@@ -252,7 +249,7 @@ function GUI.build_or_update(player, entity)
 
     -- 3.5. 纯正原生系统标题栏 (Global Title Bar)
     local title_bar = frame.add({ type = "flow", name = "rift_rail_title_bar", direction = "horizontal" })
-    
+
     -- 我们自己把总标题写进这个 header 里
     title_bar.add({
         type = "label",
@@ -293,7 +290,7 @@ function GUI.build_or_update(player, entity)
     -- 使用 subheader_frame 产生浅色金属凸起感
     local name_bg = left_pane.add({ type = "frame", style = "subheader_frame", name = "name_bg_frame" })
 
-    -- 【负边距魔法】：刚好抵消 left_pane 的 8 像素 padding，强行和顶/左/右边缘贴死
+    -- 刚好抵消 left_pane 的 8 像素 padding，强行和顶/左/右边缘贴死
     name_bg.style.top_margin = -8
     name_bg.style.left_margin = -8
     name_bg.style.right_margin = -8
@@ -407,7 +404,7 @@ function GUI.build_or_update(player, entity)
         end
     end
 
-    -- 【新逻辑】只有当自己还没满员时，才显示“未连接”列表
+    -- 只有当自己还没满员时，才显示“未连接”列表
     local current_connection_count = #ordered_ids
     if current_connection_count < MAX_CONNECTIONS then
         -- 2. 添加分隔符 (仅当列表不为空时)
@@ -599,9 +596,7 @@ function GUI.build_or_update(player, entity)
 
             local is_paired = (dropdown_is_paired[selected_idx] == true)
 
-            -- ==========================================
-            -- 模块 1：上半部独立的标题按钮 (暗色下陷风格)
-            -- ==========================================
+            -- 上半部独立的标题按钮
             local title_btn = right_column.add({
                 type = "button",
                 name = "rift_rail_remote_view_button",
@@ -841,12 +836,18 @@ function GUI.handle_switch_state_changed(event)
 end
 
 function GUI.handle_checked_state_changed(event)
-    if not (event.element and event.element.valid) then return end
+    if not (event.element and event.element.valid) then
+        return
+    end
     local player = game.get_player(event.player_index)
     local frame = player.gui.screen.rift_rail_main_frame
-    if not frame then return end
+    if not frame then
+        return
+    end
     local my_data = State.get_portaldata_by_unit_number(frame.tags.unit_number)
-    if not my_data then return end
+    if not my_data then
+        return
+    end
 
     if event.element.name == "rift_rail_preview_check" then
         if storage.rift_rail_player_settings[player.index] then
