@@ -121,6 +121,7 @@ function GUI.build_display_name_flow(parent_flow, my_data)
     -- 3. 创建 Label
     parent_flow.add({ type = "label", caption = display_caption, style = "bold_label" })
 
+    -- 4. 改名笔
     parent_flow.add({
         type = "sprite-button",
         name = "rift_rail_rename_button",
@@ -308,7 +309,7 @@ function GUI.build_or_update(player, entity)
 
     GUI.build_display_name_flow(name_flow, my_data)
 
-    -- 5. 模式切换 (三态开关)
+    -- 5. 模式切换 (三态开关) 与专属工具栏
     local switch_state = "none"
     if my_data.mode == "entry" then
         switch_state = "left"
@@ -318,7 +319,15 @@ function GUI.build_or_update(player, entity)
     end
 
     left_pane.add({ type = "label", caption = { "gui.rift-rail-mode-label" } })
-    local mode_switch = left_pane.add({
+
+    -- 创建一个水平流，把开关和右侧的快捷按钮包起来
+    local mode_flow = left_pane.add({ type = "flow", direction = "horizontal" })
+    mode_flow.style.vertical_align = "center"
+    mode_flow.style.bottom_margin = 2
+    mode_flow.style.horizontally_stretchable = true
+
+    -- 左侧：原有的模式切换开关
+    local mode_switch = mode_flow.add({
         type = "switch",
         name = "rift_rail_mode_switch",
         switch_state = switch_state,
@@ -328,6 +337,24 @@ function GUI.build_or_update(player, entity)
         tooltip = (switch_state == "left" and { "gui.rift-rail-mode-tooltip-left" }) or (switch_state == "right" and { "gui.rift-rail-mode-tooltip-right" }) or { "gui.rift-rail-mode-tooltip-none" },
     })
     mode_switch.style.bottom_margin = 12
+
+    -- 中间：隐形弹簧，负责把后面的按钮死死推到最右侧
+    local l_mode_pusher = mode_flow.add({ type = "empty-widget" })
+    l_mode_pusher.style.horizontally_stretchable = true
+
+    -- 右侧：传送玩家按钮 (使用透明的 tool_button 样式，消除丑陋黑框)
+    local tp_btn = mode_flow.add({
+        type = "sprite-button",
+        name = "rift_rail_tp_player_button",
+        sprite = "riftrail-teleport-player-icon",
+        tooltip = { "gui.rift-rail-btn-player-teleport" },
+        style = "tool_button",
+    })
+    tp_btn.style.padding = 0
+
+    -- 右侧弹簧
+    local r_mode_pusher = mode_flow.add({ type = "empty-widget" })
+    r_mode_pusher.style.width = 2
 
     -- 定义一个通用的启用状态变量
     local any_connection_exists = (connection_count > 0)
@@ -572,16 +599,6 @@ function GUI.build_or_update(player, entity)
             caption = { "gui.rift-rail-preview-checkbox" },
         })
     end
-
-    local tool_flow = left_pane.add({ type = "flow", direction = "horizontal" })
-    tool_flow.style.top_margin = 8
-
-    -- 传送玩家按钮 (左下方唯一的孤独坚守者)
-    tool_flow.add({
-        type = "button",
-        name = "rift_rail_tp_player_button",
-        caption = { "gui.rift-rail-btn-player-teleport" },
-    })
 
     -- 11. 摄像头预览窗口 & 独立抽屉深入
     if preview_target_id and player_settings.show_preview then
