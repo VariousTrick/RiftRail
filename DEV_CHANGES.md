@@ -5,6 +5,24 @@
 >
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
+
+## 2026-03-23（v0.13.4：GUI 交互极简进化与视觉层级重构）
+
+**核心聚焦**：深入挖掘 Factorio UI 引擎的 `ignored_by_interaction` 穿透特性与负边距排版魔法，彻底消灭了冗余的操作控件，并将左右面板的视觉层级与工业质感推向了新的高度。
+
+### 触屏级极简交互 (Zero-Friction UX)
+彻底移除了右侧监控室那颗极其违和的独立【远程观察】按钮。现在，目标名称的展示栏本身就是一个全宽的伪装交互按钮（利用 `list_box_item` 暗色下陷样式）。当玩家点击名称区域时，鼠标事件将直接穿透下方套件触发传送。这种“所见即所得”的触屏式交互逻辑，让远程监控的体验变得前所未有的丝滑。
+
+### 负边距铭牌与物理分界 (Negative Margin & Physical Dividers)
+- **右侧深槽切割**：弃用了刻意生硬的 `line` 画线方案，转而利用 `empty-widget` 与深色大坑（`inside_deep_frame`）的并排挤占效应，在标题区与摄像头画面之间，原生“挤”出了一道带有 Factorio 原生底色的横向物理深槽分隔线。
+- **左侧悬浮铭牌**：为左侧深色操作区（`left_pane`）的顶部注入了 `subheader_frame` 浅色材质。通过施加极其凶悍的负边距（`-8` Margin）抵消父级框架的内边距限制，强行打造出了一块横向贯穿、左右死死贴紧边缘、且微微凸起的“铝制身份铭牌”。这不仅打破了深色大坑的沉闷感，还在不增加复杂嵌套结构的前提下，完美确立了“标题统领全局”的视觉统治力。
+
+### 具体改动
+- `RiftRail/scripts/gui.lua`：重构 `GUI.build_or_update` 右侧面板渲染流，将原本作为标题的 `Label` 替换为带有 `list_box_item` 样式的全宽 `Button`，并利用 `empty-widget` 切割出物理隔离带。
+- `RiftRail/scripts/gui.lua`：重构左侧面板的门牌号（Rename Area）渲染层级，引入 `subheader_frame` 并应用负边距黑魔法，实现名牌的无缝嵌入与高亮凸起。
+- `RiftRail/scripts/gui.lua`：同步更新 `GUI.update_camera_preview` 函数，确保在下拉框切换目标时，新架构下的按钮 `caption` 与其禁用/高亮状态能被实时且无闪烁地正确覆写。
+
+
 ## 2026-03-22（v0.13.3：GUI 彻底原生化重构与 Z 轴深坑美学）
 
 **核心聚焦**：彻底抛弃早期悬浮、扁平的粗糙 UI 组件堆砌，全面引入 Factorio 官方重工业控制台的架构语言。通过精确剖析 `inside_shallow_frame` 的“挖坑”嵌套手法和 `frame_header` 等原生控件的直接复用，实现了控制面板界面在结构上的内嵌感和动态自适应。

@@ -79,7 +79,6 @@ local MAX_CONNECTIONS = 5
 function GUI.init(dependencies)
     State = dependencies.State
     log_debug = dependencies.log_debug
-    log_gui("[RiftRail:GUI] 模块初始化完成 (Relative Mode)。")
 end
 
 -- =================================================================================
@@ -111,7 +110,7 @@ function GUI.build_display_name_flow(parent_flow, my_data)
     parent_flow.clear()
 
     -- 1. 确定图标字符串 (如果有自定义用自定义，没有则用默认)
-    local icon_str = "[item=rift-rail-placer]" -- 默认图标
+    local icon_str = "[item=rift-rail-placer]"
     if my_data.icon and my_data.icon.type and my_data.icon.name then
         icon_str = "[" .. my_data.icon.type .. "=" .. my_data.icon.name .. "]"
     end
@@ -172,7 +171,6 @@ function GUI.build_or_update(player, entity)
     -- 1. 获取数据
     local my_data = State.get_portaldata(entity)
     if not my_data then
-        log_gui("[RiftRail:GUI] 错误: 无法找到实体关联的数据。")
         return
     end
 
@@ -228,7 +226,7 @@ function GUI.build_or_update(player, entity)
         "", -- 空字符串开头，表示这是一个拼接列表
         title_icon, -- 图标字符串 "[item=...]"
         " ", -- 空格
-        { "entity-name.rift-rail-core" }, -- 读取 locale 中的中文名
+        { "entity-name.rift-rail-core" },
         " (ID: " .. my_data.id .. ")", -- 后面拼接 ID
     }
 
@@ -236,7 +234,6 @@ function GUI.build_or_update(player, entity)
         type = "frame",
         name = "rift_rail_main_frame",
         direction = "vertical",
-        -- 核心改动：绝不给外层 frame 传 caption，否则引擎会强行生成内置且无法自定义控件的 title_bar
     })
 
     -- 6. 让窗口自动居中
@@ -252,7 +249,7 @@ function GUI.build_or_update(player, entity)
 
     -- 3.5. 纯正原生系统标题栏 (Global Title Bar)
     local title_bar = frame.add({ type = "flow", name = "rift_rail_title_bar", direction = "horizontal" })
-    
+
     -- 我们自己把总标题写进这个 header 里
     title_bar.add({
         type = "label",
@@ -289,10 +286,26 @@ function GUI.build_or_update(player, entity)
     left_pane.style.padding = 8
     left_pane.style.horizontally_stretchable = true
 
-    -- 4. 专属参数门牌号 (Rename Area) - 回归左侧内陷大坑！
-    local name_flow = left_pane.add({ type = "flow", name = "name_flow", direction = "horizontal" })
+    -- 4. 专属参数金属铭牌 (无缝贴边效果)
+    -- 使用 subheader_frame 产生浅色金属凸起感
+    local name_bg = left_pane.add({ type = "frame", style = "subheader_frame", name = "name_bg_frame" })
+
+    -- 刚好抵消 left_pane 的 8 像素 padding，强行和顶/左/右边缘贴死
+    name_bg.style.top_margin = -8
+    name_bg.style.left_margin = -8
+    name_bg.style.right_margin = -8
+    name_bg.style.bottom_margin = 12 -- 底部留出间距，与下方的控件区隔开
+    name_bg.style.horizontally_stretchable = true
+
+    -- 给铭牌内部一点呼吸感
+    name_bg.style.padding = 6
+    name_bg.style.left_padding = 12
+
+    -- 将原本的排版流装进这个铭牌底座里
+    local name_flow = name_bg.add({ type = "flow", name = "name_flow", direction = "horizontal" })
     name_flow.style.vertical_align = "center"
-    name_flow.style.bottom_margin = 8
+    name_flow.style.horizontally_stretchable = true
+
     GUI.build_display_name_flow(name_flow, my_data)
 
     -- 5. 模式切换 (三态开关)
@@ -391,7 +404,7 @@ function GUI.build_or_update(player, entity)
         end
     end
 
-    -- 【新逻辑】只有当自己还没满员时，才显示“未连接”列表
+    -- 只有当自己还没满员时，才显示“未连接”列表
     local current_connection_count = #ordered_ids
     if current_connection_count < MAX_CONNECTIONS then
         -- 2. 添加分隔符 (仅当列表不为空时)
@@ -571,41 +584,43 @@ function GUI.build_or_update(player, entity)
     })
 
     -- 11. 摄像头预览窗口 & 独立抽屉深入
-    -- 只要有目标 ID 且 玩家勾选了预览，就显示
     if preview_target_id and player_settings.show_preview then
         local partner = State.get_portaldata_by_id(preview_target_id)
         if partner and partner.shell and partner.shell.valid then
-            -- 取消纯细线，用一点间距将左右坑隔开
-            local spacer = content_flow.add({ type = "empty-widget" })
-            spacer.style.width = 4
-            
-            -- 右侧监控室大底座 (The Right "坑")
-            local right_inset = content_flow.add({ type = "frame", style = "inside_deep_frame" })
-            local right_pane = right_inset.add({ type = "flow", direction = "vertical" })
-            right_pane.style.padding = 8
-            
-            local title_flow = right_pane.add({ type = "flow", direction = "horizontal" })
-            title_flow.style.vertical_align = "center"
-            title_flow.style.bottom_margin = 6
+            -- 左右面板之间的间距
+            local spacer_h = content_flow.add({ type = "empty-widget" })
+            spacer_h.style.width = 8
 
-            -- 优先使用原本的【远程观察】按钮作为功能性大图标标题
-            if dropdown_is_paired[selected_idx] == true then
-                title_flow.add({
-                    type = "button",
-                    name = "rift_rail_remote_view_button",
-                    caption = { "gui.rift-rail-btn-view" },
-                })
-            end
+            local right_column = content_flow.add({ type = "flow", direction = "vertical" })
+            right_column.style.vertically_stretchable = true
 
-            -- 将原本的名字文字作为补全紧随其后
-            title_flow.add({
-                type = "label",
-                style = "bold_label",
-                caption = " " .. partner.name .. " [" .. partner.shell.surface.name .. "]",
+            local is_paired = (dropdown_is_paired[selected_idx] == true)
+
+            -- 上半部独立的标题按钮
+            local title_btn = right_column.add({
+                type = "button",
+                name = "rift_rail_remote_view_button",
+                caption = partner.name .. " [" .. partner.shell.surface.name .. "]",
+                tooltip = is_paired and { "gui.rift-rail-btn-view" } or "",
+                style = "list_box_item",
+                enabled = is_paired,
             })
+            title_btn.style.horizontally_stretchable = true
+            title_btn.style.font = "default-bold"
+            title_btn.style.horizontal_align = "center"
+            title_btn.style.minimal_height = 28
 
-            -- 摄像头不套任何多余的包裹，直接吃满下凹式监控底座
-            local cam = right_pane.add({
+            -- 高度设为和左边 spacer_h 的宽度一致(8)，就能形成极其工整的十字型底板缝隙
+            local spacer_v = right_column.add({ type = "empty-widget" })
+            spacer_v.style.height = 8
+
+            -- 给摄像头单独挖一个深色坑
+            local cam_inset = right_column.add({ type = "frame", style = "inside_deep_frame" })
+            cam_inset.style.horizontally_stretchable = true
+            cam_inset.style.vertically_stretchable = true
+            cam_inset.style.padding = 0
+
+            local cam = cam_inset.add({
                 type = "camera",
                 name = "rift_rail_preview_camera",
                 position = partner.shell.position,
@@ -613,6 +628,8 @@ function GUI.build_or_update(player, entity)
                 zoom = 0.2,
             })
             cam.style.minimal_width = 300
+            cam.style.minimal_height = 300
+            cam.style.horizontally_stretchable = true
             cam.style.vertically_stretchable = true
 
             -- 在目标传送门外壳上打一个仅自己可见的全息高亮框
@@ -819,12 +836,18 @@ function GUI.handle_switch_state_changed(event)
 end
 
 function GUI.handle_checked_state_changed(event)
-    if not (event.element and event.element.valid) then return end
+    if not (event.element and event.element.valid) then
+        return
+    end
     local player = game.get_player(event.player_index)
     local frame = player.gui.screen.rift_rail_main_frame
-    if not frame then return end
+    if not frame then
+        return
+    end
     local my_data = State.get_portaldata_by_unit_number(frame.tags.unit_number)
-    if not my_data then return end
+    if not my_data then
+        return
+    end
 
     if event.element.name == "rift_rail_preview_check" then
         if storage.rift_rail_player_settings[player.index] then
@@ -978,26 +1001,32 @@ function GUI.update_camera_preview(player, frame, target_id)
         return nil
     end
 
-    -- 2. 查找 标题(Label) 和 摄像头(Camera)
-    local title_label = find_element_recursively(frame, "rift_rail_preview_title")
+    -- 2. 查找 标题按钮(Button) 和 摄像头(Camera)
+    local title_btn = find_element_recursively(frame, "rift_rail_remote_view_button")
     local camera_widget = find_element_recursively(frame, "rift_rail_preview_camera")
 
     -- 如果找不到控件（说明之前可能没勾选预览），返回 false，让外部去执行完整的 build_or_update
-    if not (title_label and title_label.valid and camera_widget and camera_widget.valid) then
+    if not (title_btn and title_btn.valid and camera_widget and camera_widget.valid) then
         return false
     end
 
     -- 3. 获取目标数据
     local partner = State.get_portaldata_by_id(target_id)
     if not (partner and partner.shell and partner.shell.valid) then
-        -- 目标无效，这里也可以选择隐藏控件，但暂时不做处理
         return true
     end
 
-    -- 4. 【核心】直接修改属性（无闪烁切换）
+    -- 4. 直接修改属性（无闪烁切换）
 
-    -- 修改标题文字
-    title_label.caption = { "gui.rift-rail-preview-title", partner.name, partner.shell.surface.name }
+    title_btn.caption = partner.name .. " [" .. partner.shell.surface.name .. "]"
+
+    -- 同步更新按钮的可点击状态（防瞎点）
+    local dropdown = find_element_recursively(frame, "rift_rail_target_dropdown")
+    if dropdown and dropdown.tags and dropdown.tags.is_paired_map then
+        local is_paired = (dropdown.tags.is_paired_map[dropdown.selected_index] == true)
+        title_btn.enabled = is_paired
+        title_btn.tooltip = is_paired and { "gui.rift-rail-btn-view" } or ""
+    end
 
     -- 修改摄像头视角
     camera_widget.position = partner.shell.position
