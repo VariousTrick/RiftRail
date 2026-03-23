@@ -585,17 +585,20 @@ function GUI.build_or_update(player, entity)
             local is_paired = (dropdown_is_paired[selected_idx] == true)
 
             -- ==========================================
-            -- 模块 1：上半部独立的标题按钮
+            -- 模块 1：上半部独立的标题按钮 (暗色下陷风格)
             -- ==========================================
             local title_btn = right_column.add({
                 type = "button",
                 name = "rift_rail_remote_view_button",
                 caption = partner.name .. " [" .. partner.shell.surface.name .. "]",
                 tooltip = is_paired and { "gui.rift-rail-btn-view" } or "",
+                style = "list_box_item", -- 【核心修改1】：指定原生暗色列表按钮样式
                 enabled = is_paired,
             })
             title_btn.style.horizontally_stretchable = true
             title_btn.style.font = "default-bold"
+            title_btn.style.horizontal_align = "center" -- 【核心修改2】：原生 list_box_item 默认靠左，我们需要强行把它拉回居中
+            title_btn.style.minimal_height = 28 -- 给一点基础高度，让它不那么憋屈
 
             -- ==========================================
             -- 模块 2：完美复刻缝隙！(这就是你要的横向分界)
