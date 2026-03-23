@@ -342,6 +342,25 @@ function GUI.build_or_update(player, entity)
     local l_mode_pusher = mode_flow.add({ type = "empty-widget" })
     l_mode_pusher.style.horizontally_stretchable = true
 
+    -- 1. 读取当前预览状态
+    local is_preview_on = (player_settings.show_preview == true)
+
+    -- 2. 创建状态切换按钮
+    local preview_btn = mode_flow.add({
+        type = "sprite-button",
+        name = "rift_rail_toggle_preview_button",
+        sprite = is_preview_on and "riftrail-eye-open-icon" or "riftrail-eye-closed-icon",
+        tooltip = { "gui.rift-rail-preview-checkbox" },
+        style = "tool_button",
+        -- auto_toggle = true, -- 开启按压开关模式
+        -- toggled = is_preview_on, -- 根据状态决定是否高亮底色
+    })
+    preview_btn.style.padding = 0
+
+    -- 两个图标之间的微小间距
+    local mid_spacer = mode_flow.add({ type = "empty-widget" })
+    mid_spacer.style.width = 2
+
     -- 右侧：传送玩家按钮 (使用透明的 tool_button 样式，消除丑陋黑框)
     local tp_btn = mode_flow.add({
         type = "sprite-button",
@@ -817,6 +836,14 @@ function GUI.handle_click(event)
 
         if target_id then
             remote.call("RiftRail", "open_remote_view_by_target", player.index, target_id)
+        end
+    elseif el_name == "rift_rail_toggle_preview_button" then
+        local current_settings = storage.rift_rail_player_settings[player.index]
+        if current_settings then
+            -- 1. 布尔值翻转 (真变假，假变真)
+            current_settings.show_preview = not current_settings.show_preview
+            -- 2. 重新渲染整个界面，引擎会自动替换图片并应用新状态
+            GUI.build_or_update(player, my_data.shell)
         end
     end
 end
