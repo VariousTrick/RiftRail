@@ -289,10 +289,26 @@ function GUI.build_or_update(player, entity)
     left_pane.style.padding = 8
     left_pane.style.horizontally_stretchable = true
 
-    -- 4. 专属参数门牌号 (Rename Area) - 回归左侧内陷大坑！
-    local name_flow = left_pane.add({ type = "flow", name = "name_flow", direction = "horizontal" })
+    -- 4. 专属参数金属铭牌 (无缝贴边效果)
+    -- 使用 subheader_frame 产生浅色金属凸起感
+    local name_bg = left_pane.add({ type = "frame", style = "subheader_frame", name = "name_bg_frame" })
+
+    -- 【负边距魔法】：刚好抵消 left_pane 的 8 像素 padding，强行和顶/左/右边缘贴死
+    name_bg.style.top_margin = -8
+    name_bg.style.left_margin = -8
+    name_bg.style.right_margin = -8
+    name_bg.style.bottom_margin = 12 -- 底部留出间距，与下方的控件区隔开
+    name_bg.style.horizontally_stretchable = true
+
+    -- 给铭牌内部一点呼吸感
+    name_bg.style.padding = 6
+    name_bg.style.left_padding = 12
+
+    -- 将原本的排版流装进这个铭牌底座里
+    local name_flow = name_bg.add({ type = "flow", name = "name_flow", direction = "horizontal" })
     name_flow.style.vertical_align = "center"
-    name_flow.style.bottom_margin = 8
+    name_flow.style.horizontally_stretchable = true
+
     GUI.build_display_name_flow(name_flow, my_data)
 
     -- 5. 模式切换 (三态开关)
