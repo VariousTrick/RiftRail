@@ -574,11 +574,10 @@ function GUI.build_or_update(player, entity)
     if preview_target_id and player_settings.show_preview then
         local partner = State.get_portaldata_by_id(preview_target_id)
         if partner and partner.shell and partner.shell.valid then
-            -- 左右面板之间的间距 (这就是你看到的竖直分界线)
+            -- 左右面板之间的间距
             local spacer_h = content_flow.add({ type = "empty-widget" })
             spacer_h.style.width = 8
 
-            -- 【核心修改1】：右侧主列改用完全透明的 flow 包裹，不再使用统一的深色底座
             local right_column = content_flow.add({ type = "flow", direction = "vertical" })
             right_column.style.vertically_stretchable = true
 
@@ -592,29 +591,23 @@ function GUI.build_or_update(player, entity)
                 name = "rift_rail_remote_view_button",
                 caption = partner.name .. " [" .. partner.shell.surface.name .. "]",
                 tooltip = is_paired and { "gui.rift-rail-btn-view" } or "",
-                style = "list_box_item", -- 【核心修改1】：指定原生暗色列表按钮样式
+                style = "list_box_item",
                 enabled = is_paired,
             })
             title_btn.style.horizontally_stretchable = true
             title_btn.style.font = "default-bold"
-            title_btn.style.horizontal_align = "center" -- 【核心修改2】：原生 list_box_item 默认靠左，我们需要强行把它拉回居中
-            title_btn.style.minimal_height = 28 -- 给一点基础高度，让它不那么憋屈
+            title_btn.style.horizontal_align = "center"
+            title_btn.style.minimal_height = 28
 
-            -- ==========================================
-            -- 模块 2：完美复刻缝隙！(这就是你要的横向分界)
-            -- ==========================================
             -- 高度设为和左边 spacer_h 的宽度一致(8)，就能形成极其工整的十字型底板缝隙
             local spacer_v = right_column.add({ type = "empty-widget" })
             spacer_v.style.height = 8
 
-            -- ==========================================
-            -- 模块 3：下半部独立的摄像头大坑
-            -- ==========================================
             -- 给摄像头单独挖一个深色坑
             local cam_inset = right_column.add({ type = "frame", style = "inside_deep_frame" })
             cam_inset.style.horizontally_stretchable = true
             cam_inset.style.vertically_stretchable = true
-            cam_inset.style.padding = 0 -- 消除内边距，让摄像头无死角贴紧边框
+            cam_inset.style.padding = 0
 
             local cam = cam_inset.add({
                 type = "camera",
@@ -625,7 +618,6 @@ function GUI.build_or_update(player, entity)
             })
             cam.style.minimal_width = 300
             cam.style.minimal_height = 300
-            -- 【核心修改2】：恢复摄像头的完全自动拉伸！
             cam.style.horizontally_stretchable = true
             cam.style.vertically_stretchable = true
 
@@ -1004,16 +996,14 @@ function GUI.update_camera_preview(player, frame, target_id)
     -- 3. 获取目标数据
     local partner = State.get_portaldata_by_id(target_id)
     if not (partner and partner.shell and partner.shell.valid) then
-        -- 目标无效，这里也可以选择隐藏控件，但暂时不做处理
         return true
     end
 
-    -- 4. 【核心】直接修改属性（无闪烁切换）
+    -- 4. 直接修改属性（无闪烁切换）
 
-    -- 修改标题按钮文字
     title_btn.caption = partner.name .. " [" .. partner.shell.surface.name .. "]"
 
-    -- 【新增】：同步更新按钮的可点击状态（防瞎点）
+    -- 同步更新按钮的可点击状态（防瞎点）
     local dropdown = find_element_recursively(frame, "rift_rail_target_dropdown")
     if dropdown and dropdown.tags and dropdown.tags.is_paired_map then
         local is_paired = (dropdown.tags.is_paired_map[dropdown.selected_index] == true)
