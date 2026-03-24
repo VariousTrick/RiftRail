@@ -349,7 +349,7 @@ function GUI.build_or_update(player, entity)
     local preview_btn = mode_flow.add({
         type = "sprite-button",
         name = "rift_rail_toggle_preview_button",
-        sprite = is_preview_on and "riftrail-eye-open-icon" or "riftrail-eye-closed-icon",
+        sprite = is_preview_on and "riftrail-eye-closed-icon" or "riftrail-eye-open-icon",
         tooltip = { "gui.rift-rail-preview-checkbox" },
         style = "tool_button",
         -- auto_toggle = true, -- 开启按压开关模式
