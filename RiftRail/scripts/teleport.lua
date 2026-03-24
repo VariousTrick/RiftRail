@@ -31,7 +31,7 @@ local function raise_departing_event(entry_portaldata, train_to_depart)
         return
     end
     script.raise_event(Events.TrainDeparting, {
-        train = train_to_depart,       -- 老车实体
+        train = train_to_depart, -- 老车实体
         train_id = train_to_depart.id, -- 老车 ID
         source_teleporter = shell,
         source_teleporter_id = shell.unit_number,
@@ -43,14 +43,16 @@ end
 --- 负责触发“传送开始”事件 (给需要交接 ID 的 LTN 专属环节使用)
 ---@see doc/API(CN).md#remote.call("RiftRail", "get_train_teleport_transfer_event")
 ---@see doc/API(EN).md#How-to-Get-Rift-Rail-Custom-Event-IDs
-local function raise_teleport_transfer_event(old_train_id, new_train)
+local function raise_teleport_transfer_event(old_train_id, new_train, entry_unit_number, exit_unit_number)
     if not Events or not Events.TrainTeleportTransfer then
         return
     end
     script.raise_event(Events.TrainTeleportTransfer, {
         old_train_id = old_train_id,
         new_train_id = new_train.id,
-        new_train = new_train
+        new_train = new_train,
+        entry_unit_number = entry_unit_number,
+        exit_unit_number = exit_unit_number,
     })
 end
 
@@ -82,7 +84,7 @@ local function raise_arrived_event(entry_portaldata, exit_portaldata, final_trai
         destination_surface_index = exit_surface.index,
         restored_guis = restored_guis,
         entry_unit_number = entry_portaldata.unit_number,
-        exit_unit_number  = exit_portaldata and exit_portaldata.unit_number,
+        exit_unit_number = exit_portaldata and exit_portaldata.unit_number,
     })
 end
 
@@ -763,7 +765,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
             exit_portaldata.saved_schedule_index, exit_portaldata.saved_manual_mode)
 
         -- 2. 新旧实体物理交接完毕，触发移交事件（除了传递ID，必须传递 new_train 实体供 LTN 使用）
-        raise_teleport_transfer_event(car.train.id, new_car.train)
+        raise_teleport_transfer_event(car.train.id, new_car.train, entry_portaldata.unit_number, exit_portaldata.unit_number)
 
         -- 3. 仅在第一节车厢拨正指针，传入护符白名单
         Schedule.snap_pointer_past_interrupt(new_car.train, real_station_name, safe_set)

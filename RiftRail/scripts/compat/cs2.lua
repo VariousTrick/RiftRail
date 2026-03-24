@@ -676,8 +676,6 @@ end
 -- TrainArrived 事件处理：恢复车组后，将新列车归还给 CS2。
 function CS2.on_train_arrived(event)
 
-
-
     local old_train_id = event and event.old_train_id
     local new_train = event and event.train
     if not (old_train_id and new_train and new_train.valid) then
@@ -714,8 +712,17 @@ function CS2.on_train_arrived(event)
     end
 
     if RiftRail and RiftRail.DEBUG_MODE_ENABLED then
-        cs2_log("handoff 归还成功 delivery=" ..
-        handoff.delivery_id .. " old_train=" .. old_train_id .. " new_train=" .. new_train.id)
+        cs2_log("handoff 归还成功 delivery=" .. handoff.delivery_id .. " old_train=" .. old_train_id .. " new_train=" .. new_train.id)
+    end
+
+    local entry = State and State.get_portaldata_by_unit_number(event.entry_unit_number)
+    if entry and entry.stats then
+        entry.stats.cs2_sent = (entry.stats.cs2_sent or 0) + 1
+    end
+
+    local exit = State and State.get_portaldata_by_unit_number(event.exit_unit_number)
+    if exit and exit.stats then
+        exit.stats.cs2_received = (exit.stats.cs2_received or 0) + 1
     end
 
     -- GUI 闭眼睁眼刷新逻辑
@@ -735,7 +742,6 @@ function CS2.on_train_arrived(event)
             cs2_log("为 " .. refresh_count .. " 名玩家刷新了 CS2 面板")
         end
     end
-
 end
 
 -- 拓扑变化入口：标记缓存脏并触发一次重建与 CS2 拓扑刷新。

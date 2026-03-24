@@ -625,7 +625,7 @@ function GUI.build_or_update(player, entity)
         local s = my_data.stats
 
         local service_ticks = game.tick - (s.creation_tick or game.tick)
-        local service_str   = Util.format_duration(service_ticks)
+        local service_str = Util.format_duration(service_ticks)
 
         local stats_frame = left_pane.add({ type = "frame", direction = "vertical", style = "inside_shallow_frame" })
         stats_frame.style.top_margin = 4
@@ -653,6 +653,13 @@ function GUI.build_or_update(player, entity)
                 last_sent_str = { "gui.rift-rail-stats-never" }
             end
             add_stat_row(stats_frame, "gui.rift-rail-stats-last-sent", last_sent_str)
+
+            if s.ltn_sent and s.ltn_sent > 0 then
+                add_stat_row(stats_frame, "gui.rift-rail-stats-ltn-sent", s.ltn_sent)
+            end
+            if s.cs2_sent and s.cs2_sent > 0 then
+                add_stat_row(stats_frame, "gui.rift-rail-stats-cs2-sent", s.cs2_sent)
+            end
         elseif my_data.mode == "exit" then
             add_stat_row(stats_frame, "gui.rift-rail-stats-trains-received", s.trains_received)
             local last_received_str
@@ -662,6 +669,13 @@ function GUI.build_or_update(player, entity)
                 last_received_str = { "gui.rift-rail-stats-never" }
             end
             add_stat_row(stats_frame, "gui.rift-rail-stats-last-received", last_received_str)
+
+            if s.ltn_received and s.ltn_received > 0 then
+                add_stat_row(stats_frame, "gui.rift-rail-stats-ltn-received", s.ltn_received)
+            end
+            if s.cs2_received and s.cs2_received > 0 then
+                add_stat_row(stats_frame, "gui.rift-rail-stats-cs2-received", s.cs2_received)
+            end
         end
     end
 

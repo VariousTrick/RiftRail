@@ -27,13 +27,6 @@ function Stats.on_train_arrived(event)
         xp.stats.trains_received = xp.stats.trains_received + 1
         xp.stats.last_received_tick = game.tick
     end
-
-    if log_debug then
-        local ep_id = ep and ep.id or "?"
-        local xp_id = xp and xp.id or "?"
-        log_debug("[Stats] 传送完成: 入口 #" .. ep_id .. " sent=" .. (ep and ep.stats.trains_sent or 0)
-            .. " | 出口 #" .. xp_id .. " received=" .. (xp and xp.stats.trains_received or 0))
-    end
 end
 
 return Stats

@@ -513,7 +513,16 @@ function Migrations.add_portal_stats()
                 creation_tick      = game.tick,
                 last_sent_tick     = nil,
                 last_received_tick = nil,
+                ltn_sent           = 0,
+                ltn_received       = 0,
+                cs2_sent           = 0,
+                cs2_received       = 0,
             }
+        else
+            if portaldata.stats.ltn_sent == nil then portaldata.stats.ltn_sent = 0 end
+            if portaldata.stats.ltn_received == nil then portaldata.stats.ltn_received = 0 end
+            if portaldata.stats.cs2_sent == nil then portaldata.stats.cs2_sent = 0 end
+            if portaldata.stats.cs2_received == nil then portaldata.stats.cs2_received = 0 end
         end
     end
     storage.portal_stats_migrated = true

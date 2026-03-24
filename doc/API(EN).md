@@ -57,8 +57,10 @@ The event table includes the following fields:
 #### `TrainTeleportTransfer`
 *Trigger timing: Fired at the exact microsecond the first new carriage is cloned at the destination, and the old carriage has not yet been destroyed. This event is specifically designed for logistics mods (like LTN/Cybersyn) to seamlessly assign deliveries from the old train ID to the new train ID in the same tick. To satisfy fundamental API constraints of third-party logistics mods, this event provides both IDs and the actual new train entity object.*
 *   `old_train_id`: [number] The ID of the complete old train.
-*   `new_train_id`: [number] The ID of the newly created train at the destination (containing only the first carriage).
-*   `new_train`: [LuaTrain] The newly created train entity object at the destination.
+*   `new_train_id`: [number] The ID of the newly generated train at the exit (currently containing only the first carriage).
+*   `new_train`: [LuaTrain] The newly generated train entity object at the exit.
+*   `entry_unit_number`: [number] The unit_number of the entry (source) teleporter.
+*   `exit_unit_number`: [number] The unit_number of the exit (destination) teleporter.
 
 #### `TrainArrived`
 *   `train`: [LuaTrain] The complete, newly created train entity.
@@ -70,6 +72,9 @@ The event table includes the following fields:
 *   `destination_teleporter_id`: [number] The ID of the destination teleporter.
 *   `destination_surface`: [LuaSurface] The destination surface.
 *   `destination_surface_index`: [number] The index of the destination surface.
+*   `entry_unit_number`: [number] The unit_number of the entry (source) teleporter.
+*   `exit_unit_number`: [number] The unit_number of the exit (destination) teleporter.
+*   `restored_guis`: [table] (An object table used internally for GUI restoration).
 
 ### Notes
 

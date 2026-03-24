@@ -12,6 +12,8 @@
 - **智能化运行档案 (Dynamic Operational Statistics)**：在传送门 GUI 新增“显示运行档案”复选框。通过 `gui.lua` 中纯洁的判定树，面板能自动依据所在传送门身份变形：入口只展示“传送次数/上次传送时间”，出口只展示“接收次数/上次接收时间”，双端共享精准的“服役时长”雷达。
 - **绕过深拷贝防守 (Bulletproof Decoupling)**：彻底剥离统计逻辑至全新的 `stats.lua` 观察者模块。由于 Factorio `script.raise_event` 会无差别静默舍弃含有复杂类型嵌套的数据表，修改 `teleport.lua` 的事件抛出物，使其从原本极其臃肿的 `portaldata` 实体指针群退化为极简干脆的 `unit_number` 数字标量。然后在接收端利用 ID 反查 `storage.rift_rails` 原始表，完美绕开深拷贝限制和垃圾回收噩梦。
 - **高度剥离的全局化 (Refactoring Utility)**：对代码实施严苛的界限把控：将原本混杂在视图层内的 `format_duration` 算法硬生生抽离至 `util.lua` 变为顶级暴露工具 `Util.format_duration`；修复 `GUI.init()` 的依赖注入缝隙使得渲染面板与底层数学池畅通无阻，并连带重写了中日英三语对应的参数形态后缀。
+- **专线物流白嫖追踪 (LTN & Cybersyn 2 Telemetry)**：借助传送门本就完美的兼容层拦截件，实现在 `LTN.on_train_teleport_transfer` 与 `CS2.on_train_arrived` 这两帧唯一的移交微秒中，一旦确认对方物流网关收发货单，当场白嫖底层数据源实施 `stats.ltn_sent += 1` 的铁证。再结合动态渲染技术将专属的数据槽位按需绽放在对应传送门的面板上。
+- **API 文档与 Payload 同步更新 (API Docs Sync)**：将传送门独家的标量数据载荷（`entry_unit_number` 与 `exit_unit_number`）向外暴露给 `TrainArrived` 以及由其衍生出的 `TrainTeleportTransfer` 移交事件，并同步在 `doc/API(CN).md` / `doc/API(EN).md` 中完成了官方手册撰写。
 
 ### 技术变更细节
 - 新建 `scripts/stats.lua`：独立负责统计量拦截与自增更新计算。

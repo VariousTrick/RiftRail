@@ -31,8 +31,6 @@ function Util.add_offset(base, offset)
     return { x = base.x + offset.x, y = base.y + offset.y }
 end
 
-
-
 ---------------------------------------------------------------------------
 -- 4. 其他辅助工具
 ---------------------------------------------------------------------------
@@ -45,13 +43,13 @@ function Util.format_duration(ticks)
     if total_seconds < 60 then
         return { "gui.rift-rail-stats-time-seconds", total_seconds }
     end
-    
+
     local total_minutes = math.floor(total_seconds / 60)
     if total_minutes < 60 then
         return { "gui.rift-rail-stats-time-minutes", total_minutes }
     else
         local hours = math.floor(total_minutes / 60)
-        local mins  = total_minutes % 60
+        local mins = total_minutes % 60
         return { "gui.rift-rail-stats-time-hours", hours, mins }
     end
 end
