@@ -23,6 +23,7 @@ if not script.active_mods["cybersyn2"] then
 end
 
 local State = nil
+local Stats = nil
 local log_debug = function(_) end
 
 local REBUILD_DEBOUNCE_TICKS = 120
@@ -535,6 +536,7 @@ end
 -- 初始化 CS2 兼容模块依赖与缓存。
 function CS2.init(deps)
     State = deps.State
+    Stats = deps.Stats
     log_debug = deps.log_debug or log_debug
 
     rebuild_route_cache()
@@ -715,15 +717,7 @@ function CS2.on_train_arrived(event)
         cs2_log("handoff 归还成功 delivery=" .. handoff.delivery_id .. " old_train=" .. old_train_id .. " new_train=" .. new_train.id)
     end
 
-    local entry = State and State.get_portaldata_by_unit_number(event.entry_unit_number)
-    if entry and entry.stats then
-        entry.stats.cs2_sent = (entry.stats.cs2_sent or 0) + 1
-    end
-
-    local exit = State and State.get_portaldata_by_unit_number(event.exit_unit_number)
-    if exit and exit.stats then
-        exit.stats.cs2_received = (exit.stats.cs2_received or 0) + 1
-    end
+    Stats.record_logistics_delivery("cs2", event.entry_unit_number, event.exit_unit_number)
 
     -- GUI 闭眼睁眼刷新逻辑
     if event.restored_guis then

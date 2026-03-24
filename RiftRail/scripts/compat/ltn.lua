@@ -31,6 +31,7 @@ end
 
 local LTN = {}
 local State = nil
+local Stats = nil
 local log_ltn = function(...) end -- 接受任意参数的占位函数
 local ROUTING_TABLE_VERSION = 2
 
@@ -128,6 +129,7 @@ end
 
 function LTN.init(dependencies)
     State = dependencies.State
+    Stats = dependencies.Stats
     if dependencies.log_ltn then
         log_ltn = dependencies.log_ltn
     elseif dependencies.log_debug then
@@ -1034,11 +1036,7 @@ function LTN.on_train_teleport_transfer(event)
     -- 我们永远自己在黄金微秒亲自重指派，无视第三方胶水模组
     -- 我们必须向 LTN 提供 new_train 的 Lua 引用，否则 reassign_delivery 无法执行
     if logic_reassign(event.new_train, event.old_train_id) then
-        local entry = State and State.get_portaldata_by_unit_number(event.entry_unit_number)
-        if entry and entry.stats then entry.stats.ltn_sent = (entry.stats.ltn_sent or 0) + 1 end
-
-        local exit = State and State.get_portaldata_by_unit_number(event.exit_unit_number)
-        if exit and exit.stats then exit.stats.ltn_received = (exit.stats.ltn_received or 0) + 1 end
+        Stats.record_logistics_delivery("ltn", event.entry_unit_number, event.exit_unit_number)
     end
 end
 
