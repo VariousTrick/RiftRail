@@ -76,8 +76,11 @@ end
 -- 警告：此值必须与 scripts/logic.lua 中的值保持同步
 local MAX_CONNECTIONS = 5
 
+local Util = nil
+
 function GUI.init(dependencies)
     State = dependencies.State
+    Util = dependencies.Util
     log_debug = dependencies.log_debug
 end
 
@@ -595,14 +598,71 @@ function GUI.build_or_update(player, entity)
         })
     end
 
-    -- 10. 远程预览 (适配 Exit 模式下的来源预览)
-    left_pane.add({ type = "line", direction = "horizontal" })
-
+    -- 10. 运行档案 (数据统计) 显示开关
     -- 统一预览逻辑：直接使用下拉框选中的目标
     -- dropdown_ids 和 selected_idx 是我们在上面构建列表时生成的局部变量
     local preview_target_id = nil
     if dropdown_ids and selected_idx and selected_idx > 0 then
         preview_target_id = dropdown_ids[selected_idx]
+    end
+
+    left_pane.add({ type = "line", direction = "horizontal" })
+
+    -- 容错：如果玩家设置里还没有这个字段，默认为 false (不显示)
+    if player_settings.show_stats == nil then
+        player_settings.show_stats = false
+    end
+
+    left_pane.add({
+        type = "checkbox",
+        name = "rift_rail_show_stats_check",
+        state = player_settings.show_stats,
+        caption = { "gui.rift-rail-stats-checkbox" },
+    })
+
+    -- 如果玩家勾选了"显示运行档案"，在复选框下方渲染统计面板
+    if player_settings.show_stats and my_data.stats then
+        local s = my_data.stats
+
+        local service_ticks = game.tick - (s.creation_tick or game.tick)
+        local service_str   = Util.format_duration(service_ticks)
+
+        local stats_frame = left_pane.add({ type = "frame", direction = "vertical", style = "inside_shallow_frame" })
+        stats_frame.style.top_margin = 4
+        stats_frame.style.padding = 6
+
+        local stats_title = stats_frame.add({ type = "label", caption = { "gui.rift-rail-stats-title" }, style = "bold_label" })
+        stats_title.style.bottom_margin = 4
+
+        local function add_stat_row(parent, label_key, value)
+            local row = parent.add({ type = "flow", direction = "horizontal" })
+            row.add({ type = "label", caption = { label_key } })
+            local spacer = row.add({ type = "empty-widget" })
+            spacer.style.horizontally_stretchable = true
+            row.add({ type = "label", caption = value, style = "bold_label" })
+        end
+
+        add_stat_row(stats_frame, "gui.rift-rail-stats-service-time", service_str)
+
+        if my_data.mode == "entry" then
+            add_stat_row(stats_frame, "gui.rift-rail-stats-trains-sent", s.trains_sent)
+            local last_sent_str
+            if s.last_sent_tick then
+                last_sent_str = { "gui.rift-rail-stats-last-sent-value", Util.format_duration(game.tick - s.last_sent_tick) }
+            else
+                last_sent_str = { "gui.rift-rail-stats-never" }
+            end
+            add_stat_row(stats_frame, "gui.rift-rail-stats-last-sent", last_sent_str)
+        elseif my_data.mode == "exit" then
+            add_stat_row(stats_frame, "gui.rift-rail-stats-trains-received", s.trains_received)
+            local last_received_str
+            if s.last_received_tick then
+                last_received_str = { "gui.rift-rail-stats-last-sent-value", Util.format_duration(game.tick - s.last_received_tick) }
+            else
+                last_received_str = { "gui.rift-rail-stats-never" }
+            end
+            add_stat_row(stats_frame, "gui.rift-rail-stats-last-received", last_received_str)
+        end
     end
 
     -- 11. 摄像头预览窗口 & 独立抽屉深入
@@ -797,6 +857,7 @@ function GUI.handle_click(event)
 
         -- 玩家传送
     elseif el_name == "rift_rail_tp_player_button" then
+        GUI.clear_preview_render(player.index)
         remote.call("RiftRail", "teleport_player", player.index, my_data.id)
 
         -- 远程观察
@@ -883,6 +944,12 @@ function GUI.handle_checked_state_changed(event)
         remote.call("RiftRail", "set_cs2_enabled", player.index, my_data.id, event.element.state)
     elseif event.element.name == "rift_rail_ltn_checkbox" then
         remote.call("RiftRail", "set_ltn_enabled", player.index, my_data.id, event.element.state)
+    elseif event.element.name == "rift_rail_show_stats_check" then
+        if storage.rift_rail_player_settings[player.index] then
+            storage.rift_rail_player_settings[player.index].show_stats = event.element.state
+            -- 立刻刷新 GUI，展开或收起运行档案，并获取最新数据
+            GUI.build_or_update(player, my_data.shell)
+        end
     end
 end
 

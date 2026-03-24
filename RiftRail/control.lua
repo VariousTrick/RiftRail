@@ -52,6 +52,7 @@ local CS2Compat = require("scripts.compat.cs2")
 local AWCompat = require("scripts.compat.aw")
 local Migrations = require("scripts.migrations")
 local Maintenance = require("scripts.maintenance")
+local Stats = require("scripts.stats")
 -- 仅当玩家安装并启用了 informatron 模组时，才加载并注册说明书接口
 if script.active_mods["informatron"] then
     local InformatronSetup = require("scripts.compat.informatron")
@@ -96,6 +97,10 @@ if AWCompat and AWCompat.init then
     AWCompat.init({ log_debug = log_debug })
 end
 
+if Stats.init then
+    Stats.init({ log_debug = log_debug, State = State })
+end
+
 if TeleportFactory.init then
     TeleportFactory.init({
         Util = Util,
@@ -138,7 +143,7 @@ if Logic.init then
 end
 
 if GUI.init then
-    GUI.init({ State = State, log_debug = log_debug })
+    GUI.init({ State = State, Util = Util, log_debug = log_debug })
 end
 
 -- 初始化 Migrations 模块
@@ -309,6 +314,7 @@ script.on_event(defines.events.on_entity_settings_pasted, Builder.on_settings_pa
 script.on_event(defines.events.on_runtime_mod_setting_changed, Maintenance.on_settings_changed)
 
 script.on_event(RiftRail.Events.TrainArrived, function(event)
+    Stats.on_train_arrived(event)
     -- cs2 事件通知
     if CS2Compat and CS2Compat.on_train_arrived then
         CS2Compat.on_train_arrived(event)

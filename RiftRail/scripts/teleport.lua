@@ -80,7 +80,9 @@ local function raise_arrived_event(entry_portaldata, exit_portaldata, final_trai
         destination_teleporter_id = exit_shell.unit_number,
         destination_surface = exit_surface,
         destination_surface_index = exit_surface.index,
-        restored_guis = restored_guis, -- 成功恢复GUI的玩家和对应新车厢列表
+        restored_guis = restored_guis,
+        entry_unit_number = entry_portaldata.unit_number,
+        exit_unit_number  = exit_portaldata and exit_portaldata.unit_number,
     })
 end
 
@@ -143,13 +145,13 @@ local function add_to_active(portaldata)
     if not portaldata or not portaldata.unit_number then
         return
     end
--- 将传送门加入活跃列表
-if storage.active_teleporters[portaldata.unit_number] then
-    return -- 已经在列表中，无需重复添加
-end
+    -- 将传送门加入活跃列表
+    if storage.active_teleporters[portaldata.unit_number] then
+        return -- 已经在列表中，无需重复添加
+    end
 
-storage.active_teleporters[portaldata.unit_number] = portaldata
-local list = storage.active_teleporter_list
+    storage.active_teleporters[portaldata.unit_number] = portaldata
+    local list = storage.active_teleporter_list
     local unit_number = portaldata.unit_number
 
     -- 二分查找确定插入位置
@@ -194,7 +196,7 @@ local function apply_entry_pulse(entry_portaldata, exit_portaldata)
 
     -- 1. 获取目标速度大小
     local target_speed = (exit_portaldata and exit_portaldata.cached_teleport_speed) or
-    settings.global["rift-rail-teleport-speed"].value
+        settings.global["rift-rail-teleport-speed"].value
 
     -- 2. 重新计算当前入口列车应该进入入口的方向（正向/反向），并将其转化为速度符号
     local entry_sign = -1 * Math.calculate_speed_sign(train, entry_portaldata)
@@ -263,7 +265,8 @@ local function get_entry_circuit_go_to_id(entry_portaldata)
         name = "riftrail-go-to-id",
     }
 
-    local value = signal_source.get_signal(signal_id, defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green)
+    local value = signal_source.get_signal(signal_id, defines.wire_connector_id.circuit_red,
+        defines.wire_connector_id.circuit_green)
     if value and value ~= 0 then
         return value
     end
@@ -300,7 +303,6 @@ end
 ---@param entry_portaldata PortalData 入口数据 / Entry portal data
 ---@return PortalData|nil 目标出口数据 / Target exit portal data
 local function select_target_exit(entry_portaldata)
-
     -- [防御性检查 1] 确保入口数据存在
     if not entry_portaldata then
         return nil
@@ -555,8 +557,8 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         entry_portaldata.last_car_name = nil           -- 阅后即焚，销毁列车类型的短时记忆
         entry_portaldata.last_car_radius = nil         -- 阅后即焚，销毁列车尺寸的短时记忆
 
-    -- 6. 标记需要重建入口碰撞器
-    -- 我们不在这里直接创建，而是交给 on_tick 去计算正确的坐标并创建
+        -- 6. 标记需要重建入口碰撞器
+        -- 我们不在这里直接创建，而是交给 on_tick 去计算正确的坐标并创建
         entry_portaldata.state = Teleport.STATE.REBUILDING
         -- 确保它在活跃列表中，这样 on_tick 才会去处理它
         add_to_active(entry_portaldata)
@@ -707,14 +709,17 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         exit_portaldata.saved_manual_mode = car.train.manual_mode                                       -- 保存手动/自动模式
         exit_portaldata.old_train_id = car.train.id                                                     -- 保存旧车ID
         exit_portaldata.saved_schedule_index = car.train.schedule and car.train.schedule.current or nil -- 保存时刻表索引
-        exit_portaldata.cached_teleport_speed = settings.global["rift-rail-teleport-speed"].value       -- 缓存设定中的列车速度，供 maintain_exit_speed 使用
-        entry_portaldata.placement_interval = settings.global["rift-rail-placement-interval"].value     -- 缓存设定中的放置间隔，供 process_teleport_sequence 使用（入口侧读取）
+        exit_portaldata.cached_teleport_speed = settings.global["rift-rail-teleport-speed"]
+        .value                                                                                          -- 缓存设定中的列车速度，供 maintain_exit_speed 使用
+        entry_portaldata.placement_interval = settings.global["rift-rail-placement-interval"]
+        .value                                                                                          -- 缓存设定中的放置间隔，供 process_teleport_sequence 使用（入口侧读取）
     end
 
     -- 计算目标朝向
     -- 参数：入口方向, 出口几何预设方向, 车厢当前方向
     -- 接收 target_ori 和 is_nose_in 两个返回值
-    local _, is_nose_in = Math.calculate_arrival_orientation(entry_portaldata.shell.direction, geo.direction, car.orientation)
+    local _, is_nose_in = Math.calculate_arrival_orientation(entry_portaldata.shell.direction, geo.direction,
+        car.orientation)
 
     -- 判断是否需要引导车 (如果是正向车头则不需要)
     local need_leader = is_first_car and (car.type ~= "locomotive" or not is_nose_in)
@@ -754,7 +759,8 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
 
     if is_first_car then
         -- 1. 转移时刻表
-        local safe_set = Schedule.copy_schedule(car.train, new_car.train, real_station_name, exit_portaldata.saved_schedule_index, exit_portaldata.saved_manual_mode)
+        local safe_set = Schedule.copy_schedule(car.train, new_car.train, real_station_name,
+            exit_portaldata.saved_schedule_index, exit_portaldata.saved_manual_mode)
 
         -- 2. 新旧实体物理交接完毕，触发移交事件（除了传递ID，必须传递 new_train 实体供 LTN 使用）
         raise_teleport_transfer_event(car.train.id, new_car.train)
@@ -792,9 +798,9 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     car.destroy()
 
     -- 更新链表指针
-    entry_portaldata.exit_car = new_car                                    -- 记录入口侧最近生成的出口替身（用于首节判定与流程状态）
-    exit_portaldata.exit_car = new_car                                     -- 记录出口的最前头 (用于拉动)
-    exit_portaldata.cached_exit_radius = entry_radius                      -- 物理数据完美接力：从入口复制准确的几何半径给出口，无需重算
+    entry_portaldata.exit_car = new_car               -- 记录入口侧最近生成的出口替身（用于首节判定与流程状态）
+    exit_portaldata.exit_car = new_car                -- 记录出口的最前头 (用于拉动)
+    exit_portaldata.cached_exit_radius = entry_radius -- 物理数据完美接力：从入口复制准确的几何半径给出口，无需重算
 
     -- 准备下一节
     -- =========================================================================
@@ -814,10 +820,13 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         if merged_train and merged_train.valid then
             -- 在每次拼接后，清空方向和目的地的双重缓存
             -- 这将强制 maintain_exit_speed 在下一帧进行完整的重新验证和计算
-            exit_portaldata.cached_exit_drive_sign = nil  -- 清理出口意图方向缓存
+            exit_portaldata.cached_exit_drive_sign = nil -- 清理出口意图方向缓存
             local target_index = index_before_spawn or exit_portaldata.saved_schedule_index
             if RiftRail.DEBUG_MODE_ENABLED then
-                log_tp("【创建后】准备恢复: index_before_spawn=" .. tostring(index_before_spawn) .. ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index) .. ", 使用target=" .. tostring(target_index))
+                log_tp("【创建后】准备恢复: index_before_spawn=" ..
+                tostring(index_before_spawn) ..
+                ", saved_index=" ..
+                tostring(exit_portaldata.saved_schedule_index) .. ", 使用target=" .. tostring(target_index))
             end
             TeleportUtils.restore_train_state(merged_train, exit_portaldata, false, target_index)
         end
@@ -923,7 +932,6 @@ end
 -- =================================================================================
 ---@param portaldata PortalData 传送门数据 / Portal data
 function Teleport.maintain_exit_speed(portaldata)
-
     -- 直接从入口的记事本里读取锁定的出口 ID
     local exit_unit_number = portaldata.locked_exit_unit_number
     if not exit_unit_number then
@@ -983,7 +991,8 @@ function Teleport.maintain_exit_speed(portaldata)
         local required_sign = exit_portaldata.cached_exit_drive_sign
         if not required_sign then
             -- 仅在缓存为空时 (首次、每次拼接后、或时刻表改变后) 执行简单的点积
-            required_sign = Math.calculate_sign_from_intent(train_exit, exit_portaldata.cached_intent_vector, exit_portaldata)
+            required_sign = Math.calculate_sign_from_intent(train_exit, exit_portaldata.cached_intent_vector,
+                exit_portaldata)
             exit_portaldata.cached_exit_drive_sign = required_sign
         end
 
@@ -1021,7 +1030,6 @@ local function process_rebuild_collider(portaldata)
 
     -- 4. 将新碰撞器同步回 children 列表
     if new_collider and portaldata.children then
-
         if new_collider.unit_number then
             storage.collider_to_portal[new_collider.unit_number] = portaldata.unit_number
         end
@@ -1081,7 +1089,6 @@ local function process_teleport_sequence(portaldata, tick)
         -- 还有车厢，且出口安全，继续传送
         Teleport.process_transfer_step(portaldata, exit_portaldata)
     end
-
 end
 -- =================================================================================
 -- 专门用于清理出口互斥锁的辅助函数

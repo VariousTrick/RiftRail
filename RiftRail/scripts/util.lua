@@ -37,4 +37,23 @@ end
 -- 4. 其他辅助工具
 ---------------------------------------------------------------------------
 
+function Util.format_duration(ticks)
+    if not ticks or ticks <= 0 then
+        return { "gui.rift-rail-stats-time-seconds", 0 }
+    end
+    local total_seconds = math.floor(ticks / 60)
+    if total_seconds < 60 then
+        return { "gui.rift-rail-stats-time-seconds", total_seconds }
+    end
+    
+    local total_minutes = math.floor(total_seconds / 60)
+    if total_minutes < 60 then
+        return { "gui.rift-rail-stats-time-minutes", total_minutes }
+    else
+        local hours = math.floor(total_minutes / 60)
+        local mins  = total_minutes % 60
+        return { "gui.rift-rail-stats-time-hours", hours, mins }
+    end
+end
+
 return Util
