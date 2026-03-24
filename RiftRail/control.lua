@@ -70,11 +70,17 @@ if Builder.init then
     })
 end
 
--- 初始化 LTN 模块（仅依赖注入，实际接口运行时检查）
+-- 优先加载独立观察者
+if Stats.init then
+    Stats.init({ log_debug = log_debug, State = State })
+end
+
+-- 初始化 LTN 模块
 if LTN.init then
     LTN.init({
         State = State,
         log_debug = log_debug,
+        Stats = Stats,
     })
 end
 
@@ -82,6 +88,7 @@ if CS2Compat and CS2Compat.init then
     CS2Compat.init({
         State = State,
         log_debug = log_debug,
+        Stats = Stats,
     })
 end
 
@@ -97,9 +104,6 @@ if AWCompat and AWCompat.init then
     AWCompat.init({ log_debug = log_debug })
 end
 
-if Stats.init then
-    Stats.init({ log_debug = log_debug, State = State })
-end
 
 if TeleportFactory.init then
     TeleportFactory.init({

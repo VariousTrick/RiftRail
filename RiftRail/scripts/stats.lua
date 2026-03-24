@@ -29,4 +29,22 @@ function Stats.on_train_arrived(event)
     end
 end
 
+-- 被兼容层调用的记账窗口，专门处理具体物流网络的前缀（比如 "ltn", "cs2"）
+function Stats.record_logistics_delivery(network_prefix, entry_unit_number, exit_unit_number)
+    if not State then return end
+    
+    local sent_key = network_prefix .. "_sent"
+    local received_key = network_prefix .. "_received"
+
+    local entry = entry_unit_number and State.get_portaldata_by_unit_number(entry_unit_number)
+    if entry and entry.stats then
+        entry.stats[sent_key] = (entry.stats[sent_key] or 0) + 1
+    end
+
+    local exit = exit_unit_number and State.get_portaldata_by_unit_number(exit_unit_number)
+    if exit and exit.stats then
+        exit.stats[received_key] = (exit.stats[received_key] or 0) + 1
+    end
+end
+
 return Stats
