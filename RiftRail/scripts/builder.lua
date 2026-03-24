@@ -293,6 +293,17 @@ function Builder.on_built(event)
         blocker_position = storage.temp_blocker_pos,
         cached_spawn_pos = cached_spawn,
         cached_check_area = cached_area,
+        stats = {
+            trains_sent        = 0,
+            trains_received    = 0,
+            creation_tick      = game.tick,
+            last_sent_tick     = nil,
+            last_received_tick = nil,
+            ltn_sent           = 0,
+            ltn_received       = 0,
+            cs2_sent           = 0,
+            cs2_received       = 0,
+        },
     }
     storage.temp_blocker_pos = nil
 

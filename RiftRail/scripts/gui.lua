@@ -76,8 +76,11 @@ end
 -- 警告：此值必须与 scripts/logic.lua 中的值保持同步
 local MAX_CONNECTIONS = 5
 
+local Util = nil
+
 function GUI.init(dependencies)
     State = dependencies.State
+    Util = dependencies.Util
     log_debug = dependencies.log_debug
 end
 
@@ -121,6 +124,7 @@ function GUI.build_display_name_flow(parent_flow, my_data)
     -- 3. 创建 Label
     parent_flow.add({ type = "label", caption = display_caption, style = "bold_label" })
 
+    -- 4. 改名笔
     parent_flow.add({
         type = "sprite-button",
         name = "rift_rail_rename_button",
@@ -308,7 +312,7 @@ function GUI.build_or_update(player, entity)
 
     GUI.build_display_name_flow(name_flow, my_data)
 
-    -- 5. 模式切换 (三态开关)
+    -- 5. 模式切换 (三态开关) 与专属工具栏
     local switch_state = "none"
     if my_data.mode == "entry" then
         switch_state = "left"
@@ -318,7 +322,15 @@ function GUI.build_or_update(player, entity)
     end
 
     left_pane.add({ type = "label", caption = { "gui.rift-rail-mode-label" } })
-    local mode_switch = left_pane.add({
+
+    -- 创建一个水平流，把开关和右侧的快捷按钮包起来
+    local mode_flow = left_pane.add({ type = "flow", direction = "horizontal" })
+    mode_flow.style.vertical_align = "center"
+    mode_flow.style.bottom_margin = 2
+    mode_flow.style.horizontally_stretchable = true
+
+    -- 左侧：原有的模式切换开关
+    local mode_switch = mode_flow.add({
         type = "switch",
         name = "rift_rail_mode_switch",
         switch_state = switch_state,
@@ -328,6 +340,39 @@ function GUI.build_or_update(player, entity)
         tooltip = (switch_state == "left" and { "gui.rift-rail-mode-tooltip-left" }) or (switch_state == "right" and { "gui.rift-rail-mode-tooltip-right" }) or { "gui.rift-rail-mode-tooltip-none" },
     })
     mode_switch.style.bottom_margin = 12
+
+    -- 中间：隐形弹簧，负责把后面的按钮死死推到最右侧
+    local l_mode_pusher = mode_flow.add({ type = "empty-widget" })
+    l_mode_pusher.style.horizontally_stretchable = true
+
+    -- 1. 读取当前预览状态
+    local is_preview_on = (player_settings.show_preview == true)
+
+    -- 2. 创建状态切换按钮
+    local preview_btn = mode_flow.add({
+        type = "sprite-button",
+        name = "rift_rail_toggle_preview_button",
+        sprite = is_preview_on and "riftrail-eye-closed-icon" or "riftrail-eye-open-icon",
+        tooltip = { "gui.rift-rail-preview-checkbox" },
+        style = "tool_button",
+        -- auto_toggle = true, -- 开启按压开关模式
+        -- toggled = is_preview_on, -- 根据状态决定是否高亮底色
+    })
+    preview_btn.style.padding = 0
+
+    -- 右侧：传送玩家按钮 (使用透明的 tool_button 样式，消除丑陋黑框)
+    local tp_btn = mode_flow.add({
+        type = "sprite-button",
+        name = "rift_rail_tp_player_button",
+        sprite = "riftrail-teleport-player-icon",
+        tooltip = { "gui.rift-rail-btn-player-teleport" },
+        style = "tool_button",
+    })
+    tp_btn.style.padding = 0
+
+    -- 右侧弹簧
+    local r_mode_pusher = mode_flow.add({ type = "empty-widget" })
+    r_mode_pusher.style.width = 2
 
     -- 定义一个通用的启用状态变量
     local any_connection_exists = (connection_count > 0)
@@ -553,9 +598,7 @@ function GUI.build_or_update(player, entity)
         })
     end
 
-    -- 10. 远程预览 (适配 Exit 模式下的来源预览)
-    left_pane.add({ type = "line", direction = "horizontal" })
-
+    -- 10. 运行档案 (数据统计) 显示开关
     -- 统一预览逻辑：直接使用下拉框选中的目标
     -- dropdown_ids 和 selected_idx 是我们在上面构建列表时生成的局部变量
     local preview_target_id = nil
@@ -563,25 +606,78 @@ function GUI.build_or_update(player, entity)
         preview_target_id = dropdown_ids[selected_idx]
     end
 
-    -- 只要有目标 ID，就允许显示勾选框（无论是管理模式还是添加模式）
-    if preview_target_id then
-        left_pane.add({
-            type = "checkbox",
-            name = "rift_rail_preview_check",
-            state = player_settings.show_preview,
-            caption = { "gui.rift-rail-preview-checkbox" },
-        })
+    left_pane.add({ type = "line", direction = "horizontal" })
+
+    -- 容错：如果玩家设置里还没有这个字段，默认为 false (不显示)
+    if player_settings.show_stats == nil then
+        player_settings.show_stats = false
     end
 
-    local tool_flow = left_pane.add({ type = "flow", direction = "horizontal" })
-    tool_flow.style.top_margin = 8
-
-    -- 传送玩家按钮 (左下方唯一的孤独坚守者)
-    tool_flow.add({
-        type = "button",
-        name = "rift_rail_tp_player_button",
-        caption = { "gui.rift-rail-btn-player-teleport" },
+    left_pane.add({
+        type = "checkbox",
+        name = "rift_rail_show_stats_check",
+        state = player_settings.show_stats,
+        caption = { "gui.rift-rail-stats-checkbox" },
     })
+
+    -- 如果玩家勾选了"显示运行档案"，在复选框下方渲染统计面板
+    if player_settings.show_stats and my_data.stats then
+        local s = my_data.stats
+
+        local service_ticks = game.tick - (s.creation_tick or game.tick)
+        local service_str = Util.format_duration(service_ticks)
+
+        local stats_frame = left_pane.add({ type = "frame", direction = "vertical", style = "inside_shallow_frame" })
+        stats_frame.style.top_margin = 4
+        stats_frame.style.padding = 6
+
+        local stats_title = stats_frame.add({ type = "label", caption = { "gui.rift-rail-stats-title" }, style = "bold_label" })
+        stats_title.style.bottom_margin = 4
+
+        local function add_stat_row(parent, label_key, value)
+            local row = parent.add({ type = "flow", direction = "horizontal" })
+            row.add({ type = "label", caption = { label_key } })
+            local spacer = row.add({ type = "empty-widget" })
+            spacer.style.horizontally_stretchable = true
+            row.add({ type = "label", caption = value, style = "bold_label" })
+        end
+
+        add_stat_row(stats_frame, "gui.rift-rail-stats-service-time", service_str)
+
+        if my_data.mode == "entry" then
+            add_stat_row(stats_frame, "gui.rift-rail-stats-trains-sent", s.trains_sent)
+            local last_sent_str
+            if s.last_sent_tick then
+                last_sent_str = { "gui.rift-rail-stats-last-sent-value", Util.format_duration(game.tick - s.last_sent_tick) }
+            else
+                last_sent_str = { "gui.rift-rail-stats-never" }
+            end
+            add_stat_row(stats_frame, "gui.rift-rail-stats-last-sent", last_sent_str)
+
+            if s.ltn_sent and s.ltn_sent > 0 then
+                add_stat_row(stats_frame, "gui.rift-rail-stats-ltn-sent", s.ltn_sent)
+            end
+            if s.cs2_sent and s.cs2_sent > 0 then
+                add_stat_row(stats_frame, "gui.rift-rail-stats-cs2-sent", s.cs2_sent)
+            end
+        elseif my_data.mode == "exit" then
+            add_stat_row(stats_frame, "gui.rift-rail-stats-trains-received", s.trains_received)
+            local last_received_str
+            if s.last_received_tick then
+                last_received_str = { "gui.rift-rail-stats-last-sent-value", Util.format_duration(game.tick - s.last_received_tick) }
+            else
+                last_received_str = { "gui.rift-rail-stats-never" }
+            end
+            add_stat_row(stats_frame, "gui.rift-rail-stats-last-received", last_received_str)
+
+            if s.ltn_received and s.ltn_received > 0 then
+                add_stat_row(stats_frame, "gui.rift-rail-stats-ltn-received", s.ltn_received)
+            end
+            if s.cs2_received and s.cs2_received > 0 then
+                add_stat_row(stats_frame, "gui.rift-rail-stats-cs2-received", s.cs2_received)
+            end
+        end
+    end
 
     -- 11. 摄像头预览窗口 & 独立抽屉深入
     if preview_target_id and player_settings.show_preview then
@@ -775,6 +871,7 @@ function GUI.handle_click(event)
 
         -- 玩家传送
     elseif el_name == "rift_rail_tp_player_button" then
+        GUI.clear_preview_render(player.index)
         remote.call("RiftRail", "teleport_player", player.index, my_data.id)
 
         -- 远程观察
@@ -800,6 +897,14 @@ function GUI.handle_click(event)
 
         if target_id then
             remote.call("RiftRail", "open_remote_view_by_target", player.index, target_id)
+        end
+    elseif el_name == "rift_rail_toggle_preview_button" then
+        local current_settings = storage.rift_rail_player_settings[player.index]
+        if current_settings then
+            -- 1. 布尔值翻转 (真变假，假变真)
+            current_settings.show_preview = not current_settings.show_preview
+            -- 2. 重新渲染整个界面，引擎会自动替换图片并应用新状态
+            GUI.build_or_update(player, my_data.shell)
         end
     end
 end
@@ -849,15 +954,16 @@ function GUI.handle_checked_state_changed(event)
         return
     end
 
-    if event.element.name == "rift_rail_preview_check" then
-        if storage.rift_rail_player_settings[player.index] then
-            storage.rift_rail_player_settings[player.index].show_preview = event.element.state
-            GUI.build_or_update(player, my_data.shell) -- 传入实体刷新
-        end
-    elseif event.element.name == "rift_rail_cs2_checkbox" then
+    if event.element.name == "rift_rail_cs2_checkbox" then
         remote.call("RiftRail", "set_cs2_enabled", player.index, my_data.id, event.element.state)
     elseif event.element.name == "rift_rail_ltn_checkbox" then
         remote.call("RiftRail", "set_ltn_enabled", player.index, my_data.id, event.element.state)
+    elseif event.element.name == "rift_rail_show_stats_check" then
+        if storage.rift_rail_player_settings[player.index] then
+            storage.rift_rail_player_settings[player.index].show_stats = event.element.state
+            -- 立刻刷新 GUI，展开或收起运行档案，并获取最新数据
+            GUI.build_or_update(player, my_data.shell)
+        end
     end
 end
 

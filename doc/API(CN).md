@@ -58,6 +58,8 @@ remote.call("RiftRail", "get_train_arrived_event")
 *   `old_train_id`: [number] 完整的旧列车 ID。
 *   `new_train_id`: [number] 刚刚在出口生成的新列车（此时仅包含首节车厢）的 ID。
 *   `new_train`: [LuaTrain] 刚刚在出口生成的新列车实体对象。
+*   `entry_unit_number`: [number] 入口传送门的 unit_number。
+*   `exit_unit_number`: [number] 出口传送门的 unit_number。
 
 #### `TrainArrived`
 *   `train`: [LuaTrain] 完整的、刚刚形成的新列车实体。
@@ -69,6 +71,9 @@ remote.call("RiftRail", "get_train_arrived_event")
 *   `destination_teleporter_id`: [number] 到达传送门的ID。
 *   `destination_surface`: [LuaSurface] 到达地表。
 *   `destination_surface_index`: [number] 到达地表的索引。
+*   `entry_unit_number`: [number] 入口（来源）传送门的 unit_number。
+*   `exit_unit_number`: [number] 出口（接收）传送门的 unit_number。
+*   `restored_guis`: [table] (用于恢复GUI的对象表，内部使用)。
 
 ### 说明
 

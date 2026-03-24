@@ -1001,7 +1001,7 @@ end
 -- 具体的重指派逻辑
 local function logic_reassign(new_train, old_id)
     if not (new_train and new_train.valid and old_id) then
-        return
+        return false
     end
 
     if remote.interfaces["logistic-train-network"] then
@@ -1021,8 +1021,11 @@ local function logic_reassign(new_train, old_id)
                     new_train.go_to_station(insert_index)
                 end
             end
+
+            return true
         end
     end
+    return false
 end
 
 -- 策略分发
@@ -1030,7 +1033,13 @@ end
 function LTN.on_train_teleport_transfer(event)
     -- 我们永远自己在黄金微秒亲自重指派，无视第三方胶水模组
     -- 我们必须向 LTN 提供 new_train 的 Lua 引用，否则 reassign_delivery 无法执行
-    logic_reassign(event.new_train, event.old_train_id)
+    if logic_reassign(event.new_train, event.old_train_id) then
+        local entry = State and State.get_portaldata_by_unit_number(event.entry_unit_number)
+        if entry and entry.stats then entry.stats.ltn_sent = (entry.stats.ltn_sent or 0) + 1 end
+
+        local exit = State and State.get_portaldata_by_unit_number(event.exit_unit_number)
+        if exit and exit.stats then exit.stats.ltn_received = (exit.stats.ltn_received or 0) + 1 end
+    end
 end
 
 if RiftRail.DEBUG_MODE_ENABLED then

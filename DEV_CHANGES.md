@@ -6,6 +6,35 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+###  2026-03-24（v0.13.4：运行档案数据追踪与防弹级深拷贝解耦）
+
+**核心聚焦**：引入了全新的“运行档案”面板，实时掌握每一个传送门的后勤服役指标；同时通过只传递纯标量 ID 攻克了官方引擎事件 Payload 深拷贝造成的拦截黑洞。
+- **智能化运行档案 (Dynamic Operational Statistics)**：在传送门 GUI 新增“显示运行档案”复选框。通过 `gui.lua` 中纯洁的判定树，面板能自动依据所在传送门身份变形：入口只展示“传送次数/上次传送时间”，出口只展示“接收次数/上次接收时间”，双端共享精准的“服役时长”雷达。
+- **绕过深拷贝防守 (Bulletproof Decoupling)**：彻底剥离统计逻辑至全新的 `stats.lua` 观察者模块。由于 Factorio `script.raise_event` 会无差别静默舍弃含有复杂类型嵌套的数据表，修改 `teleport.lua` 的事件抛出物，使其从原本极其臃肿的 `portaldata` 实体指针群退化为极简干脆的 `unit_number` 数字标量。然后在接收端利用 ID 反查 `storage.rift_rails` 原始表，完美绕开深拷贝限制和垃圾回收噩梦。
+- **高度剥离的全局化 (Refactoring Utility)**：对代码实施严苛的界限把控：将原本混杂在视图层内的 `format_duration` 算法硬生生抽离至 `util.lua` 变为顶级暴露工具 `Util.format_duration`；修复 `GUI.init()` 的依赖注入缝隙使得渲染面板与底层数学池畅通无阻，并连带重写了中日英三语对应的参数形态后缀。
+- **专线物流白嫖追踪 (LTN & Cybersyn 2 Telemetry)**：借助传送门本就完美的兼容层拦截件，实现在 `LTN.on_train_teleport_transfer` 与 `CS2.on_train_arrived` 这两帧唯一的移交微秒中，一旦确认对方物流网关收发货单，当场白嫖底层数据源实施 `stats.ltn_sent += 1` 的铁证。再结合动态渲染技术将专属的数据槽位按需绽放在对应传送门的面板上。
+- **API 文档与 Payload 同步更新 (API Docs Sync)**：将传送门独家的标量数据载荷（`entry_unit_number` 与 `exit_unit_number`）向外暴露给 `TrainArrived` 以及由其衍生出的 `TrainTeleportTransfer` 移交事件，并同步在 `doc/API(CN).md` / `doc/API(EN).md` 中完成了官方手册撰写。
+
+### 技术变更细节
+- 新建 `scripts/stats.lua`：独立负责统计量拦截与自增更新计算。
+- 更改 `scripts/teleport.lua`：`raise_arrived_event` 货箱变更，从 `entry_portaldata` 改发 `entry_unit_number`。
+- 更改 `scripts/builder.lua`：令新蓝图起建时自动带有天生的 `stats={}` 空核对象。
+- 更改 `scripts/gui.lua`：接入 `Util.format_duration` 计算秒数，接管展示与状态逻辑，清理残存 `format_duration`。顺手修复了按下“传送玩家”按钮后画面残余瞄准高亮圈的 `clear_preview_render`。
+- 更改 `scripts/migrations.lua`：撰写 `add_portal_stats` 洗礼脚本填补上古版本坑位，外挂一层 `portal_stats_migrated` 防护门彻底屏蔽往后大后期的每一次沙盒更新。
+- 更改 `control.lua`：填补缺失的 `Util=Util` 初始化引用，加载 `Stats` 生命体。
+
+###  2026-03-24（v0.13.4：GUI 专属工具栏与状态机图标化）
+
+**核心聚焦**：为了将左下角的宝贵空间彻底释放给未来的“数据统计仪表盘”，对冗杂的操作控件实施了降维打击。
+- **“双子星”快捷指令**：在“运行模式（入口/出口）”栏的最右侧，利用弹簧排版开辟了专属的工具栏区域。将原本占用极大的“传送玩家”文字按钮，以及用于控制右侧监控的“显示目标预览”复选框，全部重构为扁平、无框的 `tool_button` 图标（跑步小人与状态眼睛）。
+- **无缝状态翻转**：彻底移除了底层的 Checkbox 控件与对应的 `on_gui_checked_state_changed` 监听。现在，监控画面的开关由“眼睛”图标的点击事件接管。通过纯代码驱动的布尔值翻转与瞬间重绘，实现了睁眼/闭眼图标的平滑切换，交互逻辑更加契合硬核工业控制台的直觉。
+
+### 具体改动
+- `RiftRail/scripts/gui.lua`：在 `build_or_update` 的模式切换流（`mode_flow`）最右侧，新增了基于 `sprite-button` 的 `rift_rail_toggle_preview_button` 和 `rift_rail_tp_player_button`。
+- `RiftRail/scripts/gui.lua`：移除了旧版左下方的 `tool_flow` 传送按钮，以及 `rift_rail_preview_check` 复选框的渲染代码。
+- `RiftRail/scripts/gui.lua`：在 `handle_click` 事件流末端接管了预览状态翻转逻辑（`show_preview = not show_preview`）并触发重绘；在 `handle_checked_state_changed` 中清除了已废弃的复选框事件拦截分支。
+
+
 ## 2026-03-23（v0.13.4：GUI 交互极简进化与视觉层级重构）
 
 **核心聚焦**：深入挖掘 Factorio UI 引擎的 `ignored_by_interaction` 穿透特性与负边距排版魔法，彻底消灭了冗余的操作控件，并将左右面板的视觉层级与工业质感推向了新的高度。

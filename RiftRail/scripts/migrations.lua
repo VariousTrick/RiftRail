@@ -500,6 +500,35 @@ function Migrations.patch_hub_and_spoke_registration()
 end
 
 -- ============================================================================
+-- [迁移任务 N] v0.13.3: 为旧存档的 portaldata 补全 stats 子表
+-- ============================================================================
+function Migrations.add_portal_stats()
+    if storage.portal_stats_migrated then return end
+    if not storage.rift_rails then return end
+    for _, portaldata in pairs(storage.rift_rails) do
+        if not portaldata.stats then
+            portaldata.stats = {
+                trains_sent        = 0,
+                trains_received    = 0,
+                creation_tick      = game.tick,
+                last_sent_tick     = nil,
+                last_received_tick = nil,
+                ltn_sent           = 0,
+                ltn_received       = 0,
+                cs2_sent           = 0,
+                cs2_received       = 0,
+            }
+        else
+            if portaldata.stats.ltn_sent == nil then portaldata.stats.ltn_sent = 0 end
+            if portaldata.stats.ltn_received == nil then portaldata.stats.ltn_received = 0 end
+            if portaldata.stats.cs2_sent == nil then portaldata.stats.cs2_sent = 0 end
+            if portaldata.stats.cs2_received == nil then portaldata.stats.cs2_received = 0 end
+        end
+    end
+    storage.portal_stats_migrated = true
+end
+
+-- ============================================================================
 -- 主入口：按顺序执行所有迁移任务
 -- ============================================================================
 function Migrations.run_all()
@@ -524,6 +553,7 @@ function Migrations.run_all()
     Migrations.rebuild_legacy_colliders()
     Migrations.state_machine_refactor()
     Migrations.patch_hub_and_spoke_registration()
+    Migrations.add_portal_stats()
 end
 
 return Migrations
