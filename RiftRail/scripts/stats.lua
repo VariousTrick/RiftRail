@@ -3,12 +3,18 @@
 -- 通过监听 TrainArrived 事件，直接通过引用更新 portaldata.stats 计数器
 
 local Stats = {}
-
 local State
 
+local log_debug = function(...) end
 function Stats.init(deps)
     log_debug = deps.log_debug
     State     = deps.State
+end
+
+local function log_stats(msg)
+    if RiftRail.DEBUG_MODE_ENABLED then
+        log_debug("[RiftRail:Stats] " .. msg)
+    end
 end
 
 -- 每次传送完成时，更新入口的发送计数器和出口的接收计数器
@@ -31,8 +37,10 @@ end
 
 -- 被兼容层调用的记账窗口，专门处理具体物流网络的前缀（比如 "ltn", "cs2"）
 function Stats.record_logistics_delivery(network_prefix, entry_unit_number, exit_unit_number)
-    if not State then return end
-    
+    if not State then
+        return
+    end
+
     local sent_key = network_prefix .. "_sent"
     local received_key = network_prefix .. "_received"
 
@@ -45,6 +53,10 @@ function Stats.record_logistics_delivery(network_prefix, entry_unit_number, exit
     if exit and exit.stats then
         exit.stats[received_key] = (exit.stats[received_key] or 0) + 1
     end
+end
+
+if RiftRail.DEBUG_MODE_ENABLED then
+    log_stats("Stats文件加载成功")
 end
 
 return Stats
