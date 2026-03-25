@@ -204,10 +204,9 @@ function GUI.build_or_update(player, entity)
     GUI.clear_preview_render(player.index)
 
     -- 3. 创建/清理 GUI
-    -- 3.1. 改用 screen (屏幕) 容器，不再使用 relative
-    local gui = player.gui.screen -- <--- 改动点 1
+    local gui = player.gui.screen
 
-    -- 3.2. 清理旧窗口 (防止重复打开)
+    -- 清理旧窗口 (防止重复打开)
     if gui.rift_rail_main_frame then
         gui.rift_rail_main_frame.destroy()
     end
@@ -240,18 +239,18 @@ function GUI.build_or_update(player, entity)
         direction = "vertical",
     })
 
-    -- 6. 让窗口自动居中
+    -- 让窗口自动居中
     frame.auto_center = true
 
-    -- 7. 存储 Unit Number，用于后续逻辑
+    -- 存储 Unit Number，用于后续逻辑
     -- 同时保存 unit_number 和 view_mode
     frame.tags = { unit_number = my_data.unit_number }
 
-    -- 8. 欺骗引擎：告诉游戏“现在玩家打开的是这个窗口”
+    -- 欺骗引擎：告诉游戏“现在玩家打开的是这个窗口”
     -- 这会自动关闭原本的箱子界面！
     player.opened = frame
 
-    -- 3.5. 纯正原生系统标题栏 (Global Title Bar)
+    -- 纯正原生系统标题栏 (Global Title Bar)
     local title_bar = frame.add({ type = "flow", name = "rift_rail_title_bar", direction = "horizontal" })
 
     -- 我们自己把总标题写进这个 header 里
@@ -1017,7 +1016,7 @@ function GUI.handle_selection_state_changed(event, frame_override)
     local dropdown = event.element
     local selected_index = dropdown.selected_index
 
-    -- 【核心修复】如果选中了分隔符，则禁用所有相关按钮并立刻停止执行
+    -- 如果选中了分隔符，则禁用所有相关按钮并立刻停止执行
     local is_paired_map = dropdown.tags.is_paired_map
     local status = is_paired_map and is_paired_map[selected_index]
 
@@ -1039,7 +1038,7 @@ function GUI.handle_selection_state_changed(event, frame_override)
             remote_view_button.enabled = false
         end
 
-        return -- 提前退出，不执行后续逻辑
+        return
     end
 
     -- 根据不同调用模式，选择不同的查找方式
@@ -1124,7 +1123,6 @@ function GUI.update_camera_preview(player, frame, target_id)
     end
 
     -- 4. 直接修改属性（无闪烁切换）
-
     title_btn.caption = partner.name .. " [" .. partner.shell.surface.name .. "]"
 
     -- 同步更新按钮的可点击状态（防瞎点）
