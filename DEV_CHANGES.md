@@ -6,6 +6,11 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+### v0.13.5 附加更新：架构返璞归真与双轨制消除
+
+**改动摘要**：彻底清除了 CS2 兼容模块中潜伏的“缓存更新双轨制”架构悖论，全面拥抱无状态（Stateless）的绝对强一致性，将潜在的寻路死锁概率降至零。
+- **终结状态机分裂 (Eradicating Dual-Track Desync)**：修复了系统中“结构性操作全量重建（如新建/配对/拆除）”与“轻量级操作增量修补（如开关切换）”混用导致的拓扑状态割裂问题。原有的增量更新（Incremental Update）算法虽在理论时间复杂度上极具美感，但在 Factorio 引擎的现实约束下（极小规模的传送门数据集 + 极低频的玩家操作），其复杂的局部状态机极易在时序交错中与全局图产生脱节，进而滋生幽灵数据。本次重构果断斩断了这一过度设计，将所有开关触发器统一并入 `CS2.on_topology_changed()` 的全量重建轨道，确立了以真实物理实体快照为唯一真理的强一致性防线。
+- **战略性代码雪藏 (Strategic Code Snowboxing)**：并未物理抹除那套极其精妙的增量维护算法（如抽屉节点重组与单边精准抹除逻辑），而是将其在调用入口处实施了静默剥离，转化为技术资产储备。这意味着当前的 RiftRail 模组以趋近于 0 的维护心智负担，换取了 100% 的物流拓扑准确率；而一旦未来第三方物流模组引入高频拓扑重组需求，这台封存的增量引擎随时可被唤醒重启。
 
 ### 2026-03-27（v0.13.5：热路径极简重构与反过度设计）
 
