@@ -6,6 +6,29 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+
+### 2026-03-27（v0.13.5：热路径极简重构与反过度设计）
+
+**改动摘要**：深入清理了 CS2 兼容模块中的“防御性妥协”与“过度设计（Over-engineering）”，在最核心的列车发车热路径（Hot Path）上确立了强一致性架构，并将状态同步的延迟压缩至物理极限的 0 帧。
+- **废除拓扑防抖与状态幽灵消除 (Zero-Latency Topology Sync)**：彻底移除了原先设定的 120 Ticks（2秒）强制拓扑重建冷却（节流防抖）机制。原机制虽意在防范海量建筑瞬间摧毁带来的算力风暴，但在实际游玩中，若玩家在极短时间内快速反悔切换开关，该机制会无情吞噬真实操作，导致本地开关状态与 CS2 内部字典发生“状态不同步（Desync）”的致命 Bug。鉴于 CS2 引擎底层已具备极佳的脏标记整合能力，我们选择摒弃这一过度设计，转而拥抱绝对的实时同步。现在的拓扑变更指令将零延迟直达 CS2 主程序，彻底断绝了幽灵路线死锁的可能。
+- **热路径“绝对信任缓存” (Absolute Cache Trust in Hot-Path)**：对决定列车走向的 `find_best_route` 核心派单函数实施了降维级别的瘦身。删除了原代码中因对增量更新缺乏安全感，而在列车发车瞬间强行执行 `rebuild_route_cache()` 的防御性兜底重算。正式确立了“相信地图（精准缓存），只看路标（微秒级实体存活性校验）”的极客级架构。现在列车发车时，仅需极速查表并执行 $O(1)$ 的 `portaldata.shell.valid` 存活性校验，将发车瞬间的 UPS 计算损耗彻底打穿至趋近于 0。
+- **读时拓扑伪装与单向黑洞防御 (Read-Time Topology Masking & One-Way Defense)**：针对 CS2 寻路算法在跨地表物流中默认“必须原路返回”的逻辑硬伤（若无返回路径会强插原点车站导致 Factorio 引擎严重报错崩溃），我们拒绝了沉重且极易引发状态脱节的“写时严格双向缓存（Write-Time Filtering）”方案。取而代之的是极其优雅的“读时过滤（Read-Time Filtering）”：底层路由表依旧保持绝对真实的“有向图”刻画（完美保留了单向路线警告 UI 的数据基建），仅在向 CS2 提交拓扑接口（Callback）的瞬间，以极微小的开销执行反向探路校验。将单向路线悄无声息地隔离在 CS2 的寻路视界之外，兵不血刃地化解了由跨星系单行道引发的引擎级崩溃风险。
+
+### 具体改动
+- `RiftRail/scripts/compat/cs2.lua`：删除了 `REBUILD_DEBOUNCE_TICKS` 常量及其附带的时间戳记账逻辑，将 `request_cs2_topology_rebuild` 降维为纯粹的、无条件直通的 `pcall` 触发器。
+- `RiftRail/scripts/compat/cs2.lua`：重构了 `find_best_route` 函数，剔除了末尾冗余的强制缓存重建与二次选路逻辑，仅保留极轻量的物理实体存活防线，实现发车逻辑的极限提速。
+- `RiftRail/scripts/compat/cs2.lua`：在 `CS2.train_topology_callback` 拓扑出口函数中植入轻量级拦截网，利用 `has_direct_route` 校验 `to_surface` 到 `origin_surface` 的反向连通性，仅当物理路线双向贯通时，才向 CS2 注册该目标地表。
+
+### 2026-03-27（v0.13.5：CS2 路由优先级抢占与可达性审查极简优化）
+
+**核心聚焦**：彻底理清了在 Cybersyn 2 多模组跨表共存环境下的“路由抢单”与“发车安检”底层逻辑，解决被其他跨表模组（如太空电梯）霸占路由以及错误误伤其他模组的问题，将性能优化至 0 开销。
+- **可达性审查零开销放权 (Zero-Cost Reachability Veto)**：深刻剖析了 CS2 `reachable_callback` 接口作为“一票否决/安检站”的本质设计。修正了旧版代码中极其危险的“自身无路线即全局否决”逻辑（该逻辑曾导致全图所有模组的跨表订单瘫痪）。鉴于 RiftRail 目前奉行“敞开大门，绝不拦截”的自由策略，直接在代码和注册表中彻底注释并注销了该安检接口。赋予了模组最完美的第三方兼容性（管不了就不干涉，让贤给其他有路线的模组）。
+
+### 具体改动
+- `RiftRail/scripts/compat/cs2.lua`：用块注释隐藏了 `CS2.reachable_callback` 函数本体及空壳，消除每一次发车时无意义的表计算与函数调用。
+- `RiftRail/updates/cs2.lua`：删除了向 CS2 主程序注册 `reachable_callback` 的代码，彻底撤销发车安检口。
+- `RiftRail/scripts/remote.lua`：同步注销 `cs2_reachable_callback` 的远程接口暴露。
+
 ###  2026-03-24（v0.13.4：运行档案数据追踪与防弹级深拷贝解耦）
 
 **核心聚焦**：引入了全新的“运行档案”面板，实时掌握每一个传送门的后勤服役指标；同时通过只传递纯标量 ID 攻克了官方引擎事件 Payload 深拷贝造成的拦截黑洞。

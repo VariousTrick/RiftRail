@@ -37,12 +37,13 @@ function Remote.init(params)
             end
             return nil
         end,
-        cs2_reachable_callback = function(...)
+        -- 该函数返回trun会否决CS2生成的任务，RiftRail原则上不投否决票，因此直接注释掉，保留函数接口以备未来需要。
+        --[[ cs2_reachable_callback = function(...)
             if CS2 and CS2.reachable_callback then
                 return CS2.reachable_callback(...)
             end
             return nil
-        end,
+        end, ]]
         cs2_route_callback = function(...)
             if CS2 and CS2.route_callback then
                 return CS2.route_callback(...)
