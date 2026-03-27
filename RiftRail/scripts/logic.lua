@@ -29,11 +29,11 @@ local function count_connections(id_table)
 end
 
 function Logic.init(deps)
-    State = deps.State
-    GUI = deps.GUI
+    State     = deps.State
+    GUI       = deps.GUI
     log_debug = deps.log_debug
-    LTN = deps.LTN
-    CS2 = deps.CS2
+    LTN       = deps.LTN
+    CS2       = deps.CS2
 end
 
 -- ============================================================================
@@ -142,7 +142,6 @@ local function update_collider_state(portaldata)
         for i = #portaldata.children, 1, -1 do
             local child_data = portaldata.children[i]
             if child_data and child_data.entity and child_data.entity.valid and child_data.entity.name == "rift-rail-collider" then
-
                 -- 防止字典泄漏
                 if child_data.entity.unit_number and storage.collider_to_portal then
                     storage.collider_to_portal[child_data.entity.unit_number] = nil
@@ -164,11 +163,11 @@ local function update_collider_state(portaldata)
 
         -- 计算碰撞器的精确相对坐标
         local relative_pos = { x = 0, y = -2 } -- 基准 (North)
-        if direction == 4 then -- East
+        if direction == 4 then                 -- East
             relative_pos = { x = 2, y = 0 }
-        elseif direction == 8 then -- South
+        elseif direction == 8 then             -- South
             relative_pos = { x = 0, y = 2 }
-        elseif direction == 12 then -- West
+        elseif direction == 12 then            -- West
             relative_pos = { x = -2, y = 0 }
         end
 
@@ -185,7 +184,6 @@ local function update_collider_state(portaldata)
         -- 将新创建的碰撞器登记到 children 列表中并注册 ID
         if new_collider then
             if new_collider.unit_number then
-                
                 storage.collider_to_portal[new_collider.unit_number] = portaldata.unit_number
             end
 
@@ -343,9 +341,6 @@ function Logic.set_mode(player_index, portal_id, mode, skip_sync)
         local msg_key = "gui.rift-rail-mode-" .. mode
         player.print({ msg_key })
     end
-
-    -- [重要修改] 移除了旧版的 "skip_sync" 和自动设置 partner 模式的逻辑
-    -- 在多对一结构中，不再允许自动修改配对对象的模式
 
     refresh_all_guis()
 
@@ -647,11 +642,11 @@ function Logic.teleport_player(player_index, portal_id)
         local dir = portaldata.shell.direction
         local offset = { x = 0, y = 0 }
 
-        if dir == 0 then -- North (开口在下) -> 传送到上方
+        if dir == 0 then      -- North (开口在下) -> 传送到上方
             offset = { x = 0, y = -8 }
-        elseif dir == 4 then -- East (开口在左) -> 传送到右方
+        elseif dir == 4 then  -- East (开口在左) -> 传送到右方
             offset = { x = 8, y = 0 }
-        elseif dir == 8 then -- South (开口在上) -> 传送到下方
+        elseif dir == 8 then  -- South (开口在上) -> 传送到下方
             offset = { x = 0, y = 8 }
         elseif dir == 12 then -- West (开口在右) -> 传送到左方
             offset = { x = -8, y = 0 }

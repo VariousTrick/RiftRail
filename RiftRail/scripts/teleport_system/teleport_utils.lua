@@ -15,10 +15,8 @@ local Math = nil
 local log_debug = function(...) end
 
 function TeleportUtils.init(deps)
-    Math = deps.Math
-    if deps.log_debug then
-        log_debug = deps.log_debug
-    end
+    Math      = deps.Math
+    log_debug = deps.log_debug
 end
 
 local function log_tu(msg)

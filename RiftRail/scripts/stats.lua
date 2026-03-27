@@ -55,8 +55,4 @@ function Stats.record_logistics_delivery(network_prefix, entry_unit_number, exit
     end
 end
 
-if RiftRail.DEBUG_MODE_ENABLED then
-    log_stats("Stats文件加载成功")
-end
-
 return Stats

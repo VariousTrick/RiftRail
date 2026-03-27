@@ -1,0 +1,15 @@
+root = true
+
+[*.lua]
+indent_style = space
+indent_size = 4
+quote_style = double
+max_line_length = 2000
+align_continuous_assign_statement = true
+align_continuous_rect_table_field = true
+# 不允许单行
+keep_simple_control_block_one_line = false
+# 不允许单行函数
+keep_simple_function_one_line = false
+# 不允许单行代码块
+keep_simple_block_one_line = false

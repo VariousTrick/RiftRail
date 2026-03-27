@@ -1,7 +1,6 @@
 -- scripts/remote.lua
 local Remote = {}
 
--- 1. 提前声明依赖变量，供该文件内的所有函数使用
 local State
 local Logic
 local Builder
@@ -10,12 +9,11 @@ local CS2
 local log_debug
 
 function Remote.init(params)
-    -- 2. 接收从 control.lua 注入的依赖
-    State = params.State
-    Logic = params.Logic
-    Builder = params.Builder
-    GUI = params.GUI
-    CS2 = params.CS2
+    State     = params.State
+    Logic     = params.Logic
+    Builder   = params.Builder
+    GUI       = params.GUI
+    CS2       = params.CS2
     log_debug = params.log_debug
 
     -- ============================================================================
@@ -116,7 +114,6 @@ function Remote.init(params)
             -- 因为 Builder.on_built 只认 event.entity，我们投其所好
             local fake_event = {
                 entity = placer_entity,
-                -- 如果以后修改代码，需要用到时间戳，这里也可以加一句 tick = game.tick
             }
 
             -- 3. 直接把伪造好的数据塞进核心处理函数！
@@ -219,7 +216,6 @@ function Remote.init(params)
 
         -- 专供沙盒：强行关闭测试玩家的摄像头预览
         disable_camera_preview = function(player_index)
-            
             storage.rift_rail_player_settings[player_index] = { show_preview = false }
         end,
 

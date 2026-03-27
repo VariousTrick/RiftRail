@@ -19,7 +19,7 @@ function State.setup_new_game()
     storage.collider_to_portal = {}
     storage.collider_map = {}
     storage.active_teleporter_list = {}
-    storage.active_teleporters = {} -- 添加了缺失的字典缓存
+    storage.active_teleporters = {}        -- 添加了缺失的字典缓存
     storage.rift_rail_preview_renders = {} -- GUI 全息高亮雷达缓存
 
     -- LTN 兼容数据

@@ -9,14 +9,12 @@ local Builder = nil
 local log_debug = function() end
 
 function Maintenance.init(deps)
-    Util = deps.Util
-    LTN = deps.LTN
-    CS2 = deps.CS2
-    State = deps.State
-    Builder = deps.Builder
-    if deps.log_debug then
-        log_debug = deps.log_debug
-    end
+    Util      = deps.Util
+    LTN       = deps.LTN
+    CS2       = deps.CS2
+    State     = deps.State
+    Builder   = deps.Builder
+    log_debug = deps.log_debug
 end
 
 -- 处理模组设置变更事件

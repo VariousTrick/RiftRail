@@ -5,7 +5,6 @@
 
 local Schedule = {}
 
--- 默认空日志函数，会被 control.lua 注入的函数覆盖
 local log_debug = function() end
 
 -- 初始化函数：接收来自 control.lua 的依赖
@@ -15,11 +14,8 @@ function Schedule.init(deps)
     end
 end
 
--- 本地日志包装器 (适配 Rift Rail 风格)
--- 原有的 DEBUG_ENABLED 开关现在由 control.lua 中的 DEBUG_MODE 统一控制
+-- 本地日志包装器
 local function log_schedule(message)
-    -- 调用 control.lua 传入的 log_debug
-    -- 它会自动处理 log() 和 game.print()，并带有 [RiftRail] 前缀
     if RiftRail.DEBUG_MODE_ENABLED then
         log_debug("[RiftRail:Schedule] " .. message)
     end
@@ -33,7 +29,7 @@ end
 ---@param saved_manual_mode boolean|nil: 可选参数，传入旧火车的手动模式状态（用于特殊情况）
 function Schedule.copy_schedule(old_train, new_train, entry_portal_station_name, override_index, saved_manual_mode)
     if RiftRail.DEBUG_MODE_ENABLED then
-        log_schedule("DEBUG (copy_schedule v3.0): 开始为新火车 (ID: " .. new_train.id .. ") 转移时刻表...")
+        log_schedule("DEBUG: 开始为新火车 (ID: " .. new_train.id .. ") 转移时刻表...")
     end
 
     if not (old_train and old_train.valid and new_train and new_train.valid) then

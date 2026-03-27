@@ -10,12 +10,10 @@ local log_debug = function() end
 
 function Builder.init(deps)
     flib_util = deps.flib_util
-    State = deps.State
-    Logic = deps.Logic
-    Util = deps.Util
-    if deps.log_debug then
-        log_debug = deps.log_debug
-    end
+    State     = deps.State
+    Logic     = deps.Logic
+    Util      = deps.Util
+    log_debug = deps.log_debug
 end
 
 -- ============================================================================
@@ -218,7 +216,6 @@ function Builder.on_built(event)
 
         -- 2. 建立碰撞器与传送门的映射关系 (Collider -> Portal)
         if collider and collider.unit_number then
-            
             -- 写入映射: 碰撞器ID -> 传送门ID
             storage.collider_to_portal[collider.unit_number] = shell.unit_number
         end
@@ -251,13 +248,9 @@ function Builder.on_built(event)
 
     if station_entity and core_entity then
         -- 连接红色信号线
-        core_entity.get_wire_connector(defines.wire_connector_id.circuit_red, true).connect_to(
-        station_entity.get_wire_connector(defines.wire_connector_id.circuit_red, true), false, defines.wire_origin
-        .script)
+        core_entity.get_wire_connector(defines.wire_connector_id.circuit_red, true).connect_to(station_entity.get_wire_connector(defines.wire_connector_id.circuit_red, true), false, defines.wire_origin.script)
         -- 连接绿色信号线
-        core_entity.get_wire_connector(defines.wire_connector_id.circuit_green, true).connect_to(
-        station_entity.get_wire_connector(defines.wire_connector_id.circuit_green, true), false,
-            defines.wire_origin.script)
+        core_entity.get_wire_connector(defines.wire_connector_id.circuit_green, true).connect_to(station_entity.get_wire_connector(defines.wire_connector_id.circuit_green, true), false, defines.wire_origin.script)
         if RiftRail.DEBUG_MODE_ENABLED then
             log_debug("[Builder] 车站和核心的红绿信号线已连接")
         end
@@ -574,7 +567,6 @@ function Builder.on_cloned(event)
 
                     -- 登记克隆体碰撞器的全局映射
                     if child_name == "rift-rail-collider" and found_clone[1].unit_number then
-                        
                         storage.collider_to_portal[found_clone[1].unit_number] = new_unit_number
                     end
                 end
@@ -661,7 +653,6 @@ function Builder.on_setup_blueprint(event)
                 placer_entity.tags.rr_prefix = data.prefix
             end
             table.insert(new_entities, placer_entity)
-
         elseif not (source_entity and source_entity.valid and source_entity.name:find("rift-rail-")) then
             table.insert(new_entities, bp_entity)
         end
@@ -814,7 +805,7 @@ function Builder.rebuild_all_colliders()
                         portaldata.cached_check_area = cached_area
 
                         if portaldata.state == 3 then -- Teleport.STATE.REBUILDING
-                            portaldata.state = 0 -- Teleport.STATE.DORMANT
+                            portaldata.state = 0      -- Teleport.STATE.DORMANT
                         end
                     end
                 end
@@ -822,12 +813,13 @@ function Builder.rebuild_all_colliders()
         end
     end
 end
+
 -- ============================================================================
 -- 处理 entity_destroyed 回调触发的销毁逻辑
 -- ============================================================================
 function Builder.on_silent_destroyed(unit_number)
     local target_data = storage.rift_rails[unit_number]
-    
+
     -- 如果外壳没死，那就是核心死了，遍历所有 children 查找
     if not target_data then
         for _, portal in pairs(storage.rift_rails) do

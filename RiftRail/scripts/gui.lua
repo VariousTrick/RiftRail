@@ -226,9 +226,9 @@ function GUI.build_or_update(player, entity)
     -- 使用 Factorio 的本地化拼接语法 {"", A, B, C}
     -- 这里的 {"entity-name.rift-rail-core"} 会自动读取 locale 文件显示为 "裂隙铁路控制核心"
     local title_caption = {
-        "", -- 空字符串开头，表示这是一个拼接列表
-        title_icon, -- 图标字符串 "[item=...]"
-        " ", -- 空格
+        "",                            -- 空字符串开头，表示这是一个拼接列表
+        title_icon,                    -- 图标字符串 "[item=...]"
+        " ",                           -- 空格
         { "entity-name.rift-rail-core" },
         " (ID: " .. my_data.id .. ")", -- 后面拼接 ID
     }

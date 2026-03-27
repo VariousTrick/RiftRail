@@ -9,16 +9,13 @@ local Migrations = {}
 -- ============================================================================
 -- 依赖注入
 -- ============================================================================
-local State, log_debug, CybersynSE, LTN, TeleportMath, Builder
-
+local State, log_debug, LTN, Util, Builder
 function Migrations.init(deps)
-    State = deps.State
+    State     = deps.State
     log_debug = deps.log_debug
-    CybersynSE = deps.CybersynSE
-    LTN = deps.LTN
-    Util = deps.Util
-    TeleportMath = deps.TeleportMath
-    Builder = deps.Builder
+    LTN       = deps.LTN
+    Util      = deps.Util
+    Builder   = deps.Builder
 end
 
 -- ============================================================================
@@ -76,17 +73,15 @@ function Migrations.rename_carriage_to_car()
     if storage.rift_rails then
         log_debug("[Migration] 开始执行存储键名迁移 (carriage -> car)...")
         for _, portaldata in pairs(storage.rift_rails) do
-            -- 迁移 carriage_ahead -> exit_car
-            -- 检查：如果旧键存在，且新键不存在 (防止重复迁移)
             if portaldata.carriage_ahead and not portaldata.exit_car then
                 portaldata.exit_car = portaldata.carriage_ahead
-                portaldata.carriage_ahead = nil -- [关键] 删除旧键，完成迁移
+                portaldata.carriage_ahead = nil
             end
 
             -- 迁移 carriage_behind -> entry_car
             if portaldata.carriage_behind and not portaldata.entry_car then
                 portaldata.entry_car = portaldata.carriage_behind
-                portaldata.carriage_behind = nil -- [关键] 删除旧键
+                portaldata.carriage_behind = nil
             end
         end
     end
@@ -163,7 +158,7 @@ function Migrations.unified_multi_pairing()
 
         local neutral_paired_count = 0
         for _, portal in pairs(storage.rift_rails) do
-            -- [新增] 中立模式旧配对清理
+            -- 中立模式旧配对清理
             if portal.mode == "neutral" and portal.paired_to_id then
                 neutral_paired_count = neutral_paired_count + 1
                 portal.paired_to_id = nil
@@ -192,7 +187,7 @@ function Migrations.unified_multi_pairing()
                         log_debug("[Migration] 转换出口 ID " .. portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> source_ids (带缓存)")
                     end
 
-                    -- [关键] 清空出口的配对指针，标志着它正式转为多对一被动模式
+                    -- 清空出口的配对指针，标志着它正式转为多对一被动模式
                     portal.paired_to_id = nil
                 end
 
@@ -235,7 +230,7 @@ function Migrations.unified_multi_pairing()
                         log_debug("[Migration] 转换入口 ID " .. portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> target_ids (带缓存)")
                     end
 
-                    -- [关键] 清空旧字段，完成数据结构升级
+                    -- 清空旧字段，完成数据结构升级
                     portal.paired_to_id = nil
                 end
 
@@ -460,7 +455,7 @@ function Migrations.state_machine_refactor()
                 else
                     portaldata.state = 0 -- Teleport.STATE.DORMANT
                 end
-                
+
                 -- 清理旧字段以节省内存
                 portaldata.collider_needs_rebuild = nil
                 portaldata.is_teleporting = nil

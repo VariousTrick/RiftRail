@@ -11,12 +11,8 @@ local log_debug = function(...) end
 
 ---@param deps table 依赖表 / Dependency table
 function TeleportFactory.init(deps)
-    if deps.Math then
-        Math = deps.Math
-    end
-    if deps.log_debug then
-        log_debug = deps.log_debug
-    end
+    Math      = deps.Math
+    log_debug = deps.log_debug
 end
 
 -- =================================================================================
