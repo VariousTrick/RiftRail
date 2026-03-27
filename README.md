@@ -16,6 +16,7 @@
 
 <details>
 <summary><strong>📖 中文文档 (Chinese Documentation)</strong></summary>
+ 
  [屏幕录像_20260327_222258.webm](https://github.com/user-attachments/assets/71ac7154-dcad-40d2-93ed-dec77c9c3791)
  
 ---
