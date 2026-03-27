@@ -7,9 +7,9 @@ if not script.active_mods["cybersyn2"] then
         train_topology_callback = function()
             return nil
         end,
-        reachable_callback = function()
+        --[[ reachable_callback = function()
             return nil
-        end,
+        end, ]]
         route_callback = function()
             return nil
         end,
@@ -26,7 +26,7 @@ local State = nil
 local Stats = nil
 local log_debug = function(_) end
 
-local REBUILD_DEBOUNCE_TICKS = 120
+-- local REBUILD_DEBOUNCE_TICKS = 120
 
 -- 统一 CS2 调试日志前缀。
 local function cs2_log(msg)
@@ -298,14 +298,6 @@ end
 
 -- 请求 CS2 重建拓扑（带节流，避免高频抖动）。
 local function request_cs2_topology_rebuild()
-    local tick = (game and game.tick) or 0
-    local last = storage.rr_cs2_last_topology_rebuild_tick or 0
-    if tick - last < REBUILD_DEBOUNCE_TICKS then
-        return
-    end
-
-    storage.rr_cs2_last_topology_rebuild_tick = tick
-
     local ok, err = pcall(remote.call, "cybersyn2", "rebuild_train_topologies")
     if not ok then
         if RiftRail and RiftRail.DEBUG_MODE_ENABLED then
@@ -457,38 +449,31 @@ local function has_direct_route(from_surface_index, to_surface_index)
     return bucket ~= nil and bucket.flat_edges ~= nil and #bucket.flat_edges > 0
 end
 
--- 查找最佳 entry/exit；若命中陈旧缓存则强制重建后再试一次。
+-- 查找最佳 entry/exit；完全信任缓存，仅做最后一步的实体存活性校验。
 local function find_best_route(from_surface_index, to_surface_index, start_pos, target_pos)
     if not (from_surface_index and to_surface_index) then
         return nil, nil
     end
 
+    -- 1. 查表：直接从缓存桶里捞出最佳路线
     local bucket = get_route_bucket(from_surface_index, to_surface_index)
     local best_edge = select_best_edge(bucket, start_pos, target_pos)
     if not best_edge then
         return nil, nil
     end
 
+    -- 2. 验身：提取路线对应的传送门数据
     local best_entry = State.get_portaldata_by_id(best_edge.entry_id)
     local best_exit = State.get_portaldata_by_id(best_edge.exit_id)
+
+    -- 3. 放行：相信地图（缓存），只看一眼路标（判断实体是否在这一帧刚好被炸毁）
+    -- is_cs2_enabled_entry 内部已经包含了 portaldata.shell.valid 的极速校验
     if is_cs2_enabled_entry(best_entry) and is_cs2_enabled_exit(best_exit) then
         return best_entry, best_exit
     end
 
-    -- 缓存可能在拓扑变化边缘瞬间过期，强制重建后再做一次选择。
-    rebuild_route_cache()
-    bucket = get_route_bucket(from_surface_index, to_surface_index)
-    best_edge = select_best_edge(bucket, start_pos, target_pos)
-    if not best_edge then
-        return nil, nil
-    end
-
-    best_entry = State.get_portaldata_by_id(best_edge.entry_id)
-    best_exit = State.get_portaldata_by_id(best_edge.exit_id)
-    if is_cs2_enabled_entry(best_entry) and is_cs2_enabled_exit(best_exit) then
-        return best_entry, best_exit
-    end
-
+    -- 4. 退避：如果遇到极小概率的“实体刚死，缓存未清”的微秒级时差，
+    -- 直接优雅返回 nil（让列车原地等一等），坚决不去触发全量重建。
     return nil, nil
 end
 
@@ -565,6 +550,8 @@ function CS2.train_topology_callback(origin_surface_index)
     return nil
 end
 
+-- 该函数返回trun会否决CS2生成的任务，RiftRail原则上不投否决票，因此直接注释掉，保留函数接口以备未来需要。
+--[[
 -- 可达性 veto 回调：返回 true 表示不可达（阻止 CS2 生成该方向任务,如果其他模组可以完成任务也会被一票否决）。
 -- 我们的原则是：我不接管，但我不阻拦别人（返回 nil）。
 function CS2.reachable_callback(_, _, _, _, _, from_stop_entity, to_stop_entity)
@@ -584,6 +571,7 @@ function CS2.reachable_callback(_, _, _, _, _, from_stop_entity, to_stop_entity)
     -- 把控制权交还给 CS2 主程序和其他插件，不投否决票。
     return nil
 end
+ ]]
 
 -- 路由回调：跨地表时接管列车，写入过渡调度并登记 handoff 上下文。
 function CS2.route_callback(delivery_id, action, _, train_id, luatrain, train_stock, train_home_surface_index, _, stop_entity)
