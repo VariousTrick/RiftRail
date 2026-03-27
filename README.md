@@ -16,9 +16,8 @@
 
 <details>
 <summary><strong>📖 中文文档 (Chinese Documentation)</strong></summary>
-
- [Video_1770210011730_1.webm](https://github.com/user-attachments/assets/f6bd4dc5-bff9-452e-bbf8-8727c49f74a1)
-
+ [屏幕录像_20260327_222258.webm](https://github.com/user-attachments/assets/71ac7154-dcad-40d2-93ed-dec77c9c3791)
+ 
 ---
 
 ## 裂隙铁路 - Rift Rail
@@ -92,7 +91,7 @@ Earendel 的 Patreon：https://www.patreon.com/earendel
 <details>
 <summary><strong>📖 English Documentation</strong></summary>
 
- [Video_1770210011730_1.webm](https://github.com/user-attachments/assets/f6bd4dc5-bff9-452e-bbf8-8727c49f74a1)
+ [屏幕录像_20260327_222258.webm](https://github.com/user-attachments/assets/71ac7154-dcad-40d2-93ed-dec77c9c3791)
 
 ---
 
