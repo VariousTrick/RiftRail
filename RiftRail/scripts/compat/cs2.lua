@@ -190,7 +190,7 @@ local function ensure_route_cache()
     end
 end
 
--- 基于平铺边重建入口抽屉结构（用于增量删除后的结构恢复）。
+--[[ -- 基于平铺边重建入口抽屉结构（用于增量删除后的结构恢复）。
 local function rebuild_drawers_from_flat_edges(bucket, from_surface_index)
     local by_entry = {}
 
@@ -294,7 +294,7 @@ local function refresh_cache_for_toggled_portal(portal_id)
     end
 
     storage.rr_cs2_route_cache_dirty = false
-end
+end ]]
 
 -- 请求 CS2 重建拓扑（带节流，避免高频抖动）。
 local function request_cs2_topology_rebuild()
@@ -773,9 +773,12 @@ function CS2.on_portal_cs2_toggle(portal_id)
         return
     end
 
-
-    refresh_cache_for_toggled_portal(portal_id)
-    request_cs2_topology_rebuild()
+    -- 停用复杂的增量缓存更新逻辑，保留作为未来技术储备
+    -- refresh_cache_for_toggled_portal(portal_id)
+    CS2.on_topology_changed()
+    -- 注：CS2.on_topology_changed() 内部已经调用了 request_cs2_topology_rebuild()，
+    -- 所以这里不需要再重复请求 CS2 重建拓扑了
+    -- request_cs2_topology_rebuild()
 end
 
 return CS2
