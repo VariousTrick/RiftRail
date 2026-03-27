@@ -539,7 +539,11 @@ function CS2.train_topology_callback(origin_surface_index)
 
     for to_surface_index, bucket in pairs(by_to_surface) do
         if bucket.flat_edges and #bucket.flat_edges > 0 then
-            result[to_surface_index] = true
+            -- 验证反向路线 (to -> origin) 是否也存在
+            -- 只有双向都通，才向 CS2 注册 A-B 的连通性
+            if has_direct_route(to_surface_index, origin_surface_index) then
+                result[to_surface_index] = true
+            end
         end
     end
 
