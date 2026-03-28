@@ -6,6 +6,18 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+### 2026-03-28（v0.13.7：引导车可视贴图上线）
+
+**改动摘要**：为引导车补充了可见表情贴图，解决“引导车不可见、难以快速定位”的体验问题。现在玩家在调试传送流程或观察列车重组时，可以更直观地看到引导车位置。
+
+- **可视化引导车**：引导车从“隐形占位表现”切换为可见贴图表现，便于在轨道与编组中快速识别。
+- **贴图统一管理**：引导车贴图统一收敛到公共 sprites 文件管理，实体原型仅做引用，后续替换素材更直接。
+- **显示尺度优化**：已放大引导车贴图显示比例，保证在实际游玩缩放下仍具备辨识度。
+
+### 具体改动
+- `RiftRail/prototypes/sprites/rift-rail-sprites.lua`：新增引导车贴图定义并集中管理。
+- `RiftRail/prototypes/entities/leader-train.lua`：引导车实体改为引用公共贴图定义（替代原隐形贴图）。
+
 ### 2026-03-28（v0.13.7：模块级冗余判空清理）
 
 **改动摘要**：基于当前架构约束（模块固定 `require`、兼容层空壳返回、`init` 必然注入）清理了一批“模块对象必然存在却重复判空”的防御性分支，减少视觉噪音并提升控制流可读性。此次变更不涉及业务逻辑改写，仅为代码整洁化。
