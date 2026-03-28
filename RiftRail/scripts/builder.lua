@@ -321,19 +321,30 @@ local function clear_trains_inside(shell_entity)
         return
     end
 
-    -- 定义搜索范围 (以建筑中心为原点，稍微大一点点以覆盖边缘)
-    local search_area = {
-        left_top = { x = shell_entity.position.x - 2.5, y = shell_entity.position.y - 6.5 },
-        right_bottom = { x = shell_entity.position.x + 2.5, y = shell_entity.position.y + 6.5 },
-    }
+    local pos = shell_entity.position
+    local dir = shell_entity.direction
 
-    -- 查找所有类型的车辆
+    -- 内部轨道从死胡同（blocker，偏移约 6 格）延伸到入口外侧（约 7 格）
+    -- 宽度方向只有 2.5 格，以避免误删相邻平行轨道上的列车
+    local short_half = 2.5
+    local long_half  = 8.0
+
+    local lx, ly, rx, ry
+    if dir == 4 or dir == 12 then
+        -- 横向建筑（朝东或朝西），内部铁轨沿 X 轴延伸
+        lx, ly = pos.x - long_half,  pos.y - short_half
+        rx, ry = pos.x + long_half,  pos.y + short_half
+    else
+        -- 竖向建筑（朝北或朝南），内部铁轨沿 Y 轴延伸
+        lx, ly = pos.x - short_half, pos.y - long_half
+        rx, ry = pos.x + short_half, pos.y + long_half
+    end
+
     local trains = shell_entity.surface.find_entities_filtered({
-        area = search_area,
+        area = { left_top = { x = lx, y = ly }, right_bottom = { x = rx, y = ry } },
         type = { "locomotive", "cargo-wagon", "fluid-wagon", "artillery-wagon" },
     })
 
-    -- 强制销毁
     for _, car in pairs(trains) do
         if car and car.valid then
             car.destroy()

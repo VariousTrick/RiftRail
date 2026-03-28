@@ -84,7 +84,7 @@ local function raise_arrived_event(entry_portaldata, exit_portaldata, final_trai
         destination_surface_index = exit_surface.index,
         restored_guis = restored_guis,
         entry_unit_number = entry_portaldata.unit_number,
-        exit_unit_number = exit_portaldata and exit_portaldata.unit_number,
+        exit_unit_number = exit_portaldata.unit_number,
     })
 end
 
@@ -534,23 +534,21 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         exit_portaldata.cached_intent_vector = nil    -- 清理缓存的意图向量
     end
 
-    if entry_portaldata then
-        entry_portaldata.entry_car = nil               -- 清理入口车厢引用，防止 on_tick 中的过期访问
-        entry_portaldata.exit_car = nil                -- 清理入口侧“上一节已生成替身”标记，供下一次会话重新判定首节
-        entry_portaldata.locked_exit_unit_number = nil -- 清理物理死锁，允许下次传送重新排队选择
-        entry_portaldata.gui_map = nil                 -- 清理 GUI 观看者映射表
-        entry_portaldata.restored_guis = nil           -- 阅后即焚，清理恢复名单
-        entry_portaldata.placement_interval = nil      -- 清理入口放置间隔缓存（process_teleport_sequence 读取入口侧）
-        entry_portaldata.cached_entry_radius = nil     -- 兼容性清理旧版预缓存逻辑产生的无用字段
-        entry_portaldata.last_car_name = nil           -- 阅后即焚，销毁列车类型的短时记忆
-        entry_portaldata.last_car_radius = nil         -- 阅后即焚，销毁列车尺寸的短时记忆
+    entry_portaldata.entry_car = nil               -- 清理入口车厢引用，防止 on_tick 中的过期访问
+    entry_portaldata.exit_car = nil                -- 清理入口侧“上一节已生成替身”标记，供下一次会话重新判定首节
+    entry_portaldata.locked_exit_unit_number = nil -- 清理物理死锁，允许下次传送重新排队选择
+    entry_portaldata.gui_map = nil                 -- 清理 GUI 观看者映射表
+    entry_portaldata.restored_guis = nil           -- 阅后即焚，清理恢复名单
+    entry_portaldata.placement_interval = nil      -- 清理入口放置间隔缓存（process_teleport_sequence 读取入口侧）
+    entry_portaldata.cached_entry_radius = nil     -- 兼容性清理旧版预缓存逻辑产生的无用字段
+    entry_portaldata.last_car_name = nil           -- 阅后即焚，销毁列车类型的短时记忆
+    entry_portaldata.last_car_radius = nil         -- 阅后即焚，销毁列车尺寸的短时记忆
 
-        -- 6. 标记需要重建入口碰撞器
-        -- 我们不在这里直接创建，而是交给 on_tick 去计算正确的坐标并创建
-        entry_portaldata.state = Teleport.STATE.REBUILDING
-        -- 确保它在活跃列表中，这样 on_tick 才会去处理它
-        add_to_active(entry_portaldata)
-    end
+    -- 6. 标记需要重建入口碰撞器
+    -- 我们不在这里直接创建，而是交给 on_tick 去计算正确的坐标并创建
+    entry_portaldata.state = Teleport.STATE.REBUILDING
+    -- 确保它在活跃列表中，这样 on_tick 才会去处理它
+    add_to_active(entry_portaldata)
 end
 
 -- =================================================================================
@@ -606,16 +604,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     local is_first_car = (entry_portaldata.exit_car == nil)
     local geo = Math.GEOMETRY[exit_portaldata.shell.direction] or Math.GEOMETRY[0]
 
-    -- 安全检查
-    if not (exit_portaldata and exit_portaldata.shell and exit_portaldata.shell.valid) then
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_tp("错误: 出口失效，传送中断。")
-        end
-        finalize_sequence(entry_portaldata, nil) -- 自身清理
-        return
-    end
 
-    -- 检查入口车厢
     local car = entry_portaldata.entry_car
     if not (car and car.valid) then
         if RiftRail.DEBUG_MODE_ENABLED then

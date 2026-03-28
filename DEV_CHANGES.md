@@ -6,6 +6,28 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+### 2026-03-28（v0.13.6：拆除时横向建筑内列车未被清理的 Bug 修复）
+
+**改动摘要**：修复了朝东（dir=4）或朝西（dir=12）放置的传送门在被拆除时，内部轨道上的列车无法被正确清理的问题。
+
+**根因**：`builder.lua` 中的 `clear_trains_inside` 函数使用了硬编码的固定矩形搜索区域（以建筑中心为原点，X ±2.5，Y ±6.5），该矩形隐含了建筑永远竖向放置（dir=0/8）的错误假设。当建筑朝东或朝西时，内部铁轨沿 X 轴延伸，而搜索区域仍然是纵向的，导致横向轨道上的所有车厢完全处于搜索范围之外，拆除后遗留幽灵车厢。
+
+**修复**：根据 `shell.direction` 动态选择搜索区域的朝向：横向建筑（dir=4/12）使用 X ±8 / Y ±2.5，竖向建筑（dir=0/8）使用 X ±2.5 / Y ±8，覆盖从死胡同端到入口外侧的完整铁轨长度，同时保持宽度方向足够窄（2.5 格）以避免误删相邻平行轨道上的列车。
+
+### 具体改动
+- `RiftRail/scripts/builder.lua`：重写 `clear_trains_inside`，以建筑方向为依据动态生成搜索矩形，替代原先的硬编码固定区域。
+
+### 2026-03-28（v0.13.6：teleport.lua 冗余判空清理）
+
+**改动摘要**：对 `teleport.lua` 中三处经调用链分析确认永远不会生效的判空逻辑进行了清理，降低代码噪音。
+
+- **`process_transfer_step` 出口前置重复检查（已删除）**：函数入口处 L607 已直接访问 `exit_portaldata.shell.direction`，如果该表或字段为 nil 早在此前就会崩溃。L610 的 `if not (exit_portaldata and exit_portaldata.shell and exit_portaldata.shell.valid)` 判断在任何执行路径下都不可能触发，因为 `process_teleport_sequence` 在 L1048 已完成同等校验后才调用本函数。
+- **`finalize_sequence` 中 `entry_portaldata` 的 if 包裹（已删除）**：该函数的所有调用点均由调用方保证 `entry_portaldata` 非 nil，if 包裹仅增加一层无意义的缩进。删除后将入口清理代码展平至函数体作用域。
+- **`raise_arrived_event` 中 `exit_portaldata` 的二次 and 保护（已在上次操作中删除）**：函数顶部的卫语句（L63）已保证能执行到 L87 时 `exit_portaldata` 必然非 nil，`exit_portaldata and exit_portaldata.unit_number` 中的 `and` 判断属于重复防御。
+
+### 具体改动
+- `RiftRail/scripts/teleport.lua`：删除 `process_transfer_step` 中永远不会触发的出口有效性检查块；展平 `finalize_sequence` 入口清理代码，移除冗余 if 包裹；简化 `raise_arrived_event` 中 `exit_unit_number` 的赋值表达式。
+
 ### 2026-03-28（v0.13.6：车站查询公共化与 GUI 初始化崩溃修复）
 
 **改动摘要**：将散落在各兼容模块中的重复车站查找逻辑统一收归至数据层，同时修复了新游戏首次打开传送门 GUI 时的崩溃问题。
