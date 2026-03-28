@@ -78,6 +78,29 @@ local MAX_CONNECTIONS = 5
 
 local Util = nil
 
+local MODE_STATS_CONFIG = {
+    entry = {
+        trains_label = "gui.rift-rail-stats-trains-sent",
+        last_label = "gui.rift-rail-stats-last-sent",
+        ltn_label = "gui.rift-rail-stats-ltn-sent",
+        cs2_label = "gui.rift-rail-stats-cs2-sent",
+        trains_key = "trains_sent",
+        last_tick_key = "last_sent_tick",
+        ltn_key = "ltn_sent",
+        cs2_key = "cs2_sent",
+    },
+    exit = {
+        trains_label = "gui.rift-rail-stats-trains-received",
+        last_label = "gui.rift-rail-stats-last-received",
+        ltn_label = "gui.rift-rail-stats-ltn-received",
+        cs2_label = "gui.rift-rail-stats-cs2-received",
+        trains_key = "trains_received",
+        last_tick_key = "last_received_tick",
+        ltn_key = "ltn_received",
+        cs2_key = "cs2_received",
+    },
+}
+
 function GUI.init(dependencies)
     State = dependencies.State
     Util = dependencies.Util
@@ -642,40 +665,27 @@ function GUI.build_or_update(player, entity)
             row.add({ type = "label", caption = value, style = "bold_label" })
         end
 
+        local function format_last_tick(last_tick)
+            if not last_tick then
+                return { "gui.rift-rail-stats-never" }
+            end
+            return { "gui.rift-rail-stats-last-sent-value", Util.format_duration(game.tick - last_tick) }
+        end
+
+        local function add_positive_stat(parent, label_key, value)
+            if value and value > 0 then
+                add_stat_row(parent, label_key, value)
+            end
+        end
+
         add_stat_row(stats_frame, "gui.rift-rail-stats-service-time", service_str)
 
-        if my_data.mode == "entry" then
-            add_stat_row(stats_frame, "gui.rift-rail-stats-trains-sent", s.trains_sent)
-            local last_sent_str
-            if s.last_sent_tick then
-                last_sent_str = { "gui.rift-rail-stats-last-sent-value", Util.format_duration(game.tick - s.last_sent_tick) }
-            else
-                last_sent_str = { "gui.rift-rail-stats-never" }
-            end
-            add_stat_row(stats_frame, "gui.rift-rail-stats-last-sent", last_sent_str)
-
-            if s.ltn_sent and s.ltn_sent > 0 then
-                add_stat_row(stats_frame, "gui.rift-rail-stats-ltn-sent", s.ltn_sent)
-            end
-            if s.cs2_sent and s.cs2_sent > 0 then
-                add_stat_row(stats_frame, "gui.rift-rail-stats-cs2-sent", s.cs2_sent)
-            end
-        elseif my_data.mode == "exit" then
-            add_stat_row(stats_frame, "gui.rift-rail-stats-trains-received", s.trains_received)
-            local last_received_str
-            if s.last_received_tick then
-                last_received_str = { "gui.rift-rail-stats-last-sent-value", Util.format_duration(game.tick - s.last_received_tick) }
-            else
-                last_received_str = { "gui.rift-rail-stats-never" }
-            end
-            add_stat_row(stats_frame, "gui.rift-rail-stats-last-received", last_received_str)
-
-            if s.ltn_received and s.ltn_received > 0 then
-                add_stat_row(stats_frame, "gui.rift-rail-stats-ltn-received", s.ltn_received)
-            end
-            if s.cs2_received and s.cs2_received > 0 then
-                add_stat_row(stats_frame, "gui.rift-rail-stats-cs2-received", s.cs2_received)
-            end
+        local cfg = MODE_STATS_CONFIG[my_data.mode]
+        if cfg then
+            add_stat_row(stats_frame, cfg.trains_label, s[cfg.trains_key])
+            add_stat_row(stats_frame, cfg.last_label, format_last_tick(s[cfg.last_tick_key]))
+            add_positive_stat(stats_frame, cfg.ltn_label, s[cfg.ltn_key])
+            add_positive_stat(stats_frame, cfg.cs2_label, s[cfg.cs2_key])
         end
     end
 
@@ -746,122 +756,189 @@ end
 -- 事件处理
 -- =================================================================================
 
-function GUI.handle_click(event)
-    if not (event.element and event.element.valid) then
-        return
+-- 点击事件上下文构建：统一做空值/有效性检查，避免每个处理器重复写防线
+local function build_click_context(event)
+    if not (event and event.element and event.element.valid) then
+        return nil
     end
+
     local player = game.get_player(event.player_index)
-    local el_name = event.element.name
+    if not player then
+        return nil
+    end
 
     local frame = player.gui.screen.rift_rail_main_frame
     if not (frame and frame.valid) then
-        return
+        return nil
     end
 
-    if el_name == "rift_rail_close_button" then
-        frame.destroy()
-        return
-    end
+    return {
+        event = event,
+        player = player,
+        frame = frame,
+        el_name = event.element.name,
+    }
+end
 
-    local unit_number = frame.tags.unit_number
-    -- 使用 unit_number 直接查找，而不是查自定义 ID
-    local my_data = State.get_portaldata_by_unit_number(unit_number)
+-- 从主窗口标签中取出当前传送门数据（统一入口）
+local function get_context_portaldata(ctx)
+    local unit_number = ctx.frame.tags and ctx.frame.tags.unit_number
+    if not unit_number then
+        return nil
+    end
+    return State.get_portaldata_by_unit_number(unit_number)
+end
+
+-- 点击事件分发表：按按钮名路由处理，替代大段 if/elseif
+local CLICK_HANDLERS = {}
+
+-- 关闭按钮：直接销毁窗口
+CLICK_HANDLERS["rift_rail_close_button"] = function(ctx)
+    ctx.frame.destroy()
+end
+
+-- 主操作按钮：配对/断开连接
+CLICK_HANDLERS["rift_rail_action_button"] = function(ctx)
+    local my_data = get_context_portaldata(ctx)
     if not my_data then
         return
     end
 
-    -- 配对
-    if el_name == "rift_rail_action_button" then
-        local dropdown = find_element_recursively(frame, "rift_rail_target_dropdown")
-        if not (dropdown and dropdown.selected_index > 0) then
-            return
-        end
+    local dropdown = find_element_recursively(ctx.frame, "rift_rail_target_dropdown")
+    if not (dropdown and dropdown.selected_index > 0) then
+        return
+    end
 
-        local selected_index = dropdown.selected_index
-        local is_paired_map = dropdown.tags.is_paired_map
-        local target_id = dropdown.tags.ids[selected_index]
-        local status = is_paired_map[selected_index]
+    local selected_index = dropdown.selected_index
+    local is_paired_map = dropdown.tags.is_paired_map
+    local target_id = dropdown.tags.ids[selected_index]
+    local status = is_paired_map[selected_index]
 
-        if not target_id or target_id == 0 or status == "separator" then
-            return
-        end
+    if not target_id or target_id == 0 or status == "separator" then
+        return
+    end
 
-        if status == true then
-            -- 【断开连接】
-            if my_data.mode == "entry" then
-                -- 入口断开出口: source=自己, target=选中项
-                remote.call("RiftRail", "unpair_portals_specific", player.index, my_data.id, target_id)
-            else -- exit 或 neutral
-                -- 出口“踢出”入口: source=选中项, target=自己
-                remote.call("RiftRail", "unpair_portals_specific", player.index, target_id, my_data.id)
-            end
+    if status == true then
+        -- 断开连接：入口断出口，出口踢入口
+        if my_data.mode == "entry" then
+            remote.call("RiftRail", "unpair_portals_specific", ctx.player.index, my_data.id, target_id)
         else
-            -- 【配对连接】
-            -- pair_portals 内部会自动判断谁是入口谁是出口，所以直接传就行
-            remote.call("RiftRail", "pair_portals", player.index, my_data.id, target_id)
+            remote.call("RiftRail", "unpair_portals_specific", ctx.player.index, target_id, my_data.id)
         end
-    elseif el_name == "rift_rail_open_station_button" then
-        local station = State.get_station(my_data)
+    else
+        -- 配对连接：核心逻辑会自行判断 entry/exit 角色
+        remote.call("RiftRail", "pair_portals", ctx.player.index, my_data.id, target_id)
+    end
+end
 
-        if station then
-            player.opened = station
-        else
-            player.print({ "messages.rift-rail-error-station-missing" })
-        end
+-- 打开车站界面：如果车站数据存在就打开，否则提示错误
+CLICK_HANDLERS["rift_rail_open_station_button"] = function(ctx)
+    local my_data = get_context_portaldata(ctx)
+    if not my_data then
+        return
+    end
 
-        -- 重命名
-    elseif el_name == "rift_rail_rename_button" then
-        local name_flow = find_element_recursively(frame, "name_flow")
-        if name_flow then
-            GUI.build_edit_name_flow(name_flow, my_data)
-        end
-    elseif el_name == "rift_rail_confirm_rename_button" then
-        local textfield = find_element_recursively(frame, "rift_rail_rename_textfield")
-        if textfield then
-            remote.call("RiftRail", "update_portal_name", player.index, my_data.id, textfield.text)
-        end
+    local station = State.get_station(my_data)
+    if station then
+        ctx.player.opened = station
+    else
+        ctx.player.print({ "messages.rift-rail-error-station-missing" })
+    end
+end
 
-        -- 设为默认出口
-    elseif el_name == "rift_rail_set_default_button" then
-        -- 1. 查找旁边的下拉菜单 (它是按钮的兄弟元素)
-        -- 结构: Frame -> InnerFlow -> DropFlow -> [Dropdown, Button]
-        local drop_flow = event.element.parent
-        local dropdown = drop_flow["rift_rail_target_dropdown"]
+-- 改名按钮：把显示用的 Label 替换成 Textfield，预填当前名字，自动聚焦并全选文本，准备接受输入
+CLICK_HANDLERS["rift_rail_rename_button"] = function(ctx)
+    local my_data = get_context_portaldata(ctx)
+    if not my_data then
+        return
+    end
 
-        if dropdown and dropdown.selected_index > 0 and dropdown.tags and dropdown.tags.ids then
-            local target_id = dropdown.tags.ids[dropdown.selected_index]
-            if target_id then
-                -- 调用 Logic 设置默认
-                remote.call("RiftRail", "set_default_exit", player.index, my_data.unit_number, target_id)
-            end
-        end
+    local name_flow = find_element_recursively(ctx.frame, "name_flow")
+    if name_flow then
+        GUI.build_edit_name_flow(name_flow, my_data)
+    end
+end
 
-        -- 玩家传送
-    elseif el_name == "rift_rail_tp_player_button" then
-        GUI.clear_preview_render(player.index)
-        remote.call("RiftRail", "teleport_player", player.index, my_data.id)
+-- 确认改名按钮：提交新的传送门名称
+CLICK_HANDLERS["rift_rail_confirm_rename_button"] = function(ctx)
+    local my_data = get_context_portaldata(ctx)
+    if not my_data then
+        return
+    end
 
-        -- 远程观察
-    elseif el_name == "rift_rail_remote_view_button" then
-        -- 统一逻辑：目标永远是下拉框当前选中的那个
-        local dropdown = find_element_recursively(frame, "rift_rail_target_dropdown", "drop-down")
-        local target_id = nil
+    local textfield = find_element_recursively(ctx.frame, "rift_rail_rename_textfield")
+    if textfield then
+        remote.call("RiftRail", "update_portal_name", ctx.player.index, my_data.id, textfield.text)
+    end
+end
 
-        if dropdown and dropdown.selected_index > 0 and dropdown.tags and dropdown.tags.ids then
-            target_id = dropdown.tags.ids[dropdown.selected_index]
-        end
+-- 设置默认出口按钮：把当前下拉选择的目标设为默认出口 (仅入口可见)
+CLICK_HANDLERS["rift_rail_set_default_button"] = function(ctx)
+    local my_data = get_context_portaldata(ctx)
+    if not my_data then
+        return
+    end
 
+    -- 按钮与下拉是同级：从父容器直接抓取目标下拉
+    local drop_flow = ctx.event.element.parent
+    local dropdown = drop_flow and drop_flow["rift_rail_target_dropdown"]
+    if dropdown and dropdown.selected_index > 0 and dropdown.tags and dropdown.tags.ids then
+        local target_id = dropdown.tags.ids[dropdown.selected_index]
         if target_id then
-            remote.call("RiftRail", "open_remote_view_by_target", player.index, target_id)
+            remote.call("RiftRail", "set_default_exit", ctx.player.index, my_data.unit_number, target_id)
         end
-    elseif el_name == "rift_rail_toggle_preview_button" then
-        local current_settings = storage.rift_rail_player_settings[player.index]
-        if current_settings then
-            -- 1. 布尔值翻转 (真变假，假变真)
-            current_settings.show_preview = not current_settings.show_preview
-            -- 2. 重新渲染整个界面，引擎会自动替换图片并应用新状态
-            GUI.build_or_update(player, my_data.shell)
-        end
+    end
+end
+
+-- 传送玩家按钮
+CLICK_HANDLERS["rift_rail_tp_player_button"] = function(ctx)
+    local my_data = get_context_portaldata(ctx)
+    if not my_data then
+        return
+    end
+
+    GUI.clear_preview_render(ctx.player.index)
+    remote.call("RiftRail", "teleport_player", ctx.player.index, my_data.id)
+end
+
+-- 远程视角按钮
+CLICK_HANDLERS["rift_rail_remote_view_button"] = function(ctx)
+    -- 目标始终取当前下拉选择
+    local dropdown = find_element_recursively(ctx.frame, "rift_rail_target_dropdown", "drop-down")
+    local target_id = nil
+    if dropdown and dropdown.selected_index > 0 and dropdown.tags and dropdown.tags.ids then
+        target_id = dropdown.tags.ids[dropdown.selected_index]
+    end
+
+    if target_id then
+        remote.call("RiftRail", "open_remote_view_by_target", ctx.player.index, target_id)
+    end
+end
+
+-- 预览切换按钮：根据当前状态切换预览显示，并更新按钮图标
+CLICK_HANDLERS["rift_rail_toggle_preview_button"] = function(ctx)
+    local my_data = get_context_portaldata(ctx)
+    if not my_data then
+        return
+    end
+
+    local current_settings = storage.rift_rail_player_settings[ctx.player.index]
+    if current_settings then
+        -- 布尔值翻转并重建窗口，让图标与预览状态立即同步
+        current_settings.show_preview = not current_settings.show_preview
+        GUI.build_or_update(ctx.player, my_data.shell)
+    end
+end
+
+function GUI.handle_click(event)
+    local ctx = build_click_context(event)
+    if not ctx then
+        return
+    end
+
+    local handler = CLICK_HANDLERS[ctx.el_name]
+    if handler then
+        handler(ctx)
     end
 end
 

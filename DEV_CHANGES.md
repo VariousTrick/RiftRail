@@ -6,6 +6,21 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+### 2026-03-28（v0.13.7：GUI 可维护性重构与分发表改造）
+
+**改动摘要**：本次版本不改业务行为，专注于 GUI 代码结构降噪。通过“公共查找函数 + 统计渲染配置化 + 点击事件分发表”三步重构，显著减少了 `gui.lua` 内部重复逻辑与长链式 `else if`，后续扩展按钮与统计项时只需局部增量维护。
+
+- **递归查找函数统一**：将 GUI 内多处重复的局部递归函数（`find_dropdown` / `find_textfield` / `find_name_flow` 及 `update_camera_preview` 内部重复实现）收拢为统一的 `find_element_recursively(element, name, expected_type)`，并补充可选 `type` 过滤能力；新增 `set_control_enabled` 统一处理按钮组启用/禁用。
+- **运行档案渲染配置化**：将入口/出口统计展示逻辑由双分支改为配置驱动。新增 `MODE_STATS_CONFIG` 常量（模块级）描述字段映射，渲染阶段统一走一套流程，同时抽出 `format_last_tick` 与 `add_positive_stat`，清理重复拼接与 `>0` 判断。
+- **点击事件分发表重构**：将 `GUI.handle_click` 的长链分支改为 `CLICK_HANDLERS` 表驱动路由。新增 `build_click_context` 与 `get_context_portaldata` 统一前置校验与数据提取，主入口只保留“构建上下文 -> 查表 -> 调用”，新增按钮时无需改主干控制流。
+
+### 具体改动
+- `RiftRail/scripts/gui.lua`：
+  - 统一元素查找：新增带 `expected_type` 的 `find_element_recursively`，删除多处局部同类函数。
+  - 新增 `set_control_enabled(frame, names, enabled)`，替代选择状态变化时的重复禁用代码。
+  - 统计面板重构：新增模块级常量 `MODE_STATS_CONFIG`；渲染时通过字段 key 映射读取 `stats`，移除 entry/exit 双分支重复实现。
+  - 点击处理重构：新增 `build_click_context`、`get_context_portaldata`、`CLICK_HANDLERS`；`GUI.handle_click` 改为分发表调用模式。
+
 ### 2026-03-28（v0.13.6：拆除时横向建筑内列车未被清理的 Bug 修复）
 
 **改动摘要**：修复了朝东（dir=4）或朝西（dir=12）放置的传送门在被拆除时，内部轨道上的列车无法被正确清理的问题。
