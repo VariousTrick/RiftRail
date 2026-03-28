@@ -50,6 +50,7 @@ local TeleportUtils = require("scripts.teleport_system.teleport_utils")
 local LTN = require("scripts.compat.ltn")
 local CS2Compat = require("scripts.compat.cs2")
 local AWCompat = require("scripts.compat.aw")
+local TickDispatcher = require("scripts.tick_dispatcher")
 local Migrations = require("scripts.migrations")
 local Maintenance = require("scripts.maintenance")
 local Stats = require("scripts.stats")
@@ -133,6 +134,12 @@ if Teleport.init then
         log_debug = log_debug,
         AwCompat = AWCompat,
         Events = RiftRail.Events,
+    })
+end
+
+if TickDispatcher.init then
+    TickDispatcher.init({
+        Teleport = Teleport,
     })
 end
 
@@ -244,19 +251,13 @@ script.on_event(defines.events.on_entity_died, function(event)
 
     if entity.name == "rift-rail-collider" then
         -- 情况1: 碰撞器死亡 -> 触发传送逻辑
-        Teleport.on_collider_died(event)
+        TickDispatcher.handle_collider_died(event)
     elseif entity.name == "rift-rail-entity" then
         -- 情况2: 建筑主体死亡 -> 触发拆除逻辑
         Builder.on_destroy(event)
     end
     -- 对于其他任何实体（火车、虫子、树）的死亡，我们一概不管
 end, rr_filters)
-
--- D. Tick 循环
-script.on_event(defines.events.on_tick, function(event)
-    -- 1. 执行传送逻辑
-    Teleport.on_tick(event)
-end)
 
 -- E. 注册 LTN 事件（在运行时可用时）
 local function register_ltn_events()
@@ -344,6 +345,7 @@ end)
 script.on_init(function()
     State.setup_new_game()
     register_ltn_events() -- 注册 LTN 事件（若可用）
+    TickDispatcher.sync_teleport_tick_registration()
 end)
 
 -- on_configuration_changed: 处理模组更新或配置变更
@@ -353,10 +355,12 @@ script.on_configuration_changed(function(event)
 
     -- 2. 执行所有深层数据迁移任务
     Migrations.run_all()
+    TickDispatcher.sync_teleport_tick_registration()
 end)
 
 -- on_load: 只在加载存档时运行
 -- 使用独立的 script.on_load 函数，它不依赖 defines 表
 script.on_load(function(event)
     register_ltn_events()
+    TickDispatcher.sync_teleport_tick_registration()
 end)

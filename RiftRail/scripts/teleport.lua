@@ -1114,13 +1114,30 @@ end
 -- =================================================================================
 -- Tick 调度 (GC 优化版)
 -- =================================================================================
+--- 判断当前是否仍有活跃传送任务。
+--- 用于 control.lua 动态开关 on_tick 注册，避免空转轮询。
+---@return boolean has_work 是否存在活跃任务
+function Teleport.has_active_work()
+    if not storage then
+        return false
+    end
+    local list = storage.active_teleporter_list
+    return list ~= nil and #list > 0
+end
+
 ---@param event EventData tick事件 / Tick event
+---@return boolean has_work 当前 tick 处理后是否仍有活跃任务
 function Teleport.on_tick(event)
-    local list = storage.active_teleporter_list or {}
+    local list = storage.active_teleporter_list
+    if not list or #list == 0 then
+        return false
+    end
 
     for i = #list, 1, -1 do
         process_active_portal(list[i], list, i, event.tick)
     end
+
+    return #list > 0
 end
 
 return Teleport
