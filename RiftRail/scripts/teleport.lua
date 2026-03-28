@@ -714,7 +714,7 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         return
     end
 
-    if AwCompat and AwCompat.on_car_replaced then
+    if AwCompat.on_car_replaced then
         AwCompat.on_car_replaced(car, new_car)
     end
 

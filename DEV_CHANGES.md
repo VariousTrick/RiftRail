@@ -6,6 +6,22 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+### 2026-03-28（v0.13.7：模块级冗余判空清理）
+
+**改动摘要**：基于当前架构约束（模块固定 `require`、兼容层空壳返回、`init` 必然注入）清理了一批“模块对象必然存在却重复判空”的防御性分支，减少视觉噪音并提升控制流可读性。此次变更不涉及业务逻辑改写，仅为代码整洁化。
+
+- **TickDispatcher 判空收敛**：删除 `Teleport` 的重复存在性判定，`handle_collider_died` 直接调用 `Teleport.on_collider_died(event)`。
+- **control 入口分支收敛**：清理 `CS2Compat/AWCompat/LTN` 在已由空壳契约保证存在时的重复判空调用，保留必要的外部接口可用性检测（如 `remote.interfaces`）。
+- **Teleport 兼容调用收敛**：`AwCompat.on_car_replaced` 处移除冗余模块判空，保留函数级条件判断。
+
+### 具体改动
+- `RiftRail/scripts/tick_dispatcher.lua`：`handle_collider_died` 内移除 `if Teleport and ...` 判空包裹。
+- `RiftRail/control.lua`：
+  - 初始化区：`CS2Compat.init` 与 `AWCompat.init` 移除模块存在性重复判断。
+  - LTN 事件转发：`on_stops_updated` / `on_dispatcher_updated` 回调内移除 `LTN` 冗余判空。
+  - 自定义事件转发：`TrainArrived` 与 `TrainTeleportTransfer` 回调改为直接调用兼容层函数。
+- `RiftRail/scripts/teleport.lua`：`AwCompat.on_car_replaced` 调用处移除模块对象冗余判空。
+
 ### 2026-03-28（v0.13.7：TickDispatcher 调度器拆分与 on_tick 动态开关）
 
 **改动摘要**：将原本内嵌在 `control.lua` 的传送 Tick 动态注册逻辑拆分为独立调度模块 `tick_dispatcher.lua`，并保留“有任务才轮询、空闲即注销”的运行策略。此次改动不改变传送业务行为，重点是提升结构清晰度与后续扩展性（为 GUI 或其他子系统新增调度器预留统一入口）。

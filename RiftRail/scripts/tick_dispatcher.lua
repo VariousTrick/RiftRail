@@ -54,9 +54,7 @@ end
 --- 碰撞器死亡后回调：触发传送逻辑，并同步 tick 注册状态
 ---@param event EventData.on_entity_died 实体死亡事件
 function TickDispatcher.handle_collider_died(event)
-    if Teleport and Teleport.on_collider_died then
-        Teleport.on_collider_died(event)
-    end
+    Teleport.on_collider_died(event)
     TickDispatcher.sync_teleport_tick_registration()
 end
 
