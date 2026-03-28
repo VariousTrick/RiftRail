@@ -87,22 +87,31 @@ end
 -- =================================================================================
 -- 辅助函数：递归查找子元素
 -- =================================================================================
-local function find_element_recursively(element, name)
+local function find_element_recursively(element, name, expected_type)
     if not (element and element.valid) then
         return nil
     end
-    if element.name == name then
+    if element.name == name and (not expected_type or element.type == expected_type) then
         return element
     end
     if element.children then
         for _, child in pairs(element.children) do
-            local found = find_element_recursively(child, name)
+            local found = find_element_recursively(child, name, expected_type)
             if found then
                 return found
             end
         end
     end
     return nil
+end
+
+local function set_control_enabled(frame, names, enabled)
+    for _, name in pairs(names) do
+        local control = find_element_recursively(frame, name)
+        if control then
+            control.enabled = enabled
+        end
+    end
 end
 -- =================================================================================
 -- 辅助视图函数
@@ -802,36 +811,12 @@ function GUI.handle_click(event)
 
         -- 重命名
     elseif el_name == "rift_rail_rename_button" then
-        -- 查找 name_flow
-        local function find_name_flow(element)
-            if element.name == "name_flow" then
-                return element
-            end
-            for _, child in pairs(element.children) do
-                local found = find_name_flow(child)
-                if found then
-                    return found
-                end
-            end
-        end
-        local name_flow = find_name_flow(frame)
+        local name_flow = find_element_recursively(frame, "name_flow")
         if name_flow then
             GUI.build_edit_name_flow(name_flow, my_data)
         end
     elseif el_name == "rift_rail_confirm_rename_button" then
-        -- 查找 textfield (通过 name_flow 找)
-        local function find_textfield(element)
-            if element.name == "rift_rail_rename_textfield" then
-                return element
-            end
-            for _, child in pairs(element.children) do
-                local found = find_textfield(child)
-                if found then
-                    return found
-                end
-            end
-        end
-        local textfield = find_textfield(frame)
+        local textfield = find_element_recursively(frame, "rift_rail_rename_textfield")
         if textfield then
             remote.call("RiftRail", "update_portal_name", player.index, my_data.id, textfield.text)
         end
@@ -859,18 +844,7 @@ function GUI.handle_click(event)
         -- 远程观察
     elseif el_name == "rift_rail_remote_view_button" then
         -- 统一逻辑：目标永远是下拉框当前选中的那个
-        local function find_dropdown(element)
-            if element.type == "drop-down" and element.name == "rift_rail_target_dropdown" then
-                return element
-            end
-            for _, child in pairs(element.children) do
-                local found = find_dropdown(child)
-                if found then
-                    return found
-                end
-            end
-        end
-        local dropdown = find_dropdown(frame)
+        local dropdown = find_element_recursively(frame, "rift_rail_target_dropdown", "drop-down")
         local target_id = nil
 
         if dropdown and dropdown.selected_index > 0 and dropdown.tags and dropdown.tags.ids then
@@ -1004,32 +978,16 @@ function GUI.handle_selection_state_changed(event, frame_override)
 
     -- 检查状态是否有效 (既不是 nil 也不是占位符)
     if status == nil or status == "separator" then
-        -- 查找所有可能需要禁用的按钮
-        local action_button = find_element_recursively(frame, "rift_rail_action_button")
-        local set_default_button = find_element_recursively(frame, "rift_rail_set_default_button")
-        local remote_view_button = find_element_recursively(frame, "rift_rail_remote_view_button")
-
-        -- 统一禁用
-        if action_button then
-            action_button.enabled = false
-        end
-        if set_default_button then
-            set_default_button.enabled = false
-        end
-        if remote_view_button then
-            remote_view_button.enabled = false
-        end
+        set_control_enabled(frame, {
+            "rift_rail_action_button",
+            "rift_rail_set_default_button",
+            "rift_rail_remote_view_button",
+        }, false)
 
         return
     end
 
-    -- 根据不同调用模式，选择不同的查找方式
-    local action_button
-    if frame_override then
-        action_button = find_element_recursively(frame, "rift_rail_action_button")
-    else
-        action_button = find_element_recursively(frame, "rift_rail_action_button")
-    end
+    local action_button = find_element_recursively(frame, "rift_rail_action_button")
     if not (action_button and action_button.valid) then
         return
     end
@@ -1071,22 +1029,6 @@ end
 function GUI.update_camera_preview(player, frame, target_id)
     if not (frame and frame.valid and target_id) then
         return false
-    end
-
-    -- 1. 定义递归查找函数（或者放在模块顶部作为通用函数）
-    local function find_element_recursively(element, name)
-        if element.name == name then
-            return element
-        end
-        if element.children then
-            for _, child in pairs(element.children) do
-                local found = find_element_recursively(child, name)
-                if found then
-                    return found
-                end
-            end
-        end
-        return nil
     end
 
     -- 2. 查找 标题按钮(Button) 和 摄像头(Camera)
