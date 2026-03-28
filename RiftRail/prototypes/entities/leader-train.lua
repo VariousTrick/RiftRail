@@ -36,8 +36,8 @@ local sprites = require("prototypes.sprites.rift-rail-sprites")
         -- 无限能源，无需燃料
         energy_source = { type = "void" },
 
-        -- 隐形贴图
-        pictures = { rotated = sprites.blank_sprite },
+        -- 引导车贴图（从公共 sprites 模块引用）
+        pictures = { rotated = sprites.leader_emoji_sprite },
         vertical_selection_shift = -0.5,
     },
 })

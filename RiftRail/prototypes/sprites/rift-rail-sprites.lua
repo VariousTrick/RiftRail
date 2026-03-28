@@ -67,6 +67,18 @@ sprites.entity_sprite = {
     shift = { 0, 0 },
 }
 
+-- 引导车使用的表情贴图（集中定义，实体侧只做引用）
+sprites.leader_emoji_sprite = {
+    filename = "__RiftRail__/graphics/leader-emoji-neutral.png",
+    priority = "high",
+    width = 256,
+    height = 256,
+    frame_count = 1,
+    direction_count = 1,
+    -- 放大约一倍，提升可见性
+    scale = 0.30,
+}
+
 sprites.blank_sheet = {
     north = sprites.blank_sprite,
     east = sprites.blank_sprite,
