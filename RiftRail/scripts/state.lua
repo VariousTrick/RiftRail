@@ -21,6 +21,7 @@ function State.setup_new_game()
     storage.active_teleporter_list = {}
     storage.active_teleporters = {}        -- 添加了缺失的字典缓存
     storage.rift_rail_preview_renders = {} -- GUI 全息高亮雷达缓存
+    storage.rift_rail_player_settings = {} -- 每个玩家的 GUI 偏好设置
 
     -- LTN 兼容数据
     storage.rift_rail_ltn_routing_table = {}
@@ -57,6 +58,7 @@ function State.patch_missing_root_tables()
     if not storage.active_teleporter_list then storage.active_teleporter_list = {} end
     if not storage.active_teleporters then storage.active_teleporters = {} end
     if not storage.rift_rail_preview_renders then storage.rift_rail_preview_renders = {} end
+    if not storage.rift_rail_player_settings then storage.rift_rail_player_settings = {} end
 
     -- LTN 兼容数据兜底
     if not storage.rift_rail_ltn_routing_table then storage.rift_rail_ltn_routing_table = {} end
@@ -162,6 +164,25 @@ end
 -- 获取所有数据 (用于下拉列表)
 function State.get_all_portaldatas()
     return storage.rift_rails or {}
+end
+
+-- 从 portaldata.children 中按名称查找第一个有效的子实体
+function State.find_child_entity(portaldata, name_to_find)
+    if not (portaldata and portaldata.children) then
+        return nil
+    end
+    for _, child_data in pairs(portaldata.children) do
+        local entity = child_data.entity
+        if entity and entity.valid and entity.name == name_to_find then
+            return entity
+        end
+    end
+    return nil
+end
+
+-- 从 portaldata 中获取内部车站实体（rift-rail-station）
+function State.get_station(portaldata)
+    return State.find_child_entity(portaldata, "rift-rail-station")
 end
 
 return State

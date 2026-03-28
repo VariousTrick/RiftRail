@@ -244,7 +244,7 @@ local function get_entry_circuit_go_to_id(entry_portaldata)
         return nil
     end
 
-    local signal_source = TeleportUtils.find_child_entity(entry_portaldata, "rift-rail-station")
+    local signal_source = State.get_station(entry_portaldata)
     if not (signal_source and signal_source.valid) then
         signal_source = entry_portaldata.shell
     end

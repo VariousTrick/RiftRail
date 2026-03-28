@@ -11,11 +11,13 @@ local TeleportUtils = {}
 -- =================================================================================
 ---@type table
 local Math = nil
+local State = nil
 
 local log_debug = function(...) end
 
 function TeleportUtils.init(deps)
     Math      = deps.Math
+    State     = deps.State
     log_debug = deps.log_debug
 end
 
@@ -61,25 +63,6 @@ function TeleportUtils.read_train_schedule_index(train)
     return current
 end
 
--- =================================================================================
--- 通用查找子实体函数
--- =================================================================================
----@param portaldata PortalData 传送门数据 / Portal data
----@param name_to_find string 要查找的实体名 / Entity name to find
----@return LuaEntity|nil 匹配的子实体 / Matched child entity
-local function find_child_entity(portaldata, name_to_find)
-    if not (portaldata and portaldata.children) then
-        return nil
-    end
-    for _, child_data in pairs(portaldata.children) do
-        local entity = child_data.entity
-        if entity and entity.valid and entity.name == name_to_find then
-            return entity
-        end
-    end
-    return nil
-end
-TeleportUtils.find_child_entity = find_child_entity
 
 -- =================================================================================
 -- 辅助函数：从子实体中获取真实的车站名称 (带图标)
@@ -87,7 +70,7 @@ TeleportUtils.find_child_entity = find_child_entity
 ---@param portaldata PortalData 传送门数据 / Portal data
 ---@return string 真实车站名称 / Real station name
 function TeleportUtils.get_real_station_name(portaldata)
-    local station = find_child_entity(portaldata, "rift-rail-station")
+    local station = State.get_station(portaldata)
     if station then
         return station.backer_name
     end

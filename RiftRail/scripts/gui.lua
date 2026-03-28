@@ -540,16 +540,7 @@ function GUI.build_or_update(player, entity)
         enabled = (#dropdown_items > 0),
     })
 
-    local station_exists = false
-    if my_data.children then
-        for _, child_data in pairs(my_data.children) do
-            local child = child_data.entity
-            if child and child.valid and child.name == "rift-rail-station" then
-                station_exists = true
-                break
-            end
-        end
-    end
+    local station_exists = State.get_station(my_data) ~= nil
 
     btn_flow.add({
         type = "button",
@@ -801,16 +792,7 @@ function GUI.handle_click(event)
             remote.call("RiftRail", "pair_portals", player.index, my_data.id, target_id)
         end
     elseif el_name == "rift_rail_open_station_button" then
-        local station = nil
-        if my_data.children then
-            for _, child_data in pairs(my_data.children) do
-                local child = child_data.entity
-                if child and child.valid and child.name == "rift-rail-station" then
-                    station = child
-                    break
-                end
-            end
-        end
+        local station = State.get_station(my_data)
 
         if station then
             player.opened = station

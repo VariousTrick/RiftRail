@@ -116,6 +116,7 @@ end
 if TeleportUtils.init then
     TeleportUtils.init({
         Math = TeleportMath,
+        State = State,
         log_debug = log_debug,
     })
 end

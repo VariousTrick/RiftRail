@@ -33,19 +33,6 @@ local function cs2_log(msg)
     log_debug("[CS2] " .. msg)
 end
 
--- 从传送门 children 中提取站台实体（rift-rail-station）。
-local function get_station(portaldata)
-    if not (portaldata and portaldata.children) then
-        return nil
-    end
-    for _, child_data in pairs(portaldata.children) do
-        local child = child_data.entity
-        if child and child.valid and child.name == "rift-rail-station" then
-            return child
-        end
-    end
-    return nil
-end
 
 -- 获取列车当前地表与位置，优先使用 train_stock，失败时回退到 luatrain 车组。
 local function get_train_surface_and_position(train_stock, luatrain)
@@ -609,12 +596,12 @@ function CS2.route_callback(delivery_id, action, _, train_id, luatrain, train_st
         return nil
     end
 
-    local station = get_station(entry)
+    local station = State.get_station(entry)
     if not (station and station.valid) then
         return nil
     end
 
-    local exit_station = get_station(exit_portal)
+    local exit_station = State.get_station(exit_portal)
 
     local continuation_station_name = nil
     if stop_entity and stop_entity.valid then

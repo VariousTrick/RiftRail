@@ -693,22 +693,14 @@ function Builder.on_settings_pasted(event)
         Logic.set_mode(event.player_index, dest_data.id, source_data.mode)
 
         -- 5. 刷新车站显示名称 (backer_name)
-        if dest_data.children then
-            for _, child_data in pairs(dest_data.children) do
-                -- 先从数据结构中取出实体对象
-                local child = child_data.entity
-                if child and child.valid and child.name == "rift-rail-station" then
-                    -- 移除强制空格，保持与 Logic/Builder 一致
-                    local master_icon = "[item=rift-rail-placer]"
-                    local user_icon_str = ""
-                    if dest_data.icon then
-                        user_icon_str = "[" .. dest_data.icon.type .. "=" .. dest_data.icon.name .. "]"
-                    end
-                    -- dest_data.name 此时已包含必要的空格（如果有），直接拼接
-                    child.backer_name = master_icon .. (dest_data.prefix or "") .. user_icon_str .. dest_data.name
-                    break
-                end
+        local child = State.get_station(dest_data)
+        if child then
+            local master_icon = "[item=rift-rail-placer]"
+            local user_icon_str = ""
+            if dest_data.icon then
+                user_icon_str = "[" .. dest_data.icon.type .. "=" .. dest_data.icon.name .. "]"
             end
+            child.backer_name = master_icon .. (dest_data.prefix or "") .. user_icon_str .. dest_data.name
         end
 
         -- 手动播放原版粘贴音效

@@ -110,20 +110,14 @@ end
 -- 辅助函数：根据当前模式强制刷新车站限制 (防止引擎自动同步或未初始化)
 -- ============================================================================
 function Logic.refresh_station_limit(portaldata)
-    if not (portaldata and portaldata.children) then
+    local entity = State.get_station(portaldata)
+    if not entity then
         return
     end
-
-    for _, child_data in pairs(portaldata.children) do
-        local entity = child_data.entity
-        if entity and entity.valid and entity.name == "rift-rail-station" then
-            if portaldata.mode == "exit" then
-                entity.trains_limit = 0
-            else
-                entity.trains_limit = nil -- 恢复默认
-            end
-            break
-        end
+    if portaldata.mode == "exit" then
+        entity.trains_limit = 0
+    else
+        entity.trains_limit = nil
     end
 end
 
@@ -236,20 +230,14 @@ function Logic.update_name(player_index, portal_id, new_string)
     end
 
     -- 3. 更新实体显示名称
-    if my_data.children then
-        for _, child_data in pairs(my_data.children) do
-            local child = child_data.entity
-            if child and child.valid and child.name == "rift-rail-station" then
-                local master_icon = "[item=rift-rail-placer]"
-                local user_icon_str = ""
-                if my_data.icon then
-                    user_icon_str = "[" .. my_data.icon.type .. "=" .. my_data.icon.name .. "]"
-                end
-                -- 拼接：主图标 + 自定义图标 + 名字(名字里现在包含了用户输入的空格)
-                child.backer_name = master_icon .. (my_data.prefix or "") .. user_icon_str .. my_data.name
-                break
-            end
+    local child = State.get_station(my_data)
+    if child then
+        local master_icon = "[item=rift-rail-placer]"
+        local user_icon_str = ""
+        if my_data.icon then
+            user_icon_str = "[" .. my_data.icon.type .. "=" .. my_data.icon.name .. "]"
         end
+        child.backer_name = master_icon .. (my_data.prefix or "") .. user_icon_str .. my_data.name
     end
 
     player.print({ "messages.rift-rail-mode-changed", my_data.name })

@@ -6,6 +6,25 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+### 2026-03-28（v0.13.6：车站查询公共化与 GUI 初始化崩溃修复）
+
+**改动摘要**：将散落在各兼容模块中的重复车站查找逻辑统一收归至数据层，同时修复了新游戏首次打开传送门 GUI 时的崩溃问题。
+
+- **车站查询公共化（`State.get_station` / `State.find_child_entity`）**：此前 `cs2.lua`、`ltn.lua`、`gui.lua`、`logic.lua`、`builder.lua` 各自持有私有或内联的 `get_station` 逻辑，实现完全相同却分散维护。本次将底层通用查找函数 `State.find_child_entity(portaldata, name)` 与车站快捷门面 `State.get_station(portaldata)` 提取至 `state.lua`，确立数据层作为子实体查询的唯一权威来源。按照架构分层约定，`teleport_system/` 子目录内的模块同步通过 `State` 注入使用，而非自持独立副本；`teleport.lua` 由于本身已持有 `State` 引用，直接调用 `State.get_station`，消除了经由 `TeleportUtils` 代理的多余跳转层。
+
+- **GUI 初始化崩溃修复**：新游戏时打开任意传送门 GUI 会触发 `attempt to index field 'rift_rail_player_settings' (a nil value)` 错误。根因为 `storage.rift_rail_player_settings` 从未在任何初始化路径中被创建。在 `State.setup_new_game()`（新档）与 `State.patch_missing_root_tables()`（旧档迁移）中同步补全了该根表的初始化，彻底覆盖新旧存档的所有入口。
+
+### 具体改动
+- `RiftRail/scripts/state.lua`：新增 `State.find_child_entity(portaldata, name)` 与 `State.get_station(portaldata)` 两个公共函数；在 `setup_new_game` 和 `patch_missing_root_tables` 中补全 `rift_rail_player_settings` 初始化。
+- `RiftRail/scripts/compat/cs2.lua`：删除私有 `get_station`，全部调用点改为 `State.get_station`。
+- `RiftRail/scripts/compat/ltn.lua`：删除私有 `get_station`，全部调用点改为 `State.get_station`。
+- `RiftRail/scripts/logic.lua`：`refresh_station_limit` 和 `update_name` 中的内联子实体遍历改为 `State.get_station`。
+- `RiftRail/scripts/gui.lua`：两处内联子实体遍历改为 `State.get_station`。
+- `RiftRail/scripts/builder.lua`：`on_settings_pasted` 中的内联子实体遍历改为 `State.get_station`。
+- `RiftRail/scripts/teleport.lua`：直接使用 `State.get_station`，不再经由 `TeleportUtils` 代理。
+- `RiftRail/scripts/teleport_system/teleport_utils.lua`：注入 `State`，删除已无调用者的 `TeleportUtils.find_child_entity` 导出函数；`get_real_station_name` 内部改用 `State.get_station`。
+- `RiftRail/control.lua`：`TeleportUtils.init` 调用补充 `State` 参数传递。
+
 ### v0.13.5 附加更新：架构返璞归真与双轨制消除
 
 **改动摘要**：彻底清除了 CS2 兼容模块中潜伏的“缓存更新双轨制”架构悖论，全面拥抱无状态（Stateless）的绝对强一致性，将潜在的寻路死锁概率降至零。

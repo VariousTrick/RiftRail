@@ -55,18 +55,6 @@ end
 
 LTN.BUTTON_NAME = "rift_rail_ltn_switch" -- GUI按钮名
 
--- 从 RiftRail 结构体提取内部站实体
-local function get_station(portaldata)
-    if portaldata.children then
-        for _, child_data in pairs(portaldata.children) do
-            local child = child_data.entity
-            if child and child.valid and child.name == "rift-rail-station" then
-                return child
-            end
-        end
-    end
-    return nil
-end
 
 local function is_ltn_active()
     return remote.interfaces["logistic-train-network"] ~= nil
@@ -272,7 +260,7 @@ end
 p_join_pool = function(portal_data, dest_surface, batch_mode)
     local source_surface = portal_data.surface.index
     local unit_number = portal_data.unit_number
-    local station = get_station(portal_data)
+    local station = State.get_station(portal_data)
 
     if not station or not station.valid then
         return
@@ -321,7 +309,7 @@ end
 p_leave_pool = function(portal_data, dest_surface, batch_mode)
     local source_surface = portal_data.surface.index
     local unit_number = portal_data.unit_number
-    local station = get_station(portal_data)
+    local station = State.get_station(portal_data)
 
     -- Step 1: 如果不是批量模式，先断开所有连接
     if not batch_mode and station and station.valid then
@@ -404,7 +392,7 @@ end
 update_routing_table_for_portal = function(portal_data, desired_routes)
     local source_surface = portal_data.surface.index
     local unit_number = portal_data.unit_number
-    local station = get_station(portal_data)
+    local station = State.get_station(portal_data)
 
     if not station then
         return
@@ -524,8 +512,8 @@ check_if_connected_before_sync = function(portal1, portal2)
         return false
     end
 
-    local station1 = get_station(portal1)
-    local station2 = get_station(portal2)
+    local station1 = State.get_station(portal1)
+    local station2 = State.get_station(portal2)
 
     if not (station1 and station1.valid and station2 and station2.valid) then
         return false
@@ -1063,7 +1051,7 @@ function LTN.purge_legacy_connections()
     if remote.interfaces["logistic-train-network"] then
         local stations = {}
         for _, portal in pairs(storage.rift_rails) do
-            local station = get_station(portal)
+            local station = State.get_station(portal)
             if station and station.valid then
                 stations[#stations + 1] = station
             end
