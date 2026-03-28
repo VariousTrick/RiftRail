@@ -3,11 +3,6 @@
 -- 但内部车站 rift-rail-station 被设计为不可挖掘 (minable=nil)，如果存在 next_upgrade 会触发引擎约束错误。
 -- 这里在最终修复阶段将 rift-rail-station 的 next_upgrade 显式清除，避免冲突。
 
-local function log_debug(msg)
-    if settings and settings.startup and settings.startup["rift-rail-debug-mode"] and settings.startup["rift-rail-debug-mode"].value then
-        log("[RiftRail:data-final-fixes] " .. msg)
-    end
-end
 
 -- Kux-SlimInserters 会在 data-updates 阶段批量缩小 container 的 selection_box。
 -- rift-rail-core 基于 wooden-chest（container），会被连带影响，导致点击核心时难以打开 GUI。
@@ -17,7 +12,6 @@ if KUX_SLIM_INSERTERS_INSTALLED then
     local core = data.raw["container"] and data.raw["container"]["rift-rail-core"]
     if core then
         core.selection_box = { { -2, -2 }, { 2, 2 } }
-        log_debug("兼容修复: 检测到 Kux-SlimInserters，已恢复 rift-rail-core.selection_box")
     end
 end
 
