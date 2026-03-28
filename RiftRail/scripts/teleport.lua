@@ -16,8 +16,8 @@ Teleport.STATE = {
 -- =================================================================================
 local Events = nil
 -- 负责触发“出发”事件
----@see doc/API(CN).md#remote.call("RiftRail", "get_train_departing_event")
----@see doc/API(EN).md#How-to-Get-Rift-Rail-Custom-Event-IDs
+--- 详细参考文档：[API中文指南](../../doc/API_CN.md)
+--- Detailed reference documentation：[API ENGLISH guide](../../doc/API_EN.md)
 local function raise_departing_event(entry_portaldata, train_to_depart)
     if not (entry_portaldata and entry_portaldata.shell and train_to_depart and train_to_depart.valid) then
         return
@@ -41,8 +41,8 @@ local function raise_departing_event(entry_portaldata, train_to_depart)
 end
 
 --- 负责触发“传送开始”事件 (给需要交接 ID 的 LTN 专属环节使用)
----@see doc/API(CN).md#remote.call("RiftRail", "get_train_teleport_transfer_event")
----@see doc/API(EN).md#How-to-Get-Rift-Rail-Custom-Event-IDs
+--- 详细参考文档：[API中文指南](../../doc/API_CN.md)
+--- Detailed reference documentation：[API ENGLISH guide](../../doc/API_EN.md)
 local function raise_teleport_transfer_event(old_train_id, new_train, entry_unit_number, exit_unit_number)
     if not Events or not Events.TrainTeleportTransfer then
         return
@@ -57,8 +57,8 @@ local function raise_teleport_transfer_event(old_train_id, new_train, entry_unit
 end
 
 -- 负责触发“抵达”事件
----@see doc/API(CN).md#remote.call("RiftRail", "get_train_arrived_event")
----@see doc/API(EN).md#How-to-Get-Rift-Rail-Custom-Event-IDs
+--- 详细参考文档：[API中文指南](../../doc/API_CN.md)
+--- Detailed reference documentation：[API ENGLISH guide](../../doc/API_EN.md)
 local function raise_arrived_event(entry_portaldata, exit_portaldata, final_train, restored_guis)
     if not (entry_portaldata and exit_portaldata and exit_portaldata.shell and final_train and final_train.valid) then
         return
