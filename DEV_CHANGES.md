@@ -6,6 +6,36 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+### 2026-03-28（v0.13.7：模块级冗余判空清理）
+
+**改动摘要**：基于当前架构约束（模块固定 `require`、兼容层空壳返回、`init` 必然注入）清理了一批“模块对象必然存在却重复判空”的防御性分支，减少视觉噪音并提升控制流可读性。此次变更不涉及业务逻辑改写，仅为代码整洁化。
+
+- **TickDispatcher 判空收敛**：删除 `Teleport` 的重复存在性判定，`handle_collider_died` 直接调用 `Teleport.on_collider_died(event)`。
+- **control 入口分支收敛**：清理 `CS2Compat/AWCompat/LTN` 在已由空壳契约保证存在时的重复判空调用，保留必要的外部接口可用性检测（如 `remote.interfaces`）。
+- **Teleport 兼容调用收敛**：`AwCompat.on_car_replaced` 处移除冗余模块判空，保留函数级条件判断。
+
+### 具体改动
+- `RiftRail/scripts/tick_dispatcher.lua`：`handle_collider_died` 内移除 `if Teleport and ...` 判空包裹。
+- `RiftRail/control.lua`：
+  - 初始化区：`CS2Compat.init` 与 `AWCompat.init` 移除模块存在性重复判断。
+  - LTN 事件转发：`on_stops_updated` / `on_dispatcher_updated` 回调内移除 `LTN` 冗余判空。
+  - 自定义事件转发：`TrainArrived` 与 `TrainTeleportTransfer` 回调改为直接调用兼容层函数。
+- `RiftRail/scripts/teleport.lua`：`AwCompat.on_car_replaced` 调用处移除模块对象冗余判空。
+
+### 2026-03-28（v0.13.7：TickDispatcher 调度器拆分与 on_tick 动态开关）
+
+**改动摘要**：将原本内嵌在 `control.lua` 的传送 Tick 动态注册逻辑拆分为独立调度模块 `tick_dispatcher.lua`，并保留“有任务才轮询、空闲即注销”的运行策略。此次改动不改变传送业务行为，重点是提升结构清晰度与后续扩展性（为 GUI 或其他子系统新增调度器预留统一入口）。
+
+- **调度职责外置**：新增 `TickDispatcher` 模块，统一管理 `on_tick` 的启停、状态同步与碰撞触发后的即时注册判断，避免 `control.lua` 继续膨胀。
+- **按活跃状态动态轮询**：`Teleport.on_tick` 返回“是否仍有活跃任务”，`TickDispatcher` 在本帧处理后若发现任务清空则立即注销 `on_tick`，实现空闲零轮询回调。
+- **接口语义补全**：在 `teleport.lua` 新增 `Teleport.has_active_work()`，并为相关函数补充了 `---@param / @return` 注解与中文说明，明确调度器与业务层之间的契约。
+- **命名收敛**：调度模块命名从通用的 `scheduler` 收敛为 `tick_dispatcher`，与当前职责更匹配，也便于未来扩展多类 tick 分发策略。
+
+### 具体改动
+- `RiftRail/scripts/tick_dispatcher.lua`：新增运行时 Tick 分发器模块，提供 `init`、`enable_teleport_tick`、`disable_teleport_tick`、`sync_teleport_tick_registration`、`handle_collider_died`。
+- `RiftRail/control.lua`：接入 `TickDispatcher`，删除原内联动态 tick 注册器；在 `on_entity_died`（collider 分支）和 `on_init`/`on_load`/`on_configuration_changed` 中改为调用分发器接口。
+- `RiftRail/scripts/teleport.lua`：新增 `Teleport.has_active_work()`；`Teleport.on_tick(event)` 改为返回 `boolean`（本帧后是否仍有活跃任务），用于驱动自动注销逻辑。
+
 ### 2026-03-28（v0.13.7：GUI 可维护性重构与分发表改造）
 
 **改动摘要**：本次版本不改业务行为，专注于 GUI 代码结构降噪。通过“公共查找函数 + 统计渲染配置化 + 点击事件分发表”三步重构，显著减少了 `gui.lua` 内部重复逻辑与长链式 `else if`，后续扩展按钮与统计项时只需局部增量维护。

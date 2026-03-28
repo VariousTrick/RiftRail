@@ -50,6 +50,7 @@ local TeleportUtils = require("scripts.teleport_system.teleport_utils")
 local LTN = require("scripts.compat.ltn")
 local CS2Compat = require("scripts.compat.cs2")
 local AWCompat = require("scripts.compat.aw")
+local TickDispatcher = require("scripts.tick_dispatcher")
 local Migrations = require("scripts.migrations")
 local Maintenance = require("scripts.maintenance")
 local Stats = require("scripts.stats")
@@ -64,59 +65,67 @@ if Builder.init then
     Builder.init({
         log_debug = log_debug,
         flib_util = flib_util,
-        State = State,
-        Logic = Logic,
-        Util = Util,
+        State     = State,
+        Logic     = Logic,
+        Util      = Util,
     })
 end
 
 -- 优先加载独立观察者
 if Stats.init then
-    Stats.init({ log_debug = log_debug, State = State })
+    Stats.init({
+        log_debug = log_debug,
+        State     = State,
+    })
 end
 
 -- 初始化 LTN 模块
 if LTN.init then
     LTN.init({
-        State = State,
+        State     = State,
         log_debug = log_debug,
-        Stats = Stats,
+        Stats     = Stats,
     })
 end
 
-if CS2Compat and CS2Compat.init then
+if CS2Compat.init then
     CS2Compat.init({
-        State = State,
+        State     = State,
         log_debug = log_debug,
-        Stats = Stats,
+        Stats     = Stats,
     })
 end
 
 if Schedule.init then
-    Schedule.init({ log_debug = log_debug })
+    Schedule.init({
+        log_debug = log_debug,
+    })
 end
 
 if Util.init then
-    Util.init({ log_debug = log_debug })
+    Util.init({
+        log_debug = log_debug,
+    })
 end
 
-if AWCompat and AWCompat.init then
-    AWCompat.init({ log_debug = log_debug })
+if AWCompat.init then
+    AWCompat.init({
+        log_debug = log_debug,
+    })
 end
-
 
 if TeleportFactory.init then
     TeleportFactory.init({
-        Util = Util,
-        Math = TeleportMath,
+        Util      = Util,
+        Math      = TeleportMath,
         log_debug = log_debug,
     })
 end
 
 if TeleportUtils.init then
     TeleportUtils.init({
-        Math = TeleportMath,
-        State = State,
+        Math      = TeleportMath,
+        State     = State,
         log_debug = log_debug,
     })
 end
@@ -124,64 +133,74 @@ end
 -- 注入 Teleport 依赖
 if Teleport.init then
     Teleport.init({
-        State = State,
-        Util = Util,
-        Schedule = Schedule,
-        Math = TeleportMath,
-        Factory = TeleportFactory,
+        State         = State,
+        Util          = Util,
+        Schedule      = Schedule,
+        Math          = TeleportMath,
+        Factory       = TeleportFactory,
         TeleportUtils = TeleportUtils,
-        log_debug = log_debug,
-        AwCompat = AWCompat,
-        Events = RiftRail.Events,
+        log_debug     = log_debug,
+        AwCompat      = AWCompat,
+        Events        = RiftRail.Events,
+    })
+end
+
+if TickDispatcher.init then
+    TickDispatcher.init({
+        Teleport = Teleport,
     })
 end
 
 -- 给 Logic 注入 CybersynSE (用于GUI开关)
 if Logic.init then
     Logic.init({
-        State = State,
-        GUI = GUI,
+        State     = State,
+        GUI       = GUI,
         log_debug = log_debug,
-        LTN = LTN,
-        CS2 = CS2Compat,
+        LTN       = LTN,
+        CS2       = CS2Compat,
     })
 end
 
 if GUI.init then
-    GUI.init({ State = State, Util = Util, log_debug = log_debug })
+    GUI.init({
+        State    = State,
+        Util     = Util,
+        og_debug = log_debug,
+    })
 end
 
 -- 初始化 Migrations 模块
 if Migrations.init then
     Migrations.init({
-        State = State,
-        log_debug = log_debug,
-        LTN = LTN,
-        Util = Util,
+        State        = State,
+        log_debug    = log_debug,
+        LTN          = LTN,
+        Util         = Util,
         TeleportMath = TeleportMath,
-        Builder = Builder,
+        Builder      = Builder,
     })
 end
 
 -- 给 Remote 注入依赖
 if Remote.init then
     Remote.init({
-        State = State,
-        Logic = Logic,
-        Builder = Builder,
-        GUI = GUI,
-        CS2 = CS2Compat,
+        State     = State,
+        Logic     = Logic,
+        Builder   = Builder,
+        GUI       = GUI,
+        CS2       = CS2Compat,
         log_debug = log_debug,
     })
 end
 
 if Maintenance.init then
     Maintenance.init({
-        State = State,
-        LTN = LTN,
-        CS2 = CS2Compat,
-        Util = Util,
-        Builder = Builder,
+        State     = State,
+        LTN       = LTN,
+        CS2       = CS2Compat,
+        Util      = Util,
+        Builder   = Builder,
         log_debug = log_debug,
     })
 end
@@ -244,7 +263,7 @@ script.on_event(defines.events.on_entity_died, function(event)
 
     if entity.name == "rift-rail-collider" then
         -- 情况1: 碰撞器死亡 -> 触发传送逻辑
-        Teleport.on_collider_died(event)
+        TickDispatcher.handle_collider_died(event)
     elseif entity.name == "rift-rail-entity" then
         -- 情况2: 建筑主体死亡 -> 触发拆除逻辑
         Builder.on_destroy(event)
@@ -252,21 +271,13 @@ script.on_event(defines.events.on_entity_died, function(event)
     -- 对于其他任何实体（火车、虫子、树）的死亡，我们一概不管
 end, rr_filters)
 
--- D. Tick 循环
-script.on_event(defines.events.on_tick, function(event)
-    -- 1. 执行传送逻辑
-    Teleport.on_tick(event)
-end)
-
 -- E. 注册 LTN 事件（在运行时可用时）
 local function register_ltn_events()
     if remote.interfaces["logistic-train-network"] then
         local ok1, ev1 = pcall(remote.call, "logistic-train-network", "on_stops_updated")
         if ok1 and ev1 then
             script.on_event(ev1, function(e)
-                if LTN and LTN.on_stops_updated then
-                    LTN.on_stops_updated(e)
-                end
+                LTN.on_stops_updated(e)
             end)
             log_debug("[LTN] 已注册 on_stops_updated 事件")
         end
@@ -274,9 +285,7 @@ local function register_ltn_events()
         local ok2, ev2 = pcall(remote.call, "logistic-train-network", "on_dispatcher_updated")
         if ok2 and ev2 then
             script.on_event(ev2, function(e)
-                if LTN and LTN.on_dispatcher_updated then
-                    LTN.on_dispatcher_updated(e)
-                end
+                LTN.on_dispatcher_updated(e)
             end)
             log_debug("[LTN] 已注册 on_dispatcher_updated 事件")
         end
@@ -321,11 +330,8 @@ script.on_event(defines.events.on_runtime_mod_setting_changed, Maintenance.on_se
 script.on_event(RiftRail.Events.TrainArrived, function(event)
     Stats.on_train_arrived(event)
     -- cs2 事件通知
-    if CS2Compat and CS2Compat.on_train_arrived then
-        CS2Compat.on_train_arrived(event)
-    end
+    CS2Compat.on_train_arrived(event)
 end)
-
 
 script.on_event(RiftRail.Events.TrainDeparting, function(event)
     -- 预留的通用“列车离站”事件，第三方模组可在此处挂载离站状态清理逻辑
@@ -333,17 +339,15 @@ end)
 
 script.on_event(RiftRail.Events.TrainTeleportTransfer, function(event)
     -- ltn 专属兼容：在此阶段进行任务的极速接管，避免出现物流状态丢失
-    if LTN and LTN.on_train_teleport_transfer then
-        LTN.on_train_teleport_transfer(event)
-    end
+    LTN.on_train_teleport_transfer(event)
 end)
-
 
 -- 延迟加载事件注册
 -- on_init: 只在创建新游戏时运行
 script.on_init(function()
     State.setup_new_game()
     register_ltn_events() -- 注册 LTN 事件（若可用）
+    TickDispatcher.sync_teleport_tick_registration()
 end)
 
 -- on_configuration_changed: 处理模组更新或配置变更
@@ -353,10 +357,12 @@ script.on_configuration_changed(function(event)
 
     -- 2. 执行所有深层数据迁移任务
     Migrations.run_all()
+    TickDispatcher.sync_teleport_tick_registration()
 end)
 
 -- on_load: 只在加载存档时运行
 -- 使用独立的 script.on_load 函数，它不依赖 defines 表
 script.on_load(function(event)
     register_ltn_events()
+    TickDispatcher.sync_teleport_tick_registration()
 end)
