@@ -12,12 +12,7 @@ data:extend({
         collision_box = util.create_centered_box(3.8, 11.8),
         selection_box = util.create_centered_box(4, 12),
         build_grid_size = 1,
-        picture = {
-            north = sprites.sprite_down,
-            south = sprites.sprite_up,
-            east  = sprites.sprite_left,
-            west  = sprites.sprite_right,
-        },
+        picture = sprites.placer_picture,
         render_layer = "object",
     }
 })

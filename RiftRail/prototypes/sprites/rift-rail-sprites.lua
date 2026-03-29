@@ -1,52 +1,54 @@
 local sprites = {}
 
-sprites.sprite_left = {
-    filename = "__RiftRail__/graphics/sprite_horiz_atlas_placer.png", -- 指向新图集
-    priority = "high",
-    width = 1344,                                                     -- 单个贴图的宽度
-    height = 528,                                                     -- 单个贴图的高度
-    frame_count = 1,
-    direction_count = 1,
-    shift = { 0, 0 },
-    scale = 0.35,
-    x = 0, -- 左侧贴图位于图集的 x=0 坐标
-    y = 0,
-}
-sprites.sprite_right = {
-    filename = "__RiftRail__/graphics/sprite_horiz_atlas_placer.png", -- 指向新图集
-    priority = "high",
-    width = 1344,
-    height = 528,
-    frame_count = 1,
-    direction_count = 1,
-    shift = { 0, 0 },
-    scale = 0.35,
-    x = 1344, -- 右侧贴图位于图集的 x=1344 坐标
-    y = 0,
-}
-sprites.sprite_down = {
-    filename = "__RiftRail__/graphics/sprite_vert_atlas_placer.png", -- 指向新图集
-    priority = "high",
-    width = 528,                                                     -- 单个贴图的宽度
-    height = 1344,                                                   -- 单个贴图的高度
-    frame_count = 1,
-    direction_count = 1,
-    shift = { 0, 0 },
-    scale = 0.35,
-    x = 0,
-    y = 0, -- 下侧贴图位于图集的 y=0 坐标 }
-}
-sprites.sprite_up = {
-    filename = "__RiftRail__/graphics/sprite_vert_atlas_placer.png", -- 指向新图集
-    priority = "high",
-    width = 528,
-    height = 1344,
-    frame_count = 1,
-    direction_count = 1,
-    shift = { 0, 0 },
-    scale = 0.35,
-    x = 0,
-    y = 1344, -- 上侧贴图位于图集的 y=1344 坐标
+sprites.placer_picture = {
+    north = {
+        filename = "__RiftRail__/graphics/sprite_vert_atlas_placer.png", -- 指向新图集
+        priority = "high",
+        width = 528,                                                      -- 单个贴图的宽度
+        height = 1344,                                                    -- 单个贴图的高度
+        frame_count = 1,
+        direction_count = 1,
+        shift = { 0, 0 },
+        scale = 0.35,
+        x = 0,
+        y = 0, -- 下侧贴图位于图集的 y=0 坐标
+    },
+    south = {
+        filename = "__RiftRail__/graphics/sprite_vert_atlas_placer.png", -- 指向新图集
+        priority = "high",
+        width = 528,
+        height = 1344,
+        frame_count = 1,
+        direction_count = 1,
+        shift = { 0, 0 },
+        scale = 0.35,
+        x = 0,
+        y = 1344, -- 上侧贴图位于图集的 y=1344 坐标
+    },
+    east = {
+        filename = "__RiftRail__/graphics/sprite_horiz_atlas_placer.png", -- 指向新图集
+        priority = "high",
+        width = 1344,                                                      -- 单个贴图的宽度
+        height = 528,                                                      -- 单个贴图的高度
+        frame_count = 1,
+        direction_count = 1,
+        shift = { 0, 0 },
+        scale = 0.35,
+        x = 0, -- 左侧贴图位于图集的 x=0 坐标
+        y = 0,
+    },
+    west = {
+        filename = "__RiftRail__/graphics/sprite_horiz_atlas_placer.png", -- 指向新图集
+        priority = "high",
+        width = 1344,
+        height = 528,
+        frame_count = 1,
+        direction_count = 1,
+        shift = { 0, 0 },
+        scale = 0.35,
+        x = 1344, -- 右侧贴图位于图集的 x=1344 坐标
+        y = 0,
+    },
 }
 
 sprites.blank_sprite = {
@@ -77,6 +79,105 @@ sprites.leader_emoji_sprite = {
     direction_count = 1,
     -- 放大约一倍，提升可见性
     scale = 0.30,
+}
+
+-- 主建筑四向贴图（warning + base）
+sprites.main_picture = {
+    north = {
+        layers = {
+            {
+                filename = "__RiftRail__/graphics/sprite_vert_atlas_warning.png",
+                priority = "high",
+                width = 528,
+                height = 1344,
+                scale = 0.35,
+                shift = { 0, 0 },
+                y = 0,
+                blend_mode = "additive",
+            },
+            {
+                filename = "__RiftRail__/graphics/sprite_vert_atlas.png",
+                priority = "high",
+                width = 528,
+                height = 1344,
+                scale = 0.35,
+                shift = { 0, 0 },
+                y = 0,
+            },
+        },
+    },
+
+    south = {
+        layers = {
+            {
+                filename = "__RiftRail__/graphics/sprite_vert_atlas_warning.png",
+                priority = "high",
+                width = 528,
+                height = 1344,
+                scale = 0.35,
+                shift = { 0, 0 },
+                y = 1344,
+                blend_mode = "additive",
+            },
+            {
+                filename = "__RiftRail__/graphics/sprite_vert_atlas.png",
+                priority = "high",
+                width = 528,
+                height = 1344,
+                scale = 0.35,
+                shift = { 0, 0 },
+                y = 1344,
+            },
+        },
+    },
+
+    east = {
+        layers = {
+            {
+                filename = "__RiftRail__/graphics/sprite_horiz_atlas_warning.png",
+                priority = "high",
+                width = 1344,
+                height = 528,
+                scale = 0.35,
+                shift = { 0, 0 },
+                x = 0,
+                blend_mode = "additive",
+            },
+            {
+                filename = "__RiftRail__/graphics/sprite_horiz_atlas.png",
+                priority = "high",
+                width = 1344,
+                height = 528,
+                scale = 0.35,
+                shift = { 0, 0 },
+                x = 0,
+            },
+        },
+    },
+
+    west = {
+        layers = {
+            {
+                filename = "__RiftRail__/graphics/sprite_horiz_atlas_warning.png",
+                priority = "high",
+                width = 1344,
+                height = 528,
+                scale = 0.35,
+                shift = { 0, 0 },
+                x = 1344,
+                blend_mode = "additive",
+            },
+            {
+                filename = "__RiftRail__/graphics/sprite_horiz_atlas.png",
+                priority = "high",
+                width = 1344,
+                height = 528,
+                scale = 0.35,
+                shift = { 0, 0 },
+                x = 1344,
+            },
+        },
+    },
 }
 
 sprites.blank_sheet = {

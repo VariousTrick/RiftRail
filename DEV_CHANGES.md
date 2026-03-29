@@ -6,6 +6,21 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+### 2026-03-29（v0.13.7：贴图定义后端迁移与命名收敛）
+
+**改动摘要**：本次仅做贴图定义层的结构整理，不改变玩家可见功能与玩法行为。将主建筑/放置器的贴图配置进一步收敛到公共 sprites 模块，减少实体原型文件内的长段贴图表，提高后续维护与排查效率。
+
+- **主建筑贴图公共化**：将 `main.lua` 内部的四向 `picture` 大表抽取到 `rift-rail-sprites.lua`，新增 `sprites.main_picture`，实体侧改为直接引用。
+- **放置器贴图命名收敛**：先将放置器方向贴图命名显式化（`placer_*` 语义），随后按“仅放置器使用”的约束进一步内联收敛为 `sprites.placer_picture`，删除无必要的中间变量。
+- **结构一致性提升**：主建筑与放置器都改为“实体只引用、贴图集中定义”的统一模式，降低跨文件阅读成本。
+
+### 具体改动
+- `RiftRail/prototypes/sprites/rift-rail-sprites.lua`：
+  - 新增 `sprites.main_picture`（主建筑四向贴图定义）。
+  - 新增并收敛 `sprites.placer_picture`（放置器四向贴图定义，内联方向配置）。
+- `RiftRail/prototypes/entities/main.lua`：`picture` 改为引用 `sprites.main_picture`。
+- `RiftRail/prototypes/entities/placer.lua`：`picture` 改为引用 `sprites.placer_picture`。
+
 ### 2026-03-28（v0.13.7：引导车可视贴图上线）
 
 **改动摘要**：为引导车补充了可见表情贴图，解决“引导车不可见、难以快速定位”的体验问题。现在玩家在调试传送流程或观察列车重组时，可以更直观地看到引导车位置。
