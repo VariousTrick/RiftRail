@@ -17,15 +17,16 @@ signal.hidden = true
 signal.selectable_in_game = false
 
 local vortex_structure = {
-    filename = "__RiftRail__/graphics/rail-signal-vortex-sheet.png",
+    -- 使用 3 色圆环图集（红/黄/绿），沿竖向排列 3 帧（与旧旋涡规格一致）
+    filename = "__RiftRail__/graphics/rail-signal-ring-sheet.png",
     priority = "low",
-    blend_mode = "additive",
+    -- blend_mode = "additive",
     draw_as_light = false,
     frame_count = 3,
     direction_count = 16,
     width = 128,
     height = 512,
-    scale = 0.9,
+    scale = 0.25,
 }
 
 -- rail-signal 在 2.0 使用 structure + frame_index 映射
@@ -33,7 +34,7 @@ if signal.ground_picture_set then
     signal.ground_picture_set.structure = vortex_structure
 end
 
--- 关闭原版信号灯灯头，避免与旋涡叠加
+-- 关闭原版信号灯灯头，避免与自定义状态图标叠加
 signal.animation = nil
 signal.red_light = nil
 signal.orange_light = nil
