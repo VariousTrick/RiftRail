@@ -6,6 +6,22 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+### 2026-03-29（v0.13.7：内部红绿灯状态贴图替换）
+
+**改动摘要**：将内部 `rift-rail-signal` 的状态可视化从旧旋涡风格切换为红/黄/绿圆环图标，并完成图集规格对齐，保证 `rail-signal` 在 2.0 下稳定加载与方向映射一致。该改动主要提升信号状态辨识度，不改变传送业务逻辑。
+
+- **状态图标替换**：新增并接入 `rail-signal-ring-sheet.png`，使用红/黄/绿三色圆环作为状态显示。
+- **图集规格对齐**：图集按 `128x512` 单帧、`3 帧 x 16 方向` 的布局组织，与信号原型结构参数严格匹配，避免越界报错。
+- **显示尺寸重调**：下调信号结构贴图 `scale`，使其在建筑周边显示更紧凑，减少视觉遮挡。
+- **原版灯头关闭保持**：继续禁用原版 `animation / red_light / orange_light / green_light`，避免双层状态叠加。
+
+### 具体改动
+- `RiftRail/prototypes/internal/signal.lua`：
+  - `ground_picture_set.structure.filename` 切换为 `__RiftRail__/graphics/rail-signal-ring-sheet.png`
+  - 保持 `frame_count=3`、`direction_count=16`、`width=128`、`height=512` 的匹配关系
+  - 调整显示缩放参数 `scale`
+- `RiftRail/graphics/rail-signal-ring-sheet.png`：新增红/黄/绿圆环状态图集。
+
 ### 2026-03-29（v0.13.7：贴图定义后端迁移与命名收敛）
 
 **改动摘要**：本次仅做贴图定义层的结构整理，不改变玩家可见功能与玩法行为。将主建筑/放置器的贴图配置进一步收敛到公共 sprites 模块，减少实体原型文件内的长段贴图表，提高后续维护与排查效率。
