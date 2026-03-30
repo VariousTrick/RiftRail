@@ -13,6 +13,9 @@
 - **视觉方案更新**：信号状态贴图改为 `cc1/cc2/cc3` 提取生成的新宝石信号样式，保持 `G/Y/R` 三状态映射与 16 方向分组。
 - **尺寸与清晰度平衡**：采用 `256x256` 单帧图集规格（较 `128x128` 更清晰），并继续通过 `scale` 控制游戏内显示尺寸。
 - **颜色二次调优**：在增强版本基础上回调亮度，按列对红/绿状态进一步下调亮度，降低过曝感，保留黄色中间亮度作为对比基准。
+- **方向贴图微调**：对 `0/4/8/12` 四个实际方向执行“朝轨道中心”位移，最终收敛为 `0.3` 格偏移，修正信号贴图与内部铁轨的相对位置。
+- **原版连线隐藏**：仅针对平地信号，移除了 `ground_picture_set` 中的 `rail_piece / upper_rail_piece`，隐藏信号与铁轨之间的原版连接件。
+- **结构简化**：移除 `if signal.ground_picture_set then` 的冗余防御包裹，改为直接赋值，保持原型代码简洁。
 - **资源体积优化**：对最终图集执行 `pngquant` 压缩，将体积从约 `1.8MB` 降至约 `559KB`，在基本不影响观感前提下减少发布包体积。
 - **无用资源清理**：删除本轮实验中未继续使用的中间图、旧图集和备份文件，收敛到当前唯一生效资源。
 
@@ -21,7 +24,10 @@
   - `ground_picture_set.structure.filename` 更新为 `__RiftRail__/graphics/rail-signal-gem-sheet-256-optimized.png`
   - 使用 `width=256`、`height=256`、`frame_count=3`、`direction_count=16` 的图集参数
   - 保持通过 `scale` 进行显示尺寸微调
+  - 平地连接件隐藏：`signal.ground_picture_set.rail_piece = nil`、`signal.ground_picture_set.upper_rail_piece = nil`
+  - 删除 `if signal.ground_picture_set then` 冗余包裹，改为直接设置 `ground_picture_set`
 - `RiftRail/graphics/rail-signal-gem-sheet-256-optimized.png`：新增并启用最终优化图集（压缩后版本）。
+- `RiftRail/graphics/rail-signal-gem-sheet-256-optimized.png`：补充四方向贴图位移微调（`0/4/8/12` 最终采用 `0.3` 格）。
 - `RiftRail/graphics/*`：清理旧的 ring/vortex/small 图集与多余实验贴图。
 
 ### 2026-03-29（v0.13.7：内部红绿灯状态贴图替换）

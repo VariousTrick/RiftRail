@@ -29,9 +29,10 @@ local vortex_structure = {
 }
 
 -- rail-signal 在 2.0 使用 structure + frame_index 映射
-if signal.ground_picture_set then
-    signal.ground_picture_set.structure = vortex_structure
-end
+signal.ground_picture_set.structure = vortex_structure
+-- 隐藏信号与铁轨之间的原版连接件（仅平地）
+signal.ground_picture_set.rail_piece = nil
+signal.ground_picture_set.upper_rail_piece = nil
 
 -- 关闭原版信号灯灯头，避免与自定义状态图标叠加
 signal.animation = nil
