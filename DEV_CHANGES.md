@@ -6,6 +6,24 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+### 2026-03-30（v0.13.7：红绿灯贴图二次迭代与体积优化）
+
+**改动摘要**：本次继续迭代 `rift-rail-signal` 的视觉表现，放弃先前线条/圆环方案，切换为新一版宝石风信号贴图；在保持小尺寸可读性的前提下完成了颜色亮度微调，并通过 `pngquant` 对最终图集进行压缩，显著降低资源体积。
+
+- **视觉方案更新**：信号状态贴图改为 `cc1/cc2/cc3` 提取生成的新宝石信号样式，保持 `G/Y/R` 三状态映射与 16 方向分组。
+- **尺寸与清晰度平衡**：采用 `256x256` 单帧图集规格（较 `128x128` 更清晰），并继续通过 `scale` 控制游戏内显示尺寸。
+- **颜色二次调优**：在增强版本基础上回调亮度，按列对红/绿状态进一步下调亮度，降低过曝感，保留黄色中间亮度作为对比基准。
+- **资源体积优化**：对最终图集执行 `pngquant` 压缩，将体积从约 `1.8MB` 降至约 `559KB`，在基本不影响观感前提下减少发布包体积。
+- **无用资源清理**：删除本轮实验中未继续使用的中间图、旧图集和备份文件，收敛到当前唯一生效资源。
+
+### 具体改动
+- `RiftRail/prototypes/internal/signal.lua`：
+  - `ground_picture_set.structure.filename` 更新为 `__RiftRail__/graphics/rail-signal-gem-sheet-256-optimized.png`
+  - 使用 `width=256`、`height=256`、`frame_count=3`、`direction_count=16` 的图集参数
+  - 保持通过 `scale` 进行显示尺寸微调
+- `RiftRail/graphics/rail-signal-gem-sheet-256-optimized.png`：新增并启用最终优化图集（压缩后版本）。
+- `RiftRail/graphics/*`：清理旧的 ring/vortex/small 图集与多余实验贴图。
+
 ### 2026-03-29（v0.13.7：内部红绿灯状态贴图替换）
 
 **改动摘要**：将内部 `rift-rail-signal` 的状态可视化从旧旋涡风格切换为红/黄/绿圆环图标，并完成图集规格对齐，保证 `rail-signal` 在 2.0 下稳定加载与方向映射一致。该改动主要提升信号状态辨识度，不改变传送业务逻辑。
