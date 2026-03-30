@@ -17,16 +17,15 @@ signal.hidden = true
 signal.selectable_in_game = false
 
 local vortex_structure = {
-    -- 使用 3 色圆环图集（红/黄/绿），沿竖向排列 3 帧（与旧旋涡规格一致）
-    filename = "__RiftRail__/graphics/rail-signal-ring-sheet.png",
+    -- 使用小尺寸宝石信号图集（G/Y/R，16 方向）
+    filename = "__RiftRail__/graphics/rail-signal-gem-sheet-256-optimized.png",
     priority = "low",
-    -- blend_mode = "additive",
     draw_as_light = false,
     frame_count = 3,
     direction_count = 16,
-    width = 128,
-    height = 512,
-    scale = 0.25,
+    width = 256,
+    height = 256,
+    scale = 0.15,
 }
 
 -- rail-signal 在 2.0 使用 structure + frame_index 映射
