@@ -16,6 +16,7 @@ if not script.active_mods["LogisticTrainNetwork"] then
         on_stops_updated = function() end,
         on_dispatcher_updated = function() end,
         on_train_departing = function() end,
+        on_train_teleport_transfer = function() end,
 
         purge_legacy_connections = function()
             storage.rift_rail_ltn_routing_table = {}

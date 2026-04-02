@@ -6,6 +6,22 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+### 2026-04-02（v0.13.8：红绿灯方向修正与 LTN 空壳接口补齐）
+
+**改动摘要**：本次版本聚焦两类稳定性问题修复：一是修正横向上侧方向的红绿灯状态排布错误；二是补齐未安装 LTN 时的空壳兼容接口，避免 `TrainTeleportTransfer` 事件触发时出现 nil 调用报错。
+
+- **红绿灯方向排布修正**：针对“横向轨道上方”方向，修正了红/绿亮起状态对应关系（仅调整该方向行映射，不改业务逻辑）。
+- **LTN 空壳接口补齐**：在未安装 LogisticTrainNetwork 时，空壳模块新增 `on_train_teleport_transfer` no-op 实现，保证 `control.lua` 可无条件分发事件。
+- **资源清理**：删除本轮调试过程产生的临时备份贴图，保留最终生效图集。
+
+### 具体改动
+- `RiftRail/scripts/compat/ltn.lua`：
+  - 未安装 LTN 的返回表中新增 `on_train_teleport_transfer = function() end`
+- `RiftRail/graphics/rail-signal-gem-sheet-256-optimized.png`：
+  - 修正横向上侧方向行的红/绿状态映射（最小改动，其他方向不变）
+- `RiftRail/graphics/*`：
+  - 清理本轮方向排查中的中间备份文件
+
 ### 2026-03-30（v0.13.7：红绿灯贴图二次迭代与体积优化）
 
 **改动摘要**：本次继续迭代 `rift-rail-signal` 的视觉表现，放弃先前线条/圆环方案，切换为新一版宝石风信号贴图；在保持小尺寸可读性的前提下完成了颜色亮度微调，并通过 `pngquant` 对最终图集进行压缩，显著降低资源体积。
