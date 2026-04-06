@@ -150,6 +150,11 @@ function Builder.on_built(event)
         -- 1. 先创建实体，不包含 backer_name
         local child_entity = surface.create_entity(entity_proto)
 
+        -- 最小容错：如果没创建出来，直接忽略
+        if not (child_entity and child_entity.valid) then
+            return nil
+        end
+
         -- 2. 在实体创建之后，再设置它的运行时属性
         if extra_properties and child_entity and child_entity.valid then
             if extra_properties.backer_name then
@@ -158,7 +163,11 @@ function Builder.on_built(event)
             -- 未来如果需要设置其他运行时属性，也可以加在这里
         end
 
-        table.insert(children, { entity = child_entity, relative_pos = relative_pos, unit_number = child_entity.unit_number })
+        table.insert(children, {
+            entity = child_entity,
+            relative_pos = relative_pos,
+            unit_number = child_entity.unit_number,
+        })
         return child_entity
     end
 

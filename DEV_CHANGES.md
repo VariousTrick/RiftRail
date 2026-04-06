@@ -6,6 +6,26 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+## 2026-04-06（v0.13.9：建造阶段子实体创建失败的静默容错）
+
+**改动摘要**：为建造器补上一层极轻量的防御性判空，避免在极低概率下某个内部子实体创建失败时，被后续的 `unit_number` 读取直接放大为脚本级硬崩溃。
+
+### 背景
+在 v0.13.3 引入基于 `on_object_destroyed` 的静默销毁追踪后，`builder.lua` 会在 `children` 表中额外记录内部子实体的 `unit_number`，以便当核心或其他内部构件遭遇底层强制销毁时，能够通过 ID 反向定位所属传送门并执行整套清理。
+
+但在极边缘情况下，`surface.create_entity(...)` 可能返回空值。此前这类失败通常会被静默吞没；而在新增 `child_entity.unit_number` 访问后，这种旧有的边缘失败会被立刻显式触发为建造时报错。
+
+### 处理策略
+本次不引入复杂的回滚、返还或补建逻辑，只在子实体创建后补充最小化判空：
+- 若子实体创建成功，则正常写入 `children`
+- 若子实体创建失败，则直接跳过，不写入引用，也不继续访问 `unit_number`
+
+### 设计判断
+根据长期测试与实际存档使用经验，该问题属于极低频边缘情况；即使个别内部子实体偶发未生成，也没有观察到明显的功能缺失。因此本次修正以“恢复静默容错、阻止显式崩溃”为目标，而不是对建造流程引入更复杂的补偿系统。
+
+### 具体改动
+- `RiftRail/scripts/builder.lua`：为 `create_child()` 新增空值保护，避免在子实体未创建成功时访问 `child_entity.unit_number`。
+
 ### 2026-04-02（v0.13.8：红绿灯方向修正与 LTN 空壳接口补齐）
 
 **改动摘要**：本次版本聚焦两类稳定性问题修复：一是修正横向上侧方向的红绿灯状态排布错误；二是补齐未安装 LTN 时的空壳兼容接口，避免 `TrainTeleportTransfer` 事件触发时出现 nil 调用报错。
