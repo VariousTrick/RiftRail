@@ -861,11 +861,13 @@ local function insert_portal_sequence(train, station_name, exit_id, insert_index
         local teleported_name = settings.global["rift-rail-ltn-teleported-name"].value
         schedule.add_record({
             station = teleported_name,
+            temporary = true,
             index = { schedule_index = insert_index },
             wait_conditions = { { type = "time", ticks = 0 } },
         })
         schedule.add_record({
             station = station_name,
+            temporary = true,
             index = { schedule_index = insert_index },
             wait_conditions = wait_conds,
         })
@@ -873,6 +875,7 @@ local function insert_portal_sequence(train, station_name, exit_id, insert_index
         -- === 情况 B: 没开清理站 ===
         schedule.add_record({
             station = station_name,
+            temporary = true,
             index = { schedule_index = insert_index },
             wait_conditions = wait_conds,
         })
