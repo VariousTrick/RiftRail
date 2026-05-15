@@ -6,6 +6,29 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+## 2026-05-15（v0.13.10：LTN 跨地表插入站点改为临时站）
+
+**改动摘要**：针对新版 Logistic Train Network 的调度兼容要求，调整 RiftRail 在跨地表运输时向时刻表插入的传送门站与可选传送后清理站，使其统一以 `temporary stop` 形式写入，避免这些由第三方模组添加的过渡站被视为常驻业务站。
+
+### 背景
+在与 LTN 开发者的兼容讨论以及对 `se-ltn-glue` 后续 PR 的对照中，可以确认当前推荐做法是：凡是由兼容模组额外插入、仅用于引导列车经过跨地表连接点的中间站，都应标记为 `temporary`。这包括 RiftRail 的传送门入口引导站，以及默认关闭、仅在特定场景下启用的“传送后清理站”。
+
+此前 RiftRail 会把这些站点以普通记录形式插入到 LTN 时刻表中。虽然在多数实际运行场景里不会立刻出错，但从语义和未来兼容性上看，它们更接近一次性路径修正记录，而不是正式的 provider / requester / depot 站点。
+
+### 处理策略
+- 保持现有路线插入逻辑不变，仅为 RiftRail 自己追加到 LTN 时刻表的站点增加 `temporary = true`
+- 不调整该功能的默认开关状态；“传送后清理站”继续保持默认关闭，仅在玩家主动启用时参与流程
+- 不扩展额外行为，不对清理站功能做结构性删改，本次仅收敛站点语义以贴合 LTN 兼容预期
+
+### 设计判断
+这次调整本质上是“兼容语义对齐”，不是功能重写。RiftRail 插入的这几类站点都属于过渡用途，中长期应尽量避免作为常驻时刻表结构存在。将其标记为临时站后，行为上也更接近 `se-ltn-glue` 对 Space Elevator 连接站的处理方向。
+
+### 具体改动
+- `RiftRail/scripts/compat/ltn.lua`：
+  - 为跨地表路由中插入的传送门站点记录增加 `temporary = true`
+  - 为可选的“传送后清理站”记录增加 `temporary = true`
+  - 为未启用清理站时直接插入的传送门站记录增加 `temporary = true`
+
 ## 2026-04-06（v0.13.9：建造阶段子实体创建失败的静默容错）
 
 **改动摘要**：为建造器补上一层极轻量的防御性判空，避免在极低概率下某个内部子实体创建失败时，被后续的 `unit_number` 读取直接放大为脚本级硬崩溃。
