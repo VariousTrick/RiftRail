@@ -26,6 +26,17 @@ if LTN_INSTALLED then
     end
 end
 
+-- Bob's Logistics 会为 wooden-chest 设置 next_upgrade = "iron-chest"。
+-- rift-rail-core 基于 wooden-chest 深拷贝而来，且被设计为不可挖掘 (minable=nil)。
+-- 如果继承了 next_upgrade，会触发引擎约束错误：Entity must be minable when next_upgrade is set。
+-- 这里在最终修复阶段显式清除核心的 next_upgrade，避免与箱子升级链发生冲突。
+local core = data.raw["container"] and data.raw["container"]["rift-rail-core"]
+if core then
+    if core.next_upgrade ~= nil then
+        core.next_upgrade = nil
+    end
+end
+
 if data.raw.recipe["rift-rail-placer-recycling"] then
     data.raw.recipe["rift-rail-placer-recycling"] = nil
 end

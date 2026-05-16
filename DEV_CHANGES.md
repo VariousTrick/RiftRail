@@ -6,6 +6,32 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+## 2026-05-16（v0.13.11：Bob's Logistics 箱子升级链兼容修复）
+
+**改动摘要**：修复了在同时启用 Bob's Logistics、Space Age 与 RiftRail 时，游戏启动阶段可能因内部隐藏核心 `rift-rail-core` 继承箱子升级链而直接报错的问题。
+
+### 背景
+`rift-rail-core` 是 RiftRail 内部使用的隐藏 `container` 原型，基于 `wooden-chest` 深拷贝而来，并被明确设计为不可挖掘（`minable = nil`）。而 Bob's Logistics 会在数据阶段为原版木箱设置 `next_upgrade = "iron-chest"`，从而建立基础箱子的升级链。
+
+由于 RiftRail 的核心原型来自 `wooden-chest`，它也会连带继承这条 `next_upgrade`。在 Factorio 2.0 下，不可挖掘实体若仍带有 `next_upgrade`，会触发引擎约束错误：`Entity must be minable when next_upgrade is set.`，进而导致整个模组组合无法完成加载。
+
+### 处理策略
+- 不调整 `rift-rail-core` 的来源与现有隐藏内部用途
+- 不改变其 `minable = nil` 设计
+- 仅在 `data-final-fixes` 阶段对 `rift-rail-core.next_upgrade` 做最终兜底清理，避免其参与任何外部模组注入的箱子升级链
+
+### 设计判断
+本次属于典型的数据阶段兼容问题，与现有 LTN 兼容修复属于同一类处理方式。将修复放在 `data-final-fixes.lua` 中，可以确保即使其他模组在前序阶段修改了基础箱子或连带影响到 `rift-rail-core`，RiftRail 也能在最终阶段收口并恢复自身内部原型约束。
+
+### 具体改动
+- `RiftRail/data-final-fixes.lua`：
+  - 新增对 `rift-rail-core.next_upgrade` 的最终清理逻辑
+  - 补充 Bob's Logistics 兼容背景说明注释
+- `RiftRail/info.json`：
+  - 版本号升级至 `0.13.11`
+- `RiftRail/changelog.txt`：
+  - 新增 `0.13.11` 正式版本记录
+
 ## 2026-05-15（v0.13.10：LTN 跨地表插入站点改为临时站）
 
 **改动摘要**：针对新版 Logistic Train Network 的调度兼容要求，调整 RiftRail 在跨地表运输时向时刻表插入的传送门站与可选传送后清理站，使其统一以 `temporary stop` 形式写入，避免这些由第三方模组添加的过渡站被视为常驻业务站。
