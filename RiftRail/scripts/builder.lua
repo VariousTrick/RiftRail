@@ -16,6 +16,62 @@ function Builder.init(deps)
     log_debug = deps.log_debug
 end
 
+local function ensure_destroy_tracking_tables()
+    if not storage.destroy_registrations then
+        storage.destroy_registrations = {}
+    end
+    if not storage.portal_destroy_registrations then
+        storage.portal_destroy_registrations = {}
+    end
+end
+
+local function clear_destroy_tracking_for_portal(portal_unit_number)
+    if not portal_unit_number then
+        return
+    end
+
+    ensure_destroy_tracking_tables()
+
+    local useful_ids = storage.portal_destroy_registrations[portal_unit_number]
+    if useful_ids then
+        for useful_id, _ in pairs(useful_ids) do
+            storage.destroy_registrations[useful_id] = nil
+        end
+        storage.portal_destroy_registrations[portal_unit_number] = nil
+    end
+end
+
+local function register_destroy_tracking(portal_unit_number, portal_id, entity, role)
+    if not (entity and entity.valid) then
+        return nil
+    end
+    if entity.name == "rift-rail-collider" then
+        return nil
+    end
+
+    ensure_destroy_tracking_tables()
+
+    local useful_id = script.register_on_object_destroyed(entity)
+    storage.destroy_registrations[useful_id] = {
+        portal_unit_number = portal_unit_number,
+        portal_id = portal_id,
+        entity_unit_number = entity.unit_number,
+        entity_name = entity.name,
+        role = role or entity.name,
+        fatal = true,
+    }
+
+    local useful_ids = storage.portal_destroy_registrations[portal_unit_number]
+    if not useful_ids then
+        useful_ids = {}
+        storage.portal_destroy_registrations[portal_unit_number] = useful_ids
+    end
+    useful_ids[useful_id] = true
+
+    log("[RR-TRACE] 注册销毁追踪 角色=" .. tostring(role or entity.name) .. " 传送门ID=" .. tostring(portal_id) .. " 外壳实体ID=" .. tostring(portal_unit_number) .. " 当前实体ID=" .. tostring(entity.unit_number) .. " useful_id=" .. tostring(useful_id))
+    return useful_id
+end
+
 -- ============================================================================
 -- 基准布局 (方向 0 / North / 竖向)
 -- 坐标系：X右(+), Y下(+)
@@ -312,14 +368,13 @@ function Builder.on_built(event)
     -- 维护 id_map 缓存
     storage.rift_rail_id_map[custom_id] = shell.unit_number
 
-    -- 注册外壳与核心的销毁事件监听
+    -- 注册整门的静默销毁追踪（碰撞器除外）
     if shell and shell.valid then
-        script.register_on_object_destroyed(shell)
+        register_destroy_tracking(shell.unit_number, custom_id, shell, "shell")
     end
     for _, child in pairs(children) do
-        if child.entity and child.entity.valid and child.entity.name == "rift-rail-core" then
-            script.register_on_object_destroyed(child.entity)
-            break
+        if child.entity and child.entity.valid then
+            register_destroy_tracking(shell.unit_number, custom_id, child.entity, child.entity.name)
         end
     end
 end
@@ -452,6 +507,8 @@ function Builder.on_destroy(event, player_index)
         log_debug("[Destroy] Path A: Precise cleanup based on portaldata.")
         local data = storage.rift_rails[target_unit_number]
 
+        clear_destroy_tracking_for_portal(target_unit_number)
+
         --[[ if data.paired_to_id then
             -- 【性能优化】使用 State.get_portaldata_by_id (它现在很快)
             local partner = State.get_portaldata_by_id(data.paired_to_id)
@@ -580,11 +637,6 @@ function Builder.on_cloned(event)
                         unit_number = found_clone[1].unit_number
                     })
 
-                    -- 为克隆出的新核心注册销毁事件
-                    if child_name == "rift-rail-core" then
-                        script.register_on_object_destroyed(found_clone[1])
-                    end
-
                     -- 登记克隆体碰撞器的全局映射
                     if child_name == "rift-rail-collider" and found_clone[1].unit_number then
                         storage.collider_to_portal[found_clone[1].unit_number] = new_unit_number
@@ -604,11 +656,7 @@ function Builder.on_cloned(event)
     new_data.cached_check_area = cached_area
     -- 深拷贝会带出旧门的 can_place 查询表；克隆后强制失效，交给 teleport 懒加载重建
 
-
-    -- 为克隆出的新外壳注册销毁事件
-    if new_entity and new_entity.valid then
-        script.register_on_object_destroyed(new_entity)
-    end
+    clear_destroy_tracking_for_portal(old_unit_number)
 
     -- 保存新数据，清理旧数据
     storage.rift_rails[new_unit_number] = new_data
@@ -616,6 +664,13 @@ function Builder.on_cloned(event)
         storage.rift_rail_id_map[new_data.id] = new_unit_number
     end
     storage.rift_rails[old_unit_number] = nil
+
+    register_destroy_tracking(new_unit_number, new_data.id, new_entity, "shell")
+    for _, child_data in pairs(new_data.children) do
+        if child_data.entity and child_data.entity.valid then
+            register_destroy_tracking(new_unit_number, new_data.id, child_data.entity, child_data.entity.name)
+        end
+    end
 end
 
 -- 2. 处理蓝图放置
@@ -829,30 +884,28 @@ end
 -- ============================================================================
 -- 处理 entity_destroyed 回调触发的销毁逻辑
 -- ============================================================================
-function Builder.on_silent_destroyed(unit_number)
-    local target_data = storage.rift_rails[unit_number]
+function Builder.on_silent_destroyed(useful_id)
+    ensure_destroy_tracking_tables()
 
-    -- 如果外壳没死，那就是核心死了，遍历所有 children 查找
-    if not target_data then
-        for _, portal in pairs(storage.rift_rails) do
-            if portal.children then
-                for _, child in pairs(portal.children) do
-                    if child.unit_number == unit_number then
-                        target_data = portal
-                        break
-                    end
-                end
-            end
-            if target_data then break end
-        end
+    local registration = storage.destroy_registrations[useful_id]
+    if not registration then
+        log("[RR-TRACE] 静默销毁回调未命中新映射 useful_id=" .. tostring(useful_id))
+        return
     end
 
-    -- 如果都查不到，说明已经被常规的 on_mined_handler 清理掉了，静默退出
-    if not target_data then return end
+    local target_data = storage.rift_rails and storage.rift_rails[registration.portal_unit_number]
+    if not target_data then
+        log("[RR-TRACE] 静默销毁回调命中了映射，但传送门数据已不存在 外壳实体ID=" .. tostring(registration.portal_unit_number) .. " useful_id=" .. tostring(useful_id))
+        clear_destroy_tracking_for_portal(registration.portal_unit_number)
+        return
+    end
+
+    clear_destroy_tracking_for_portal(registration.portal_unit_number)
 
     -- 找到了受害者所在的传送门，执行无情地清理
+    log("[RR-TRACE] 静默销毁触发整门清理 传送门ID=" .. tostring(target_data.id) .. " 外壳实体ID=" .. tostring(target_data.unit_number) .. " 实体名称=" .. tostring(registration.entity_name) .. " 角色=" .. tostring(registration.role) .. " useful_id=" .. tostring(useful_id))
     if RiftRail and RiftRail.DEBUG_MODE_ENABLED and log_debug then
-        log_debug("[Builder] triggered silent destroyed mechanism for portal unit_number: " .. unit_number)
+        log_debug("[Builder] triggered silent destroyed mechanism for portal useful_id: " .. useful_id)
     end
 
     -- 移除失效的配网连接

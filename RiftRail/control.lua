@@ -354,6 +354,7 @@ end)
 script.on_configuration_changed(function(event)
     -- 1. 确保基础表结构存在 (为老存档打补丁)
     State.patch_missing_root_tables()
+    State.reset_legacy_destroy_tracking_state()
 
     -- 2. 执行所有深层数据迁移任务
     Migrations.run_all()
