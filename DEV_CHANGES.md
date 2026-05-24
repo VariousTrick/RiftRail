@@ -6,6 +6,43 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+## 2026-05-24（v0.13.12：销毁追踪 useful_id 显式映射重构）
+
+**改动摘要**：修复了旧存档中传送门可能在打开 GUI 或内部子实体异常销毁后被误删的问题。根因不是 GUI，而是 `on_object_destroyed` 回调收到的 `useful_id` 被旧逻辑继续当作实体 `unit_number` 使用，导致历史残留注册与当前子实体 ID 发生误命中，最终把整座传送门误判为应清理对象。
+
+### 背景
+在旧版静默销毁机制中，模组会对部分实体调用 `script.register_on_object_destroyed(...)`，但并未建立“返回的 `useful_id` 到具体传送门/实体”的显式映射。后续 `Builder.on_silent_destroyed(...)` 仍然采用“把传入参数当作 `unit_number` 去查 `storage.rift_rails` 或 `children.unit_number`”的旧思路。
+
+这在新档中有时还能“碰巧工作”，但在旧存档里会暴露出更危险的问题：历史残留注册依然可能触发，而这些旧回调携带的 `useful_id` 只要数值上恰好撞到某个子实体 `unit_number`，就会把与之对应的整座传送门错误清除。实测日志中，`portal_id=1` 就曾因旧回调 `useful_id=22` 误命中内部 `rift-rail-signal` 的 `unit_number=22` 而被整门删除。
+
+### 处理策略
+- 保持既有产品语义不变：除 `collider` 外，任何内部组件、`shell`、`core` 一旦被销毁，整座传送门都应被清理。
+- 不再使用“猜测式”ID 解释：`on_object_destroyed` 的 `useful_id` 现在只通过显式登记表反查所属传送门，不再与实体 `unit_number` 混用。
+- 为新建、克隆、常规拆除、旧档迁移四条路径统一接入同一套销毁追踪登记/回收逻辑。
+- 本次迁移不再借用旧的 `hub_and_spoke_migrated` 标记，改为引入专属的 `destroy_tracking_v2_migrated` 标记，并在 `State` 中增加针对旧销毁追踪状态的清理入口。
+
+### 设计判断
+这次修复的重点不是“改变什么情况下整门销毁”，而是“谁的销毁可以触发整门销毁，必须被精确确认”。RiftRail 传送门的设计本来就是一个原子结构，因此本次保留了“除碰撞器外，任何内部构件死亡都导致整门失效”的规则，只对底层生命周期追踪机制做语义收口。
+
+同时，将这次修复拆分为独立迁移标记，也避免了未来继续让销毁追踪逻辑与历史上完全不同职责的迁移标记发生语义缠绕。
+
+### 具体改动
+- `RiftRail/scripts/state.lua`：
+  - 新增 `storage.destroy_registrations` 与 `storage.portal_destroy_registrations` 根表初始化与兜底补全。
+  - 新增专属迁移标记 `destroy_tracking_v2_migrated`。
+  - 新增 `State.reset_legacy_destroy_tracking_state()`，用于在配置变更时清空旧版销毁追踪状态，为 v2 显式映射重建让路。
+- `RiftRail/control.lua`：
+  - 在 `on_configuration_changed` 中接入 `State.reset_legacy_destroy_tracking_state()`，确保旧档升级到新追踪机制时先完成状态清场。
+- `RiftRail/scripts/builder.lua`：
+  - 新增统一的销毁追踪登记与回收辅助函数。
+  - `on_built` 现在会为 `shell` 与所有非 `collider` 子实体登记 `useful_id -> portal` 显式映射。
+  - `on_cloned` 现在会清除旧门追踪并为克隆后的新门完整重建追踪，确保克隆语义与实体生命周期一致。
+  - `on_destroy` 在常规拆除路径中会先回收整门的销毁追踪登记，避免自清理过程引发重复误触发。
+  - `on_silent_destroyed` 改为只接受 `useful_id` 语义，并只通过显式映射表反查传送门；未命中新映射的旧回调现在只记录日志并安全忽略。
+- `RiftRail/scripts/migrations.lua`：
+  - 旧的 Hub-and-Spoke 补注册迁移不再承担本次修复职责。
+  - 新增 `rebuild_destroy_tracking_v2()`：为旧存档中的 `shell` 与全部非 `collider` 子实体重新登记 `useful_id` 显式映射，并在完成后写入 `destroy_tracking_v2_migrated = true`。
+
 ## 2026-05-16（v0.13.11：Bob's Logistics 箱子升级链兼容修复）
 
 **改动摘要**：修复了在同时启用 Bob's Logistics、Space Age 与 RiftRail 时，游戏启动阶段可能因内部隐藏核心 `rift-rail-core` 继承箱子升级链而直接报错的问题。

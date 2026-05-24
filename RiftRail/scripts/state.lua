@@ -18,6 +18,8 @@ function State.setup_new_game()
 
     storage.collider_to_portal = {}
     storage.collider_map = {}
+    storage.destroy_registrations = {}
+    storage.portal_destroy_registrations = {}
     storage.active_teleporter_list = {}
     storage.active_teleporters = {}        -- 添加了缺失的字典缓存
     storage.rift_rail_preview_renders = {} -- GUI 全息高亮雷达缓存
@@ -43,6 +45,7 @@ function State.setup_new_game()
     storage.rift_rail_ltn_table_migrated = true
     storage.hub_and_spoke_migrated = true
     storage.portal_stats_migrated = true
+    storage.destroy_tracking_v2_migrated = true
 end
 
 --- [阶段二：老兵补丁]
@@ -55,6 +58,8 @@ function State.patch_missing_root_tables()
 
     if not storage.collider_to_portal then storage.collider_to_portal = {} end
     if not storage.collider_map then storage.collider_map = {} end
+    if not storage.destroy_registrations then storage.destroy_registrations = {} end
+    if not storage.portal_destroy_registrations then storage.portal_destroy_registrations = {} end
     if not storage.active_teleporter_list then storage.active_teleporter_list = {} end
     if not storage.active_teleporters then storage.active_teleporters = {} end
     if not storage.rift_rail_preview_renders then storage.rift_rail_preview_renders = {} end
@@ -80,6 +85,18 @@ function State.patch_missing_root_tables()
     if storage.rift_rail_ltn_table_migrated == nil then storage.rift_rail_ltn_table_migrated = false end
     if storage.hub_and_spoke_migrated == nil then storage.hub_and_spoke_migrated = false end
     if storage.portal_stats_migrated == nil then storage.portal_stats_migrated = false end
+    if storage.destroy_tracking_v2_migrated == nil then storage.destroy_tracking_v2_migrated = false end
+end
+
+--- 清理旧版销毁追踪迁移遗留状态，为 v2 显式 useful_id 映射重建让路。
+--- 仅在 on_configuration_changed 中调用。
+function State.reset_legacy_destroy_tracking_state()
+    if storage.destroy_tracking_v2_migrated then
+        return
+    end
+
+    storage.destroy_registrations = {}
+    storage.portal_destroy_registrations = {}
 end
 
 -- ============================================================================
