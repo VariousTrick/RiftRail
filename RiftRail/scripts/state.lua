@@ -46,6 +46,7 @@ function State.setup_new_game()
     storage.hub_and_spoke_migrated = true
     storage.portal_stats_migrated = true
     storage.destroy_tracking_v2_migrated = true
+    storage.destroy_tracking_v3_migrated = true
 end
 
 --- [阶段二：老兵补丁]
@@ -86,12 +87,13 @@ function State.patch_missing_root_tables()
     if storage.hub_and_spoke_migrated == nil then storage.hub_and_spoke_migrated = false end
     if storage.portal_stats_migrated == nil then storage.portal_stats_migrated = false end
     if storage.destroy_tracking_v2_migrated == nil then storage.destroy_tracking_v2_migrated = false end
+    if storage.destroy_tracking_v3_migrated == nil then storage.destroy_tracking_v3_migrated = false end
 end
 
---- 清理旧版销毁追踪迁移遗留状态，为 v2 显式 useful_id 映射重建让路。
+--- 清理旧版销毁追踪迁移遗留状态，为 v3 显式 registration_number 映射重建让路。
 --- 仅在 on_configuration_changed 中调用。
 function State.reset_legacy_destroy_tracking_state()
-    if storage.destroy_tracking_v2_migrated then
+    if storage.destroy_tracking_v3_migrated then
         return
     end
 

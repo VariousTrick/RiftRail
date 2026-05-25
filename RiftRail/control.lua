@@ -250,7 +250,7 @@ script.on_event(defines.events.on_robot_mined_entity, on_mined_handler, rr_filte
 -- 3. 基于注册的实体销毁监听
 -- 处理不支持过滤器的底层强制销毁事件
 script.on_event(defines.events.on_object_destroyed, function(event)
-    Builder.on_silent_destroyed(event.useful_id)
+    Builder.on_silent_destroyed(event.registration_number)
 end)
 
 -- C. 死亡事件分流 (on_entity_died)

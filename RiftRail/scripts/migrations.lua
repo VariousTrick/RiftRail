@@ -467,17 +467,17 @@ function Migrations.state_machine_refactor()
 end
 
 -- ============================================================================
--- [迁移任务 12] v0.13.12 销毁追踪 useful_id 显式映射重建
+-- [迁移任务 12] v0.13.13 销毁追踪 registration_number 显式映射重建
 -- ============================================================================
-function Migrations.rebuild_destroy_tracking_v2()
-    if storage.rift_rails and not storage.destroy_tracking_v2_migrated then
-        log_debug("[Migration] 正在重建 v2 销毁追踪映射...")
+function Migrations.rebuild_destroy_tracking_v3()
+    if storage.rift_rails and not storage.destroy_tracking_v3_migrated then
+        log_debug("[Migration] 正在重建 v3 销毁追踪映射...")
         storage.destroy_registrations = {}
         storage.portal_destroy_registrations = {}
         for _, portaldata in pairs(storage.rift_rails) do
             if portaldata.shell and portaldata.shell.valid then
-                local useful_id = script.register_on_object_destroyed(portaldata.shell)
-                storage.destroy_registrations[useful_id] = {
+                local registration_number = script.register_on_object_destroyed(portaldata.shell)
+                storage.destroy_registrations[registration_number] = {
                     portal_unit_number = portaldata.unit_number,
                     portal_id = portaldata.id,
                     entity_unit_number = portaldata.shell.unit_number,
@@ -486,8 +486,7 @@ function Migrations.rebuild_destroy_tracking_v2()
                     fatal = true,
                 }
                 storage.portal_destroy_registrations[portaldata.unit_number] = storage.portal_destroy_registrations[portaldata.unit_number] or {}
-                storage.portal_destroy_registrations[portaldata.unit_number][useful_id] = true
-                log("[RR-TRACE] 迁移注册外壳 传送门ID=" .. tostring(portaldata.id) .. " 外壳实体ID=" .. tostring(portaldata.shell.unit_number) .. " useful_id=" .. tostring(useful_id))
+                storage.portal_destroy_registrations[portaldata.unit_number][registration_number] = true
             end
             if portaldata.children then
                 for _, child_data in pairs(portaldata.children) do
@@ -496,8 +495,8 @@ function Migrations.rebuild_destroy_tracking_v2()
                         child_data.unit_number = child_data.entity.unit_number
                         -- 为旧档非碰撞器子实体补打钢印
                         if child_data.entity.name ~= "rift-rail-collider" then
-                            local useful_id = script.register_on_object_destroyed(child_data.entity)
-                            storage.destroy_registrations[useful_id] = {
+                            local registration_number = script.register_on_object_destroyed(child_data.entity)
+                            storage.destroy_registrations[registration_number] = {
                                 portal_unit_number = portaldata.unit_number,
                                 portal_id = portaldata.id,
                                 entity_unit_number = child_data.entity.unit_number,
@@ -506,15 +505,14 @@ function Migrations.rebuild_destroy_tracking_v2()
                                 fatal = true,
                             }
                             storage.portal_destroy_registrations[portaldata.unit_number] = storage.portal_destroy_registrations[portaldata.unit_number] or {}
-                            storage.portal_destroy_registrations[portaldata.unit_number][useful_id] = true
-                            log("[RR-TRACE] 迁移注册子实体 传送门ID=" .. tostring(portaldata.id) .. " 名称=" .. tostring(child_data.entity.name) .. " 子实体ID=" .. tostring(child_data.entity.unit_number) .. " useful_id=" .. tostring(useful_id))
+                            storage.portal_destroy_registrations[portaldata.unit_number][registration_number] = true
                         end
                     end
                 end
             end
         end
-        storage.destroy_tracking_v2_migrated = true
-        log_debug("[Migration] v2 销毁追踪映射重建完成。")
+        storage.destroy_tracking_v3_migrated = true
+        log_debug("[Migration] v3 销毁追踪映射重建完成。")
     end
 end
 
@@ -571,7 +569,7 @@ function Migrations.run_all()
     Migrations.patch_cs2_enabled_default()
     Migrations.rebuild_legacy_colliders()
     Migrations.state_machine_refactor()
-    Migrations.rebuild_destroy_tracking_v2()
+    Migrations.rebuild_destroy_tracking_v3()
     Migrations.add_portal_stats()
 end
 
