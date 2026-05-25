@@ -32,10 +32,10 @@ local function clear_destroy_tracking_for_portal(portal_unit_number)
 
     ensure_destroy_tracking_tables()
 
-    local useful_ids = storage.portal_destroy_registrations[portal_unit_number]
-    if useful_ids then
-        for useful_id, _ in pairs(useful_ids) do
-            storage.destroy_registrations[useful_id] = nil
+    local registration_numbers = storage.portal_destroy_registrations[portal_unit_number]
+    if registration_numbers then
+        for registration_number, _ in pairs(registration_numbers) do
+            storage.destroy_registrations[registration_number] = nil
         end
         storage.portal_destroy_registrations[portal_unit_number] = nil
     end
@@ -51,8 +51,8 @@ local function register_destroy_tracking(portal_unit_number, portal_id, entity, 
 
     ensure_destroy_tracking_tables()
 
-    local useful_id = script.register_on_object_destroyed(entity)
-    storage.destroy_registrations[useful_id] = {
+    local registration_number = script.register_on_object_destroyed(entity)
+    storage.destroy_registrations[registration_number] = {
         portal_unit_number = portal_unit_number,
         portal_id = portal_id,
         entity_unit_number = entity.unit_number,
@@ -61,15 +61,13 @@ local function register_destroy_tracking(portal_unit_number, portal_id, entity, 
         fatal = true,
     }
 
-    local useful_ids = storage.portal_destroy_registrations[portal_unit_number]
-    if not useful_ids then
-        useful_ids = {}
-        storage.portal_destroy_registrations[portal_unit_number] = useful_ids
+    local registration_numbers = storage.portal_destroy_registrations[portal_unit_number]
+    if not registration_numbers then
+        registration_numbers = {}
+        storage.portal_destroy_registrations[portal_unit_number] = registration_numbers
     end
-    useful_ids[useful_id] = true
-
-    log("[RR-TRACE] 注册销毁追踪 角色=" .. tostring(role or entity.name) .. " 传送门ID=" .. tostring(portal_id) .. " 外壳实体ID=" .. tostring(portal_unit_number) .. " 当前实体ID=" .. tostring(entity.unit_number) .. " useful_id=" .. tostring(useful_id))
-    return useful_id
+    registration_numbers[registration_number] = true
+    return registration_number
 end
 
 -- ============================================================================
@@ -884,18 +882,16 @@ end
 -- ============================================================================
 -- 处理 entity_destroyed 回调触发的销毁逻辑
 -- ============================================================================
-function Builder.on_silent_destroyed(useful_id)
+function Builder.on_silent_destroyed(registration_number)
     ensure_destroy_tracking_tables()
 
-    local registration = storage.destroy_registrations[useful_id]
+    local registration = storage.destroy_registrations[registration_number]
     if not registration then
-        log("[RR-TRACE] 静默销毁回调未命中新映射 useful_id=" .. tostring(useful_id))
         return
     end
 
     local target_data = storage.rift_rails and storage.rift_rails[registration.portal_unit_number]
     if not target_data then
-        log("[RR-TRACE] 静默销毁回调命中了映射，但传送门数据已不存在 外壳实体ID=" .. tostring(registration.portal_unit_number) .. " useful_id=" .. tostring(useful_id))
         clear_destroy_tracking_for_portal(registration.portal_unit_number)
         return
     end
@@ -903,9 +899,8 @@ function Builder.on_silent_destroyed(useful_id)
     clear_destroy_tracking_for_portal(registration.portal_unit_number)
 
     -- 找到了受害者所在的传送门，执行无情地清理
-    log("[RR-TRACE] 静默销毁触发整门清理 传送门ID=" .. tostring(target_data.id) .. " 外壳实体ID=" .. tostring(target_data.unit_number) .. " 实体名称=" .. tostring(registration.entity_name) .. " 角色=" .. tostring(registration.role) .. " useful_id=" .. tostring(useful_id))
     if RiftRail and RiftRail.DEBUG_MODE_ENABLED and log_debug then
-        log_debug("[Builder] triggered silent destroyed mechanism for portal useful_id: " .. useful_id)
+        log_debug("[Builder] triggered silent destroyed mechanism for portal registration_number: " .. registration_number)
     end
 
     -- 移除失效的配网连接

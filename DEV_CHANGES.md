@@ -6,6 +6,42 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+## 2026-05-25（v0.13.13：销毁回调参数语义修正为 registration_number）
+
+**改动摘要**：确认旧存档中“打开/关闭列车界面后传送门异常消失”的主因不是 GUI 本身，也不是必须依赖额外防护，而是 `on_object_destroyed` 事件处理链把 `event.useful_id` 误当成了注册映射键。实际注册时 `script.register_on_object_destroyed(...)` 单接一个返回值拿到的是 `registration_number`，因此事件回调也必须使用 `event.registration_number` 才能与登记表保持同一语义。
+
+### 背景
+此前 v0.13.12 的显式销毁追踪虽然已经避免了继续把回调参数当 `unit_number` 使用，但事件入口仍然把 `event.useful_id` 传给 `Builder.on_silent_destroyed(...)`。这与登记侧实际保存的“第一个返回值”不是同一个字段，导致旧存档中的某些历史对象在特定 GUI 交互后，仍可能错误命中整门销毁逻辑。
+
+经进一步验证：
+- 将实验性“实体仍有效则忽略”的防护临时注释后，
+- 仅把回调入口改为 `event.registration_number`，
+- 旧存档中的稳定复现路径即不再触发传送门异常消失。
+
+这说明本次问题的关键修复点是参数语义统一，而不是长期保留额外防护层。
+
+### 处理策略
+- 不新增防护逻辑
+- 不改变“非 collider 部件真实损毁就整门销毁”的产品语义
+- 只将注册、迁移、回调三条路径统一到 `registration_number` 语义
+- 由于 `0.13.12` 已正式发布并已写入 `destroy_tracking_v2_migrated`，本次迁移升级为全新 `destroy_tracking_v3_migrated` 标记，确保已跑过旧迁移的存档在 `0.13.13` 仍会重新执行正确的 registration_number 重建
+- 同时清理本轮排查遗留的 `RR-TRACE` 调试日志，恢复正式代码状态
+
+### 具体改动
+- `RiftRail/control.lua`：
+  - `on_object_destroyed` 回调入口改为传递 `event.registration_number`
+- `RiftRail/scripts/builder.lua`：
+  - 销毁登记与回收逻辑统一改用 `registration_number` 命名
+  - `Builder.on_silent_destroyed(...)` 参数改为 `registration_number`
+  - 删除本轮排查残留的 `RR-TRACE` 日志
+- `RiftRail/scripts/migrations.lua`：
+  - 旧档销毁追踪重建逻辑统一改用 `registration_number` 命名
+  - 迁移标记升级为 `destroy_tracking_v3_migrated`
+  - 删除迁移阶段的 `RR-TRACE` 日志
+- `RiftRail/scripts/state.lua`：
+  - 更新销毁追踪清理函数注释中的语义说明
+  - `reset_legacy_destroy_tracking_state()` 改为围绕 `destroy_tracking_v3_migrated` 工作
+
 ## 2026-05-24（v0.13.12：销毁追踪 useful_id 显式映射重构）
 
 **改动摘要**：修复了旧存档中传送门可能在打开 GUI 或内部子实体异常销毁后被误删的问题。根因不是 GUI，而是 `on_object_destroyed` 回调收到的 `useful_id` 被旧逻辑继续当作实体 `unit_number` 使用，导致历史残留注册与当前子实体 ID 发生误命中，最终把整座传送门误判为应清理对象。
