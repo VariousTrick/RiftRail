@@ -250,7 +250,7 @@ script.on_event(defines.events.on_robot_mined_entity, on_mined_handler, rr_filte
 -- 3. 基于注册的实体销毁监听
 -- 处理不支持过滤器的底层强制销毁事件
 script.on_event(defines.events.on_object_destroyed, function(event)
-    Builder.on_silent_destroyed(event.useful_id)
+    Builder.on_silent_destroyed(event.registration_number)
 end)
 
 -- C. 死亡事件分流 (on_entity_died)
@@ -354,6 +354,7 @@ end)
 script.on_configuration_changed(function(event)
     -- 1. 确保基础表结构存在 (为老存档打补丁)
     State.patch_missing_root_tables()
+    State.reset_legacy_destroy_tracking_state()
 
     -- 2. 执行所有深层数据迁移任务
     Migrations.run_all()

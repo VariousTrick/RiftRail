@@ -467,30 +467,52 @@ function Migrations.state_machine_refactor()
 end
 
 -- ============================================================================
--- [迁移任务 12] v0.13.2+ Hub-and-Spoke Registration 迁移方案
+-- [迁移任务 12] v0.13.13 销毁追踪 registration_number 显式映射重建
 -- ============================================================================
-function Migrations.patch_hub_and_spoke_registration()
-    if not storage.hub_and_spoke_migrated and storage.rift_rails then
-        log_debug("[Migration] 正在为旧存档补打实体死亡注册钢印...")
+function Migrations.rebuild_destroy_tracking_v3()
+    if storage.rift_rails and not storage.destroy_tracking_v3_migrated then
+        log_debug("[Migration] 正在重建 v3 销毁追踪映射...")
+        storage.destroy_registrations = {}
+        storage.portal_destroy_registrations = {}
         for _, portaldata in pairs(storage.rift_rails) do
             if portaldata.shell and portaldata.shell.valid then
-                script.register_on_object_destroyed(portaldata.shell)
+                local registration_number = script.register_on_object_destroyed(portaldata.shell)
+                storage.destroy_registrations[registration_number] = {
+                    portal_unit_number = portaldata.unit_number,
+                    portal_id = portaldata.id,
+                    entity_unit_number = portaldata.shell.unit_number,
+                    entity_name = portaldata.shell.name,
+                    role = "shell",
+                    fatal = true,
+                }
+                storage.portal_destroy_registrations[portaldata.unit_number] = storage.portal_destroy_registrations[portaldata.unit_number] or {}
+                storage.portal_destroy_registrations[portaldata.unit_number][registration_number] = true
             end
             if portaldata.children then
                 for _, child_data in pairs(portaldata.children) do
                     if child_data.entity and child_data.entity.valid then
                         -- 补齐 unit_number
                         child_data.unit_number = child_data.entity.unit_number
-                        -- 为旧核心补打钢印
-                        if child_data.entity.name == "rift-rail-core" then
-                            script.register_on_object_destroyed(child_data.entity)
+                        -- 为旧档非碰撞器子实体补打钢印
+                        if child_data.entity.name ~= "rift-rail-collider" then
+                            local registration_number = script.register_on_object_destroyed(child_data.entity)
+                            storage.destroy_registrations[registration_number] = {
+                                portal_unit_number = portaldata.unit_number,
+                                portal_id = portaldata.id,
+                                entity_unit_number = child_data.entity.unit_number,
+                                entity_name = child_data.entity.name,
+                                role = child_data.entity.name,
+                                fatal = true,
+                            }
+                            storage.portal_destroy_registrations[portaldata.unit_number] = storage.portal_destroy_registrations[portaldata.unit_number] or {}
+                            storage.portal_destroy_registrations[portaldata.unit_number][registration_number] = true
                         end
                     end
                 end
             end
         end
-        storage.hub_and_spoke_migrated = true
-        log_debug("[Migration] Hub-and-Spoke 旧档无缝转移完成。")
+        storage.destroy_tracking_v3_migrated = true
+        log_debug("[Migration] v3 销毁追踪映射重建完成。")
     end
 end
 
@@ -547,7 +569,7 @@ function Migrations.run_all()
     Migrations.patch_cs2_enabled_default()
     Migrations.rebuild_legacy_colliders()
     Migrations.state_machine_refactor()
-    Migrations.patch_hub_and_spoke_registration()
+    Migrations.rebuild_destroy_tracking_v3()
     Migrations.add_portal_stats()
 end
 

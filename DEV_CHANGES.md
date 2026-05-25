@@ -6,6 +6,158 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+## 2026-05-25（v0.13.13：销毁回调参数语义修正为 registration_number）
+
+**改动摘要**：确认旧存档中“打开/关闭列车界面后传送门异常消失”的主因不是 GUI 本身，也不是必须依赖额外防护，而是 `on_object_destroyed` 事件处理链把 `event.useful_id` 误当成了注册映射键。实际注册时 `script.register_on_object_destroyed(...)` 单接一个返回值拿到的是 `registration_number`，因此事件回调也必须使用 `event.registration_number` 才能与登记表保持同一语义。
+
+### 背景
+此前 v0.13.12 的显式销毁追踪虽然已经避免了继续把回调参数当 `unit_number` 使用，但事件入口仍然把 `event.useful_id` 传给 `Builder.on_silent_destroyed(...)`。这与登记侧实际保存的“第一个返回值”不是同一个字段，导致旧存档中的某些历史对象在特定 GUI 交互后，仍可能错误命中整门销毁逻辑。
+
+经进一步验证：
+- 将实验性“实体仍有效则忽略”的防护临时注释后，
+- 仅把回调入口改为 `event.registration_number`，
+- 旧存档中的稳定复现路径即不再触发传送门异常消失。
+
+这说明本次问题的关键修复点是参数语义统一，而不是长期保留额外防护层。
+
+### 处理策略
+- 不新增防护逻辑
+- 不改变“非 collider 部件真实损毁就整门销毁”的产品语义
+- 只将注册、迁移、回调三条路径统一到 `registration_number` 语义
+- 由于 `0.13.12` 已正式发布并已写入 `destroy_tracking_v2_migrated`，本次迁移升级为全新 `destroy_tracking_v3_migrated` 标记，确保已跑过旧迁移的存档在 `0.13.13` 仍会重新执行正确的 registration_number 重建
+- 同时清理本轮排查遗留的 `RR-TRACE` 调试日志，恢复正式代码状态
+
+### 具体改动
+- `RiftRail/control.lua`：
+  - `on_object_destroyed` 回调入口改为传递 `event.registration_number`
+- `RiftRail/scripts/builder.lua`：
+  - 销毁登记与回收逻辑统一改用 `registration_number` 命名
+  - `Builder.on_silent_destroyed(...)` 参数改为 `registration_number`
+  - 删除本轮排查残留的 `RR-TRACE` 日志
+- `RiftRail/scripts/migrations.lua`：
+  - 旧档销毁追踪重建逻辑统一改用 `registration_number` 命名
+  - 迁移标记升级为 `destroy_tracking_v3_migrated`
+  - 删除迁移阶段的 `RR-TRACE` 日志
+- `RiftRail/scripts/state.lua`：
+  - 更新销毁追踪清理函数注释中的语义说明
+  - `reset_legacy_destroy_tracking_state()` 改为围绕 `destroy_tracking_v3_migrated` 工作
+
+## 2026-05-25（v0.13.13：CS2 跨地表运单安全失败开关）
+
+**改动摘要**：为 RiftRail 与 Cybersyn 2 的跨地表联动增加了一道默认开启的“安全失败”护栏。当 CS2 已经把跨地表取货或送货路线问到 RiftRail，但 RiftRail 此时已经找不到有效传送路径时，模组现在会优先取消这次运单，避免游戏继续尝试写入非法的跨地表列车时刻表并直接报错崩溃。
+
+### 背景
+此前如果玩家在 CS2 运单执行过程中拆除了 RiftRail 的关键连接，或者让原本可用的跨地表路径中途失效，CS2 在未被其他兼容插件接管的情况下，仍可能继续按普通列车路径处理后续调度。这样一来，游戏就会尝试把另一张地表上的站点信息直接塞进当前列车的时刻表，最终触发不可恢复错误。
+
+从玩家体验上看，这种情况虽然本质上是“跨地表连接已经不存在”，但最终表现却是整局游戏被硬报错打断，代价明显过高。
+
+### 处理策略
+- 不改动 CS2 核心，也不改变 RiftRail 现有的跨地表接管模型。
+- 仅在最危险的两个阶段加入护栏：
+  - 列车准备跨地表去取货时
+  - 列车准备跨地表去送货时
+- 如果此时 RiftRail 已经无法提供有效路径，就直接让这次 CS2 运单安全失败，而不是继续冒险让游戏写入非法时刻表。
+- 同时为这项行为提供一个默认开启的设置开关，方便未来在其他插件生态更复杂时由玩家自行关闭。
+
+### 技术判断
+这次修复刻意没有去动 `CS2.reachable_callback` 的一票否决模型，也没有尝试在 topology 阶段额外声明“这条连接现在不可达”。原因很简单：在当前 `CS2` 设计里，topology 只保留“哪些地表彼此可达”的并集结果，并不保留这条连通性到底是由哪个 routing plugin 提供的。
+
+因此，一旦跨地表 delivery 已经创建完成，到了真正发车时，RiftRail 在 `route_callback(...)` 里能看到的只有：
+- 当前列车所处地表
+- 目标站所处地表
+- 当前 action（`pickup` / `dropoff` / `complete`）
+- RiftRail 此刻能否从自己的缓存里选出一条有效 `entry -> exit`
+
+这意味着如果 RiftRail 在 `route_callback(...)` 里单纯 `return nil`，`CS2` 就会把它理解为“插件没有接管”，然后继续 fallback 到普通列车时刻表写入逻辑。对跨地表 `pickup` / `dropoff` 来说，这条 fallback 路径最终会落到：
+
+- `TrainDelivery:goto_from()` -> `train:schedule(coordinate_entry(from.entity), pickup_entry(...))`
+- `TrainDelivery:goto_to()` -> `train:schedule(coordinate_entry(to.entity), dropoff_entry(...))`
+
+而 `coordinate_entry(...)` 内部使用的正是目标站所在实体的 `connected_rail`。一旦当前列车与目标站已经不在同一地表，就会把异地表 rail 直接塞进 `schedule.add_record(...)`，最终引爆 surface mismatch。
+
+基于这一点，本次补丁选择在 `CS2.route_callback(...)` 中做最小止血：
+- 若 `action == "pickup"` 或 `action == "dropoff"`
+- 且 `target_surface_index ~= current_surface_index`
+- 且 `find_best_route(...)` 已无法返回有效 `entry, exit_portal`
+- 则直接调用 `remote.call("cybersyn2", "fail_delivery", delivery_id, "RIFTRAIL_NO_VALID_TRANSFER_CONNECTION")`
+- 并 `return true`
+
+这里的 `return true` 不是表示“RiftRail 成功完成接管”，而是为了阻止 `CS2` 再继续走那条危险的 fallback 分支。
+
+之所以没有把同样逻辑扩展到 `complete`，是因为 `CS2` 的 `complete()` 默认分支并不会像 `pickup` / `dropoff` 那样继续写入目标站 schedule；它主要是在 delivery 结束后给 route plugin 一个“是否接管返场/回原地表”的机会。因此本次只覆盖真正会触发非法跨地表 schedule 写入的两个阶段。
+
+### 已知限制
+这次修复优先解决的是“防崩溃”问题，而不是完整的列车状态恢复问题。
+
+目前已知的代价是：如果某辆列车正是在这种“强制安全失败”的情况下被取消运单，它之后可能会永久失去继续接收新 CS2 运单的能力。现阶段玩家通常只能把该列车回收到背包，再重新放置。
+
+因此，这个设置更适合作为一个“防止坏档/防止硬崩溃”的安全护栏，而不是无副作用的完美修复。
+
+### 副作用根因
+这个已知限制不是 RiftRail 额外“卡住了列车”，而是 `CS2` 自身的 handoff 语义与这次止血策略发生了冲突。
+
+`CS2` 在 `pickup` / `dropoff` 场景中，只要某个 route plugin 返回 truthy，就会立刻执行：
+- `train:set_volatile()`
+- `self.handoff_state = ...`
+- `self:set_state("plugin_handoff")`
+
+而这次补丁的顺序是：
+1. RiftRail 在 `route_callback(...)` 中先 `fail_delivery(...)`
+2. 然后 `return true` 以阻止 fallback
+
+这样一来，delivery 的确被取消了，但 `CS2` 随后仍会按“插件已接管”处理该列车，并把它标记成 `volatile`。由于 RiftRail 此时并没有真的创建接管链路、也不会再走 `route_plugin_handoff(...)` 把车交回去，`volatile` 状态就失去了正常清除机会。
+
+而 `CS2` 的 `Train:is_available()` 又会直接排除所有 `volatile` 车辆，因此这些列车会永久失去继续接收新 CS2 运单的资格。
+
+### 具体改动
+- `RiftRail/scripts/compat/cs2.lua`：
+  - 在 `CS2.route_callback(delivery_id, action, ..., luatrain, train_stock, train_home_surface_index, ..., stop_entity)` 中增加“跨地表 `pickup` / `dropoff` 且无有效 route 时主动 `fail_delivery`”的兼容护栏
+  - 新增 `should_fail_unhandled_cs2_cross_surface()`，统一读取运行时开关
+  - 保持 `complete` 收尾阶段逻辑不变，避免把已完成运单也误判成失败
+- `RiftRail/settings.lua`：
+  - 新增默认开启的 `rift-rail-cs2-fail-unhandled-cross-surface` 运行时全局设置
+- `RiftRail/locale/en/strings.cfg`
+- `RiftRail/locale/zh-CN/strings.cfg`
+- `RiftRail/locale/ja/strings.cfg`
+  - 为该设置补充中英日说明，并明确写出当前已知限制
+
+## 2026-05-24（v0.13.12：销毁追踪 useful_id 显式映射重构）
+
+**改动摘要**：修复了旧存档中传送门可能在打开 GUI 或内部子实体异常销毁后被误删的问题。根因不是 GUI，而是 `on_object_destroyed` 回调收到的 `useful_id` 被旧逻辑继续当作实体 `unit_number` 使用，导致历史残留注册与当前子实体 ID 发生误命中，最终把整座传送门误判为应清理对象。
+
+### 背景
+在旧版静默销毁机制中，模组会对部分实体调用 `script.register_on_object_destroyed(...)`，但并未建立“返回的 `useful_id` 到具体传送门/实体”的显式映射。后续 `Builder.on_silent_destroyed(...)` 仍然采用“把传入参数当作 `unit_number` 去查 `storage.rift_rails` 或 `children.unit_number`”的旧思路。
+
+这在新档中有时还能“碰巧工作”，但在旧存档里会暴露出更危险的问题：历史残留注册依然可能触发，而这些旧回调携带的 `useful_id` 只要数值上恰好撞到某个子实体 `unit_number`，就会把与之对应的整座传送门错误清除。实测日志中，`portal_id=1` 就曾因旧回调 `useful_id=22` 误命中内部 `rift-rail-signal` 的 `unit_number=22` 而被整门删除。
+
+### 处理策略
+- 保持既有产品语义不变：除 `collider` 外，任何内部组件、`shell`、`core` 一旦被销毁，整座传送门都应被清理。
+- 不再使用“猜测式”ID 解释：`on_object_destroyed` 的 `useful_id` 现在只通过显式登记表反查所属传送门，不再与实体 `unit_number` 混用。
+- 为新建、克隆、常规拆除、旧档迁移四条路径统一接入同一套销毁追踪登记/回收逻辑。
+- 本次迁移不再借用旧的 `hub_and_spoke_migrated` 标记，改为引入专属的 `destroy_tracking_v2_migrated` 标记，并在 `State` 中增加针对旧销毁追踪状态的清理入口。
+
+### 设计判断
+这次修复的重点不是“改变什么情况下整门销毁”，而是“谁的销毁可以触发整门销毁，必须被精确确认”。RiftRail 传送门的设计本来就是一个原子结构，因此本次保留了“除碰撞器外，任何内部构件死亡都导致整门失效”的规则，只对底层生命周期追踪机制做语义收口。
+
+同时，将这次修复拆分为独立迁移标记，也避免了未来继续让销毁追踪逻辑与历史上完全不同职责的迁移标记发生语义缠绕。
+
+### 具体改动
+- `RiftRail/scripts/state.lua`：
+  - 新增 `storage.destroy_registrations` 与 `storage.portal_destroy_registrations` 根表初始化与兜底补全。
+  - 新增专属迁移标记 `destroy_tracking_v2_migrated`。
+  - 新增 `State.reset_legacy_destroy_tracking_state()`，用于在配置变更时清空旧版销毁追踪状态，为 v2 显式映射重建让路。
+- `RiftRail/control.lua`：
+  - 在 `on_configuration_changed` 中接入 `State.reset_legacy_destroy_tracking_state()`，确保旧档升级到新追踪机制时先完成状态清场。
+- `RiftRail/scripts/builder.lua`：
+  - 新增统一的销毁追踪登记与回收辅助函数。
+  - `on_built` 现在会为 `shell` 与所有非 `collider` 子实体登记 `useful_id -> portal` 显式映射。
+  - `on_cloned` 现在会清除旧门追踪并为克隆后的新门完整重建追踪，确保克隆语义与实体生命周期一致。
+  - `on_destroy` 在常规拆除路径中会先回收整门的销毁追踪登记，避免自清理过程引发重复误触发。
+  - `on_silent_destroyed` 改为只接受 `useful_id` 语义，并只通过显式映射表反查传送门；未命中新映射的旧回调现在只记录日志并安全忽略。
+- `RiftRail/scripts/migrations.lua`：
+  - 旧的 Hub-and-Spoke 补注册迁移不再承担本次修复职责。
+  - 新增 `rebuild_destroy_tracking_v2()`：为旧存档中的 `shell` 与全部非 `collider` 子实体重新登记 `useful_id` 显式映射，并在完成后写入 `destroy_tracking_v2_migrated = true`。
+
 ## 2026-05-16（v0.13.11：Bob's Logistics 箱子升级链兼容修复）
 
 **改动摘要**：修复了在同时启用 Bob's Logistics、Space Age 与 RiftRail 时，游戏启动阶段可能因内部隐藏核心 `rift-rail-core` 继承箱子升级链而直接报错的问题。

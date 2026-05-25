@@ -25,6 +25,16 @@ data:extend({
         localised_name = { "mod-setting-name.rift-rail-train-gui-track" },
         localised_description = { "mod-setting-description.rift-rail-train-gui-track" },
     },
+    -- CS2 跨地表调度安全失败开关
+    {
+        type = "bool-setting",
+        name = "rift-rail-cs2-fail-unhandled-cross-surface",
+        setting_type = "runtime-global",
+        default_value = true,
+        order = "a-c",
+        localised_name = { "mod-setting-name.rift-rail-cs2-fail-unhandled-cross-surface" },
+        localised_description = { "mod-setting-description.rift-rail-cs2-fail-unhandled-cross-surface" },
+    },
     -- 调试日志
     {
         type = "bool-setting",

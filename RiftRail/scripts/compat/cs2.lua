@@ -33,6 +33,14 @@ local function cs2_log(msg)
     log_debug("[CS2] " .. msg)
 end
 
+local function should_fail_unhandled_cs2_cross_surface()
+    local setting = settings and settings.global and settings.global["rift-rail-cs2-fail-unhandled-cross-surface"]
+    if setting == nil then
+        return true
+    end
+    return setting.value ~= false
+end
+
 
 -- 获取列车当前地表与位置，优先使用 train_stock，失败时回退到 luatrain 车组。
 local function get_train_surface_and_position(train_stock, luatrain)
@@ -593,6 +601,29 @@ function CS2.route_callback(delivery_id, action, _, train_id, luatrain, train_st
 
     local entry, exit_portal = find_best_route(current_surface_index, target_surface_index, start_pos, target_pos)
     if not (entry and exit_portal) then
+        local should_fail = (action == "pickup" or action == "dropoff") and should_fail_unhandled_cs2_cross_surface()
+        if should_fail then
+            if RiftRail and RiftRail.DEBUG_MODE_ENABLED then
+                cs2_log(
+                    "未找到跨地表路线，主动取消 delivery="
+                        .. tostring(delivery_id)
+                        .. " action="
+                        .. tostring(action)
+                        .. " from_surface="
+                        .. tostring(current_surface_index)
+                        .. " to_surface="
+                        .. tostring(target_surface_index)
+                )
+            end
+            pcall(
+                remote.call,
+                "cybersyn2",
+                "fail_delivery",
+                delivery_id,
+                "RIFTRAIL_NO_VALID_TRANSFER_CONNECTION"
+            )
+            return true
+        end
         return nil
     end
 
