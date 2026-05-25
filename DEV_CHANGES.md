@@ -42,6 +42,85 @@
   - 更新销毁追踪清理函数注释中的语义说明
   - `reset_legacy_destroy_tracking_state()` 改为围绕 `destroy_tracking_v3_migrated` 工作
 
+## 2026-05-25（v0.13.13：CS2 跨地表运单安全失败开关）
+
+**改动摘要**：为 RiftRail 与 Cybersyn 2 的跨地表联动增加了一道默认开启的“安全失败”护栏。当 CS2 已经把跨地表取货或送货路线问到 RiftRail，但 RiftRail 此时已经找不到有效传送路径时，模组现在会优先取消这次运单，避免游戏继续尝试写入非法的跨地表列车时刻表并直接报错崩溃。
+
+### 背景
+此前如果玩家在 CS2 运单执行过程中拆除了 RiftRail 的关键连接，或者让原本可用的跨地表路径中途失效，CS2 在未被其他兼容插件接管的情况下，仍可能继续按普通列车路径处理后续调度。这样一来，游戏就会尝试把另一张地表上的站点信息直接塞进当前列车的时刻表，最终触发不可恢复错误。
+
+从玩家体验上看，这种情况虽然本质上是“跨地表连接已经不存在”，但最终表现却是整局游戏被硬报错打断，代价明显过高。
+
+### 处理策略
+- 不改动 CS2 核心，也不改变 RiftRail 现有的跨地表接管模型。
+- 仅在最危险的两个阶段加入护栏：
+  - 列车准备跨地表去取货时
+  - 列车准备跨地表去送货时
+- 如果此时 RiftRail 已经无法提供有效路径，就直接让这次 CS2 运单安全失败，而不是继续冒险让游戏写入非法时刻表。
+- 同时为这项行为提供一个默认开启的设置开关，方便未来在其他插件生态更复杂时由玩家自行关闭。
+
+### 技术判断
+这次修复刻意没有去动 `CS2.reachable_callback` 的一票否决模型，也没有尝试在 topology 阶段额外声明“这条连接现在不可达”。原因很简单：在当前 `CS2` 设计里，topology 只保留“哪些地表彼此可达”的并集结果，并不保留这条连通性到底是由哪个 routing plugin 提供的。
+
+因此，一旦跨地表 delivery 已经创建完成，到了真正发车时，RiftRail 在 `route_callback(...)` 里能看到的只有：
+- 当前列车所处地表
+- 目标站所处地表
+- 当前 action（`pickup` / `dropoff` / `complete`）
+- RiftRail 此刻能否从自己的缓存里选出一条有效 `entry -> exit`
+
+这意味着如果 RiftRail 在 `route_callback(...)` 里单纯 `return nil`，`CS2` 就会把它理解为“插件没有接管”，然后继续 fallback 到普通列车时刻表写入逻辑。对跨地表 `pickup` / `dropoff` 来说，这条 fallback 路径最终会落到：
+
+- `TrainDelivery:goto_from()` -> `train:schedule(coordinate_entry(from.entity), pickup_entry(...))`
+- `TrainDelivery:goto_to()` -> `train:schedule(coordinate_entry(to.entity), dropoff_entry(...))`
+
+而 `coordinate_entry(...)` 内部使用的正是目标站所在实体的 `connected_rail`。一旦当前列车与目标站已经不在同一地表，就会把异地表 rail 直接塞进 `schedule.add_record(...)`，最终引爆 surface mismatch。
+
+基于这一点，本次补丁选择在 `CS2.route_callback(...)` 中做最小止血：
+- 若 `action == "pickup"` 或 `action == "dropoff"`
+- 且 `target_surface_index ~= current_surface_index`
+- 且 `find_best_route(...)` 已无法返回有效 `entry, exit_portal`
+- 则直接调用 `remote.call("cybersyn2", "fail_delivery", delivery_id, "RIFTRAIL_NO_VALID_TRANSFER_CONNECTION")`
+- 并 `return true`
+
+这里的 `return true` 不是表示“RiftRail 成功完成接管”，而是为了阻止 `CS2` 再继续走那条危险的 fallback 分支。
+
+之所以没有把同样逻辑扩展到 `complete`，是因为 `CS2` 的 `complete()` 默认分支并不会像 `pickup` / `dropoff` 那样继续写入目标站 schedule；它主要是在 delivery 结束后给 route plugin 一个“是否接管返场/回原地表”的机会。因此本次只覆盖真正会触发非法跨地表 schedule 写入的两个阶段。
+
+### 已知限制
+这次修复优先解决的是“防崩溃”问题，而不是完整的列车状态恢复问题。
+
+目前已知的代价是：如果某辆列车正是在这种“强制安全失败”的情况下被取消运单，它之后可能会永久失去继续接收新 CS2 运单的能力。现阶段玩家通常只能把该列车回收到背包，再重新放置。
+
+因此，这个设置更适合作为一个“防止坏档/防止硬崩溃”的安全护栏，而不是无副作用的完美修复。
+
+### 副作用根因
+这个已知限制不是 RiftRail 额外“卡住了列车”，而是 `CS2` 自身的 handoff 语义与这次止血策略发生了冲突。
+
+`CS2` 在 `pickup` / `dropoff` 场景中，只要某个 route plugin 返回 truthy，就会立刻执行：
+- `train:set_volatile()`
+- `self.handoff_state = ...`
+- `self:set_state("plugin_handoff")`
+
+而这次补丁的顺序是：
+1. RiftRail 在 `route_callback(...)` 中先 `fail_delivery(...)`
+2. 然后 `return true` 以阻止 fallback
+
+这样一来，delivery 的确被取消了，但 `CS2` 随后仍会按“插件已接管”处理该列车，并把它标记成 `volatile`。由于 RiftRail 此时并没有真的创建接管链路、也不会再走 `route_plugin_handoff(...)` 把车交回去，`volatile` 状态就失去了正常清除机会。
+
+而 `CS2` 的 `Train:is_available()` 又会直接排除所有 `volatile` 车辆，因此这些列车会永久失去继续接收新 CS2 运单的资格。
+
+### 具体改动
+- `RiftRail/scripts/compat/cs2.lua`：
+  - 在 `CS2.route_callback(delivery_id, action, ..., luatrain, train_stock, train_home_surface_index, ..., stop_entity)` 中增加“跨地表 `pickup` / `dropoff` 且无有效 route 时主动 `fail_delivery`”的兼容护栏
+  - 新增 `should_fail_unhandled_cs2_cross_surface()`，统一读取运行时开关
+  - 保持 `complete` 收尾阶段逻辑不变，避免把已完成运单也误判成失败
+- `RiftRail/settings.lua`：
+  - 新增默认开启的 `rift-rail-cs2-fail-unhandled-cross-surface` 运行时全局设置
+- `RiftRail/locale/en/strings.cfg`
+- `RiftRail/locale/zh-CN/strings.cfg`
+- `RiftRail/locale/ja/strings.cfg`
+  - 为该设置补充中英日说明，并明确写出当前已知限制
+
 ## 2026-05-24（v0.13.12：销毁追踪 useful_id 显式映射重构）
 
 **改动摘要**：修复了旧存档中传送门可能在打开 GUI 或内部子实体异常销毁后被误删的问题。根因不是 GUI，而是 `on_object_destroyed` 回调收到的 `useful_id` 被旧逻辑继续当作实体 `unit_number` 使用，导致历史残留注册与当前子实体 ID 发生误命中，最终把整座传送门误判为应清理对象。
