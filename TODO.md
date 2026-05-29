@@ -13,7 +13,7 @@
 -   [ ] (Advanced) Display the portal network topology on the minimap.
 -   [ ] Add blueprint support for links to auto-restore connections when pasting paired portals.
 -   [ ] Add a debug/performance profiling mode to display the current "active list" count for UPS monitoring.
--   [ ] Add in-game Tips & Tricks/Factoriopedia entries for the "UPS Optimization Guide".
+-   [ ] Expand the in-game Tips & Tricks/Factoriopedia content with a dedicated "UPS Optimization Guide".
 -   [ ] Add visual status indicators (e.g., lights) for portals to show idle/active states.
 -   [ ] Apply different textures, building coatings, or core styles based on the current planet (Space Age integration).
 -   [ ] Replace current AI-generated textures with high-quality custom art (Milestone for v1.0.0 release).
@@ -30,8 +30,7 @@
 -   [x] Built a smart routing system (LTN auto-routing & player signal control).
 -   [x] Redesigned the GUI with a dual-mode interface (Management/Addition).
 -   [x] Created a dedicated module for all save game migrations.
--   [x] Removed Cybersyn compatibility.
--   [x] Removed the `cybersyn_scheduler.lua` module.
+-   [x] Replaced legacy Cybersyn v1 support with native Cybersyn 2 compatibility.
 -   [x] Updated the Mod Portal description and FAQ.
 -   [x] Added in-game migration notification messages.
 -   [x] Cleaned up all deprecated comments and debug logs from the code.
@@ -40,6 +39,10 @@
 -   [x] Adjusted the portal recipe balance for the Space Age (SA) environment.
 -   [x] Added a second dedicated demo scenario to explain pairing logic and workflow.
 -   [x] Optimized the file structure and recipe balancing across various mod environments (SA, SE, K2, SE+K2) - Special thanks to Ldmf for this contribution!
+-   [x] Added Informatron documentation and native Tips & Tricks integration.
+-   [x] Added per-portal operation archive / telemetry tracking in the GUI.
+-   [x] Optimized the teleport system to stay dormant when no transfer task is active, reducing idle UPS cost.
+-   [x] Improved old-save stability, destroy tracking, and migration reliability.
 
 ---
 
@@ -74,24 +77,26 @@
 
 ## ✅ 已完成 (Done)
 
--   [x] 重构了核心架构以支持多对多 (N-to-M) 连接。
--   [x] 实现了多对一 (汇流) 功能。
--   [x] 实现了一对多 (分流) 功能。
--   [x] 构建了智能路由系统（LTN 自动路由 & 玩家信号控制）。
--   [x] 重新设计了具有双模式（管理/添加）的 GUI 交互界面。
--   [x] 创建了专用模块来处理所有存档的自动迁移。
--   [x] 移除了 Cybersyn 兼容性。
--   [x] 移除了 `cybersyn_scheduler.lua` 模块。
--   [x] 更新了 Mod Portal 描述和 FAQ。
--   [x] 添加了游戏内的迁移提示消息。
--   [x] 清理了代码中所有废弃的注释和调试日志。
--   [x] 统一了文件头部的版本号注释。
--   [x] 扩展了原生 Clone API 的触发条件（同向放置优化），进一步降低列车传送时的 UPS 消耗。
--   [x] 针对 Space Age (SA) 环境调整了传送门配方平衡（卫星数量增加至 2 个）。
--   [x] 新增了第二个演示场景，专门用于演示传送门的配对逻辑与操作流程。
--   [x] 优化了文件结构以及各模组环境（SA, SE, K2, SE+K2）的配方平衡（特别感谢 Ldmf 提交的代码与贡献！）。
--   [x] 添加了对信息稽器人模组的支持，可以在其中查看模组使用说明。
--   [x] 添加了游戏原生的“提示与技巧 (Tips & Tricks)”系统集成。
+-   [x] 重构核心架构，支持多对多 (N-to-M) 连接。
+-   [x] 实现多对一 (汇流) 功能。
+-   [x] 实现一对多 (分流) 功能。
+-   [x] 构建智能路由系统（LTN 自动路由 & 玩家信号控制）。
+-   [x] 重新设计双模式（管理/添加）GUI 交互界面。
+-   [x] 创建专用模块，处理所有存档的自动迁移。
+-   [x] 以原生 Cybersyn 2 兼容方案替换旧版 Cybersyn v1 支持。
+-   [x] 更新 Mod Portal 描述和 FAQ。
+-   [x] 添加游戏内迁移提示消息。
+-   [x] 清理代码中所有废弃的注释和调试日志。
+-   [x] 统一文件头部的版本号注释。
+-   [x] 扩展原生 Clone API 的触发条件（同向放置优化），进一步降低列车传送时的 UPS 消耗。
+-   [x] 调整 Space Age (SA) 环境下的传送门配方平衡（卫星数量增加至 2 个）。
+-   [x] 新增第二个演示场景，专门演示传送门的配对逻辑与操作流程。
+-   [x] 优化文件结构以及各模组环境（SA, SE, K2, SE+K2）的配方平衡（特别感谢 Ldmf 提交的代码与贡献！）。
+-   [x] 添加对信息稽器人模组的支持，可在其中查看模组使用说明。
+-   [x] 添加游戏原生“提示与技巧 (Tips & Tricks)”系统集成。
+-   [x] 为 GUI 增加每个传送门的运行档案 / 遥测统计能力。
+-   [x] 优化传送系统的激活机制：没有传送任务时进入休眠，降低空闲 UPS 开销。
+-   [x] 提升旧存档升级、销毁追踪与迁移逻辑的稳定性。
 
 ---
 
