@@ -6,6 +6,49 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+## 2026-05-30（v0.13.14：移除 LTN 传送后清理站设置与相关逻辑）
+
+**改动摘要**：删除 RiftRail 在 LTN 兼容层中继承自早期 `se-ltn-glue` 思路的“传送后清理站”可选功能。该功能默认关闭、实际使用面较小，却会与新版 LTN 的 `get_or_create_next_temp_stop()` 临时轨道定位逻辑发生结构性冲突，因此本次直接将其从产品和代码层面一起移除。
+
+### 背景
+此前 RiftRail 提供了两个 LTN 运行时设置：
+- `rift-rail-ltn-use-teleported`
+- `rift-rail-ltn-teleported-name`
+
+启用后，模组会在跨地表传送门站点之后再额外插入一个“传送后清理站”，用于强制列车离开出口区域，避免堵住出口。
+
+但在对比 `LTN - Space Exploration integration` 与 `LogisticTrainNetwork 2.8.0` 当前接口实现后，可以确认这套做法与新版 LTN 的 temp stop 机制并不相容：
+- RiftRail 的清理站被作为 `temporary` 记录插入在下一个 LTN logistic stop 之前；
+- 而 LTN 的 `get_or_create_next_temp_stop()` 只要发现目标物流站前一条记录已经是 `temporary`，就会直接认为自己的临时轨道定位站已经存在，不再补插。
+
+这意味着一旦玩家启用该功能，就有机会让 LTN 丢失传送后所需的下一段轨道定位 temp stop。虽然该功能默认关闭，受影响用户面不大，但它已经构成了一个真实的兼容陷阱。
+
+### 设计判断
+本次没有尝试把该功能改造成 `lse` 风格的“传送前 clearance stop”，也没有继续为其寻找额外补丁逻辑，原因如下：
+- RiftRail 的核心场景与 SE Space Elevator 不同，照搬 clearance 语义并不自然；
+- 该功能不是 RiftRail 自身刚需，而是历史兼容遗留；
+- 它默认关闭、作者本人也几乎不会使用，维护收益明显低于复杂度和风险；
+- 直接删除比继续保留一个会干扰 LTN temp stop 的低频选项更干净。
+
+因此本次选择将其视为一次有意识的破坏性清理：保留 RiftRail 的核心跨地表 LTN 路由能力，移除这个低使用率且存在兼容隐患的边缘设置。
+
+### 具体改动
+- `RiftRail/settings.lua`
+  - 删除 `rift-rail-ltn-use-teleported`
+  - 删除 `rift-rail-ltn-teleported-name`
+- `RiftRail/scripts/compat/ltn.lua`
+  - 删除 `insert_portal_sequence(...)` 中与“传送后清理站”相关的分支逻辑
+  - LTN 路由插入现在只保留 RiftRail 传送门站本身
+- `RiftRail/locale/en/strings.cfg`
+- `RiftRail/locale/zh-CN/strings.cfg`
+- `RiftRail/locale/ja/strings.cfg`
+  - 删除与该设置对应的名称与说明文案
+
+### 结果
+- RiftRail 与 LTN 的跨地表兼容逻辑边界更清晰；
+- 不再存在“默认关闭但一旦启用就可能吞掉 LTN temp stop”的隐藏陷阱；
+- 玩家侧失去的是一个低使用率的可选清理功能，保留下来的是更稳定、更容易解释的核心兼容行为。
+
 ## 2026-05-25（v0.13.13：销毁回调参数语义修正为 registration_number）
 
 **改动摘要**：确认旧存档中“打开/关闭列车界面后传送门异常消失”的主因不是 GUI 本身，也不是必须依赖额外防护，而是 `on_object_destroyed` 事件处理链把 `event.useful_id` 误当成了注册映射键。实际注册时 `script.register_on_object_destroyed(...)` 单接一个返回值拿到的是 `registration_number`，因此事件回调也必须使用 `event.registration_number` 才能与登记表保持同一语义。

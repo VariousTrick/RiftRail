@@ -98,25 +98,4 @@ data:extend({
         localised_description = { "mod-setting-description.rift-rail-mod-integration" },
         --[[ description = "Select which mod integration to enable (only one can be active)" ]]
     },
-    -- LTN 防堵塞清理机制开关
-    {
-        type = "bool-setting",
-        name = "rift-rail-ltn-use-teleported",
-        setting_type = "runtime-global",
-        default_value = false, -- 默认关闭
-        order = "c-a",
-        localised_name = { "mod-setting-name.rift-rail-ltn-use-teleported" },
-        localised_description = { "mod-setting-description.rift-rail-ltn-use-teleported" },
-    },
-    -- LTN 防堵塞清理站名称
-    {
-        type = "string-setting",
-        name = "rift-rail-ltn-teleported-name",
-        setting_type = "runtime-global",
-        default_value = "[item=rift-rail-placer]teleported", -- 带图标的默认名字
-        allow_blank = false,
-        order = "c-b",
-        localised_name = { "mod-setting-name.rift-rail-ltn-teleported-name" },
-        localised_description = { "mod-setting-description.rift-rail-ltn-teleported-name" },
-    },
 })
