@@ -2,14 +2,6 @@
 -- Rift Rail - 主入口
 -- 功能：事件分发、日志管理、模块加载
 -- 更新：集成传送逻辑、补全玩家传送、事件分流
--- add print msg tp the game when the mod is loaded
-script.on_event(defines.events.on_player_joined_game, function(event)
-    local player = game.get_player(event.player_index)
-    player.print({ "messages.rift-rail-welcome" })
-    if script.active_mods["cybersyn"] then
-        player.print({ "messages.rift-rail-now-has-cs2" })
-    end
-end)
 
 -- ==========================================================================
 -- Rift Rail 自定义事件ID注册（供外部模组监听）
@@ -176,6 +168,11 @@ end
 -- ============================================================================
 -- 5. 事件注册
 -- ============================================================================
+
+script.on_event(defines.events.on_player_joined_game, function(event)
+    local player = game.get_player(event.player_index)
+    player.print({ "messages.rift-rail-welcome" })
+end)
 
 -- 实体过滤器：只监听本模组相关的实体
 local rr_filters = {
