@@ -7,12 +7,10 @@ local TeleportFactory = {}
 
 -- 依赖注入的外部模块引用
 local Math = nil
-local log_debug = function(...) end
 
 ---@param deps table 依赖表 / Dependency table
 function TeleportFactory.init(deps)
-    Math      = deps.Math
-    log_debug = deps.log_debug
+    Math = deps.Math
 end
 
 -- =================================================================================
@@ -72,15 +70,6 @@ function TeleportFactory.spawn_next_car_intelligently(car, entry_portaldata, exi
         needs_rotation = true
     end
 
-    if RiftRail.DEBUG_MODE_ENABLED then
-        log_debug("--------------------------------------------------")
-        log_debug("[RiftRail:Factory] 纯数学零拷贝克隆参数")
-        log_debug(string.format("[RiftRail:Factory] 入口面向: %d, 出口面向: %d, 入口车厢原始朝向: %.2f", entry_dir, exit_dir, car.orientation))
-        log_debug(string.format("[RiftRail:Factory] 轨道形态: %s", is_parallel and "平行轨道 (平移)" or "90度直角交点轨道 (+0.25)"))
-        log_debug(string.format("[RiftRail:Factory] 最终判决机制 -> 在源产地反转车厢: %s", tostring(needs_rotation)))
-        log_debug("--------------------------------------------------")
-    end
-
     -- 4. 执行断开与旋转调头 (仅当引擎天然方向和期望方向颠倒时触发)
     if needs_rotation then
         -- 彻底断开这节老车厢的前后连挂，防止旋转时拉扯整个车组甚至发生致命物理碰撞
@@ -89,9 +78,6 @@ function TeleportFactory.spawn_next_car_intelligently(car, entry_portaldata, exi
 
         local rotated_successfully = car.rotate()
         if not rotated_successfully then
-            if RiftRail.DEBUG_MODE_ENABLED then
-                log_debug("[RiftRail:Factory] 致命警告：车厢在入口强制原地旋转失败！传送强制阻断。")
-            end
             return nil
         end
     end
@@ -105,9 +91,6 @@ function TeleportFactory.spawn_next_car_intelligently(car, entry_portaldata, exi
     })
 
     if not new_car then
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_debug("[RiftRail:Factory] 致命警告：克隆引擎 API 返回空值，可能底层吸附碰撞导致失败。")
-        end
         return nil
     end
 

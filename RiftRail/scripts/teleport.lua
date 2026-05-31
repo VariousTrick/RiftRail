@@ -89,7 +89,7 @@ local function raise_arrived_event(entry_portaldata, exit_portaldata, final_trai
 end
 
 -- =================================================================================
--- 依赖与日志系统
+-- 依赖系统
 -- =================================================================================
 ---@type StateModule
 local State = nil
@@ -107,9 +107,6 @@ local Factory = nil
 local TeleportUtils = nil
 
 -- 1. 定义一个空的日志函数占位符
-local log_debug = function(...) end
-
--- 2. 在 init 函数中接收来自 control.lua 的 log_debug 函数
 function Teleport.init(deps)
     State = deps.State
     Util = deps.Util
@@ -117,19 +114,9 @@ function Teleport.init(deps)
     Math = deps.Math
     Factory = deps.Factory
     TeleportUtils = deps.TeleportUtils
-    if deps.log_debug then
-        log_debug = deps.log_debug
-    end
     AwCompat = deps.AwCompat
     if deps.Events then
         Events = deps.Events
-    end
-end
-
--- 3. 定义本模块专属的、带 if 判断的日志包装器
-local function log_tp(msg)
-    if RiftRail.DEBUG_MODE_ENABLED then
-        log_debug("[RiftRail:Teleport] " .. msg) -- 调用全局 log_debug, 并加上自己的模块名
     end
 end
 
@@ -197,9 +184,6 @@ local function apply_entry_pulse(entry_portaldata, exit_portaldata)
     -- 3. 施加 10 速度迫使列车"靠近/吸入"传送门
     train.speed = target_speed * 10 * entry_sign
 
-    if RiftRail.DEBUG_MODE_ENABLED then
-        log_tp("入口脉冲已施加: 速度=" .. train.speed)
-    end
 end
 
 -- =================================================================================
@@ -340,9 +324,6 @@ local function select_target_exit(entry_portaldata)
         train_target_id = get_circuit_go_to_id(train)
         train_target_portal = resolve_valid_target(entry_portaldata, train_target_id)
         if train_target_portal then
-            if RiftRail.DEBUG_MODE_ENABLED and entry_portaldata.waiting_car then
-                log_tp("智能路由: 识别到信号 riftrail-go-to-id = " .. train_target_id .. "，精准导向出口。")
-            end
             return train_target_portal
         end
 
@@ -359,9 +340,6 @@ local function select_target_exit(entry_portaldata)
 
     local entry_target_portal = resolve_valid_target(entry_portaldata, entry_target_id)
     if entry_target_portal then
-        if RiftRail.DEBUG_MODE_ENABLED and entry_portaldata.waiting_car then
-            log_tp("智能路由: 列车信号无效，命中入口信号 riftrail-go-to-id = " .. entry_target_id .. "，导向对应出口。")
-        end
         return entry_target_portal
     end
 
@@ -419,10 +397,6 @@ local function initialize_teleport_session(entry_portal, exit_portal)
     -- 3. 激活传送状态
     entry_portal.state = Teleport.STATE.TELEPORTING
 
-    if RiftRail.DEBUG_MODE_ENABLED then
-        log_tp("会话启动: 入口 " .. entry_portal.id .. " 锁定出口 " .. exit_portal.id)
-    end
-
     -- 触发“出发”事件
     raise_departing_event(entry_portal, entry_portal.entry_car.train)
 end
@@ -466,11 +440,6 @@ end
 ---@param entry_portaldata PortalData 入口数据 / Entry portal data
 ---@param exit_portaldata PortalData|nil 出口数据 / Exit portal data
 local function finalize_sequence(entry_portaldata, exit_portaldata)
-    if RiftRail.DEBUG_MODE_ENABLED then
-        local exit_id = exit_portaldata and exit_portaldata.id or "N/A(已摧毁)"
-        log_tp("传送结束: 清理状态 (入口ID: " .. entry_portaldata.id .. ", 出口ID: " .. exit_id .. ")")
-    end
-
     -- 1. 在销毁引导车前读取列车索引
     if exit_portaldata then
         local final_train = nil
@@ -496,9 +465,6 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         end
 
         if final_train and final_train.valid then
-            if RiftRail.DEBUG_MODE_ENABLED then
-                log_tp("【销毁后】准备恢复: actual_index=" .. tostring(actual_index_before_cleanup) .. ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index))
-            end
             -- 传送完全结束，货仓补满。在恢复速度前先清除所有假中断临时站，
             -- 避免 cleanup 内部的 go_to_station 在恢复速度之后重置寻路动作。
             local entry_station_name_final = TeleportUtils.get_real_station_name(entry_portaldata)
@@ -573,9 +539,6 @@ local function spawn_leader_train(exit_portaldata, geo, force)
     if leadertrain then
         leadertrain.destructible = false
         exit_portaldata.leadertrain = leadertrain
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_tp("引导车创建成功 ID: " .. leadertrain.unit_number)
-        end
     end
 end
 
@@ -607,9 +570,6 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
 
     local car = entry_portaldata.entry_car
     if not (car and car.valid) then
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_tp("入口车厢失效或丢失，结束传送。")
-        end
         finalize_sequence(entry_portaldata, exit_portaldata)
         return
     end
@@ -650,10 +610,6 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     end
 
     -- 开始传送当前车厢
-    if RiftRail.DEBUG_MODE_ENABLED then
-        log_tp("正在传送车厢: " .. car.name)
-    end
-
     -- 第一节车时记录正在查看该列车 GUI 的玩家
     if is_first_car and car.train then
         -- 构建 GUI 映射表，存入 entry_portaldata (因为要在传送循环中用)
@@ -708,9 +664,6 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
     local new_car = Factory.spawn_next_car_intelligently(car, entry_portaldata, exit_portaldata, spawn_pos, geo)
 
     if not new_car then
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_tp("严重错误: 无法在出口创建车厢！")
-        end
         return
     end
 
@@ -785,9 +738,6 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
             -- 这将强制 maintain_exit_speed 在下一帧进行完整的重新验证和计算
             exit_portaldata.cached_exit_drive_sign = nil -- 清理出口意图方向缓存
             local target_index = index_before_spawn or exit_portaldata.saved_schedule_index
-            if RiftRail.DEBUG_MODE_ENABLED then
-                log_tp("【创建后】准备恢复: index_before_spawn=" .. tostring(index_before_spawn) .. ", saved_index=" .. tostring(exit_portaldata.saved_schedule_index) .. ", 使用target=" .. tostring(target_index))
-            end
             TeleportUtils.restore_train_state(merged_train, exit_portaldata, false, target_index)
         end
     end
@@ -799,9 +749,6 @@ function Teleport.process_transfer_step(entry_portaldata, exit_portaldata)
         -- 旧车厢消失后，给剩下半截列车补一脚脉冲油门
         apply_entry_pulse(entry_portaldata, exit_portaldata)
         return
-    end
-    if RiftRail.DEBUG_MODE_ENABLED then
-        log_tp("最后一节车厢传送完毕。")
     end
     -- 传送结束，调用 finalize_sequence 进行收尾 (销毁引导车，恢复最终速度)
     finalize_sequence(entry_portaldata, exit_portaldata)
@@ -879,9 +826,6 @@ function Teleport.on_collider_died(event)
     portaldata.state = Teleport.STATE.QUEUED
     local preselected_exit = select_target_exit(portaldata)
     portaldata.waiting_target_exit_id = preselected_exit and preselected_exit.id or nil
-    if RiftRail.DEBUG_MODE_ENABLED then
-        log_tp("排队挂号: 入口 " .. portaldata.id .. " 等待传送车厢 " .. car.unit_number)
-    end
     -- 4. 入队 (无论是重建、传送还是排队，都需要 tick 驱动)
     add_to_active(portaldata)
 end
@@ -1035,9 +979,6 @@ local function process_teleport_sequence(portaldata, tick)
 
         -- 如果在传送中途，出口实体没了
         if not (exit_portaldata and exit_portaldata.shell and exit_portaldata.shell.valid) then
-            if RiftRail.DEBUG_MODE_ENABLED then
-                log_tp("🚨 致命警告: 传送中途出口被摧毁！强行切断传送！")
-            end
             -- 强行中断，清理现场，把剩下的车厢留在入口
             -- 注意，这里 exit_portaldata 可能是 nil，finalize_sequence 会安全处理
             finalize_sequence(portaldata, exit_portaldata)

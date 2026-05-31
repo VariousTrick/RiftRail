@@ -5,22 +5,7 @@
 
 local Util = {}
 
-local log_debug = function(msg)
-    log(msg)
-end
-
-function Util.init(deps)
-    if deps.log_debug then
-        log_debug = deps.log_debug
-    end
-end
-
--- 本地日志包装 (统一前缀)
-local function log_util(message)
-    if RiftRail.DEBUG_MODE_ENABLED then
-        log_debug("[RiftRail:Util] " .. message)
-    end
-end
+function Util.init(_deps) end
 
 ---------------------------------------------------------------------------
 -- 1. 向量与几何计算

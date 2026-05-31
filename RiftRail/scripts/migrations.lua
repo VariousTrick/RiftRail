@@ -9,13 +9,12 @@ local Migrations = {}
 -- ============================================================================
 -- 依赖注入
 -- ============================================================================
-local State, log_debug, LTN, Util, Builder
+local State, LTN, Util, Builder
 function Migrations.init(deps)
-    State     = deps.State
-    log_debug = deps.log_debug
-    LTN       = deps.LTN
-    Util      = deps.Util
-    Builder   = deps.Builder
+    State   = deps.State
+    LTN     = deps.LTN
+    Util    = deps.Util
+    Builder = deps.Builder
 end
 
 -- ============================================================================
@@ -25,7 +24,7 @@ end
 -- 触发条件：storage.rift_rails 非空，但 id_map 为空
 function Migrations.build_id_map()
     if storage.rift_rails and next(storage.rift_rails) ~= nil and next(storage.rift_rail_id_map) == nil then
-        log_debug("[Migration] 检测到旧存档，正在构建 id_map 缓存...")
+        log("[Migration] 检测到旧存档，正在构建 id_map 缓存...")
         for unit_number, portaldata in pairs(storage.rift_rails) do
             storage.rift_rail_id_map[portaldata.id] = unit_number
         end
@@ -42,7 +41,7 @@ function Migrations.fix_children_relative_pos()
         for _, portaldata in pairs(storage.rift_rails) do
             -- 判断是否为需要修复的旧数据：检查第一个 child 是否是实体对象，而不是 table
             if portaldata.children and #portaldata.children > 0 and portaldata.children[1].valid then
-                log_debug("[Migration] 正在修复建筑 ID " .. portaldata.id .. " 的 children 列表...")
+                log("[Migration] 正在修复建筑 ID " .. portaldata.id .. " 的 children 列表...")
                 local new_children = {}
                 if portaldata.shell and portaldata.shell.valid then
                     local center_pos = portaldata.shell.position
@@ -71,7 +70,7 @@ end
 -- 触发条件：检测到旧键名存在
 function Migrations.rename_carriage_to_car()
     if storage.rift_rails then
-        log_debug("[Migration] 开始执行存储键名迁移 (carriage -> car)...")
+        log("[Migration] 开始执行存储键名迁移 (carriage -> car)...")
         for _, portaldata in pairs(storage.rift_rails) do
             if portaldata.carriage_ahead and not portaldata.exit_car then
                 portaldata.exit_car = portaldata.carriage_ahead
@@ -113,7 +112,7 @@ end
 -- 触发条件：标志位 storage.rift_rail_ltn_remote_purged 不存在
 function Migrations.purge_ltn_legacy()
     if not storage.rift_rail_ltn_remote_purged then
-        log_debug("[Migration] 正在清理旧版 LTN 连接...")
+        log("[Migration] 正在清理旧版 LTN 连接...")
         if LTN.purge_legacy_connections then
             LTN.purge_legacy_connections()
         end
@@ -128,7 +127,7 @@ end
 -- 触发条件：标志位 storage.rift_rail_ltn_table_migrated 不存在
 function Migrations.build_ltn_routing_table()
     if not storage.rift_rail_ltn_table_migrated then
-        log_debug("[Migration] 正在为 LTN 路由表系统填充数据...")
+        log("[Migration] 正在为 LTN 路由表系统填充数据...")
         if LTN.rebuild_routing_table_from_storage then
             LTN.rebuild_routing_table_from_storage()
         end
@@ -154,7 +153,7 @@ end
 -- 触发条件：storage.rift_rails 存在
 function Migrations.unified_multi_pairing()
     if storage.rift_rails then
-        log_debug("[Migration] 开始执行多对多架构统一迁移 (v0.9.0-v0.10.1)...")
+        log("[Migration] 开始执行多对多架构统一迁移 (v0.9.0-v0.10.1)...")
 
         local neutral_paired_count = 0
         for _, portal in pairs(storage.rift_rails) do
@@ -184,7 +183,7 @@ function Migrations.unified_multi_pairing()
                             custom_id = portal.paired_to_id,
                             unit_number = source.shell.unit_number,
                         }
-                        log_debug("[Migration] 转换出口 ID " .. portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> source_ids (带缓存)")
+                        log("[Migration] 转换出口 ID " .. portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> source_ids (带缓存)")
                     end
 
                     -- 清空出口的配对指针，标志着它正式转为多对一被动模式
@@ -201,7 +200,7 @@ function Migrations.unified_multi_pairing()
                                 custom_id = source_id,
                                 unit_number = source.shell.unit_number,
                             }
-                            log_debug("[Migration] 出口 ID " .. portal.id .. " 升级 source_ids[" .. source_id .. "] 为缓存结构")
+                            log("[Migration] 出口 ID " .. portal.id .. " 升级 source_ids[" .. source_id .. "] 为缓存结构")
                         end
                     end
                 end
@@ -227,7 +226,7 @@ function Migrations.unified_multi_pairing()
                             custom_id = portal.paired_to_id,
                             unit_number = target.shell.unit_number,
                         }
-                        log_debug("[Migration] 转换入口 ID " .. portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> target_ids (带缓存)")
+                        log("[Migration] 转换入口 ID " .. portal.id .. ": 旧配对(" .. portal.paired_to_id .. ") -> target_ids (带缓存)")
                     end
 
                     -- 清空旧字段，完成数据结构升级
@@ -244,7 +243,7 @@ function Migrations.unified_multi_pairing()
                                 custom_id = target_id,
                                 unit_number = target.shell.unit_number,
                             }
-                            log_debug("[Migration] 入口 ID " .. portal.id .. " 升级 target_ids[" .. target_id .. "] 为缓存结构")
+                            log("[Migration] 入口 ID " .. portal.id .. " 升级 target_ids[" .. target_id .. "] 为缓存结构")
                         end
                     end
                 end
@@ -252,10 +251,10 @@ function Migrations.unified_multi_pairing()
         end
 
         if neutral_paired_count > 0 then
-            log_debug("[Migration] 清理中立配对: " .. neutral_paired_count .. " 个")
+            log("[Migration] 清理中立配对: " .. neutral_paired_count .. " 个")
             game.print({ "messages.rift-rail-migration-neutral-pairs-cleared", neutral_paired_count })
         end
-        log_debug("[Migration] 多对多架构统一迁移完成。")
+        log("[Migration] 多对多架构统一迁移完成。")
     end
 end
 
@@ -266,7 +265,7 @@ end
 -- 触发条件：storage.rift_rails 存在
 function Migrations.logistics_reset()
     if storage.rift_rails then
-        log_debug("[Migration] 开始执行物流连接重置 (Purge & Re-evaluate)...")
+        log("[Migration] 开始执行物流连接重置 (Purge & Re-evaluate)...")
 
         -- [重建] 遍历现有数据，重新注册合法的连接
         for _, portal in pairs(storage.rift_rails) do
@@ -291,7 +290,7 @@ function Migrations.logistics_reset()
                 end
             end
         end
-        log_debug("[Migration] 物流连接重置完成。")
+        log("[Migration] 物流连接重置完成。")
     end
 end
 
@@ -313,7 +312,7 @@ function Migrations.final_cybersyn_purge()
         return
     end
 
-    log_debug("[Migration] 开始执行最终的 Cybersyn 数据清理...")
+    log("[Migration] 开始执行最终的 Cybersyn 数据清理...")
 
     -- 3. [核心逻辑] 从 cybersyn_compat.lua 复制过来的清理代码
 
@@ -366,7 +365,7 @@ function Migrations.final_cybersyn_purge()
         end
     end
 
-    log_debug("[Migration] Cybersyn 最终清理完成。")
+    log("[Migration] Cybersyn 最终清理完成。")
     game.print({ "messages.rift-rail-cybersyn-purged-success" })
 
     -- 4. [关键] 设置标志位，防止此函数再次运行
@@ -418,7 +417,7 @@ function Migrations.patch_cs2_enabled_default()
     storage.rift_rail_cs2_toggle_migrated = true
 
     if patched_count > 0 then
-        log_debug("[Migration] 已为 " .. patched_count .. " 个旧传送门补齐 cs2_enabled=false")
+        log("[Migration] 已为 " .. patched_count .. " 个旧传送门补齐 cs2_enabled=false")
     end
 end
 
@@ -431,7 +430,7 @@ function Migrations.rebuild_legacy_colliders()
     if not storage.collider_migration_done then
         if Builder and Builder.rebuild_all_colliders then
             Builder.rebuild_all_colliders()
-            log_debug("[Migration] 已完成历史遗留的全图碰撞器实体化重建。")
+            log("[Migration] 已完成历史遗留的全图碰撞器实体化重建。")
         end
         storage.collider_migration_done = true
     end
@@ -462,7 +461,7 @@ function Migrations.state_machine_refactor()
                 -- waiting_car 不能删，因为它保存了列车实体的引用
             end
         end
-        log_debug("[Migration] 已完成传送门状态机数据的转换。")
+        log("[Migration] 已完成传送门状态机数据的转换。")
     end
 end
 
@@ -471,7 +470,7 @@ end
 -- ============================================================================
 function Migrations.rebuild_destroy_tracking_v3()
     if storage.rift_rails and not storage.destroy_tracking_v3_migrated then
-        log_debug("[Migration] 正在重建 v3 销毁追踪映射...")
+        log("[Migration] 正在重建 v3 销毁追踪映射...")
         storage.destroy_registrations = {}
         storage.portal_destroy_registrations = {}
         for _, portaldata in pairs(storage.rift_rails) do
@@ -512,7 +511,7 @@ function Migrations.rebuild_destroy_tracking_v3()
             end
         end
         storage.destroy_tracking_v3_migrated = true
-        log_debug("[Migration] v3 销毁追踪映射重建完成。")
+        log("[Migration] v3 销毁追踪映射重建完成。")
     end
 end
 

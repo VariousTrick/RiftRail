@@ -6,14 +6,11 @@ local Builder = {}
 ---@type StateModule
 local State = nil
 
-local log_debug = function() end
-
 function Builder.init(deps)
     flib_util = deps.flib_util
     State     = deps.State
     Logic     = deps.Logic
     Util      = deps.Util
-    log_debug = deps.log_debug
 end
 
 local function ensure_destroy_tracking_tables()
@@ -314,9 +311,6 @@ function Builder.on_built(event)
         core_entity.get_wire_connector(defines.wire_connector_id.circuit_red, true).connect_to(station_entity.get_wire_connector(defines.wire_connector_id.circuit_red, true), false, defines.wire_origin.script)
         -- 连接绿色信号线
         core_entity.get_wire_connector(defines.wire_connector_id.circuit_green, true).connect_to(station_entity.get_wire_connector(defines.wire_connector_id.circuit_green, true), false, defines.wire_origin.script)
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_debug("[Builder] 车站和核心的红绿信号线已连接")
-        end
     end
 
     -- 批量设置内部组件属性
@@ -439,11 +433,9 @@ function Builder.on_destroy(event, player_index)
 
     if entity.name == "rift-rail-entity" then
         -- 情况 A: 拆除的就是外壳本身
-        log_debug("[Destroy] Triggered by Shell entity.")
         shell_entity_ref = entity
     elseif entity.name == "rift-rail-core" then
         -- 情况 B: 拆除的是核心，在极小范围内反查外壳
-        log_debug("[Destroy] Triggered by Core entity. Searching for shell nearby...")
         local shells = surface.find_entities_filtered({
             name = "rift-rail-entity",
             position = entity.position, -- 核心和外壳在同一中心点
@@ -451,7 +443,6 @@ function Builder.on_destroy(event, player_index)
         })
         if shells and shells[1] then
             shell_entity_ref = shells[1]
-            log_debug("  - Shell found via core lookup.")
         end
     end
 
@@ -459,9 +450,6 @@ function Builder.on_destroy(event, player_index)
     if shell_entity_ref and shell_entity_ref.valid then
         final_center_pos = shell_entity_ref.position
         final_direction = shell_entity_ref.direction
-        log_debug("[Destroy] Core info salvaged: Direction=" .. final_direction)
-    else
-        log_debug("[Destroy] Warning: Could not salvage core info (shell not found). Cleanup may be incomplete.")
     end
     -- [抢救结束]
 
@@ -469,11 +457,9 @@ function Builder.on_destroy(event, player_index)
     -- 这个函数负责对最容易变"幽灵"的 collider 进行精准的点清除
     local function final_cleanup()
         if not (final_center_pos and final_direction) then
-            log_debug("[Destroy] Final cleanup skipped: Missing position or direction.")
             return
         end
 
-        log_debug("[Destroy] Executing final cleanup for collider...")
         -- 计算并清理碰撞器 (Collider)
         local col_relative_pos = { x = 0, y = -2 }
         if final_direction == 4 then
@@ -487,7 +473,6 @@ function Builder.on_destroy(event, player_index)
         local colliders_found = surface.find_entities_filtered({ name = "rift-rail-collider", position = collider_pos, radius = 0.5 })
         for _, c in pairs(colliders_found) do
             if c.valid then
-                log_debug("  - Found and destroyed a ghost collider via final cleanup.")
                 c.destroy()
             end
         end
@@ -502,7 +487,6 @@ function Builder.on_destroy(event, player_index)
 
     -- 路径 A: "精准销毁"
     if target_unit_number and storage.rift_rails and storage.rift_rails[target_unit_number] then
-        log_debug("[Destroy] Path A: Precise cleanup based on portaldata.")
         local data = storage.rift_rails[target_unit_number]
 
         clear_destroy_tracking_for_portal(target_unit_number)
@@ -562,17 +546,13 @@ function Builder.on_destroy(event, player_index)
 
         -- 3: 在路径 A 的出口调用清理
         final_cleanup()
-
-        log_debug("[Destroy] Path A finished.")
         return
     end
 
     -- 路径 B: 如果前面的"精准销毁"失败了
-    log_debug("[Destroy] Path B: Fallback cleanup (portaldata not found).")
     -- 我们不再需要旧的“暴力扫荡”了，因为 final_cleanup 已经足够精准且能处理所有情况
     -- 4: 在路径 B 的出口调用清理
     final_cleanup()
-    log_debug("[Destroy] Path B finished.")
 end
 
 -- ============================================================================
@@ -780,10 +760,6 @@ function Builder.on_settings_pasted(event)
         -- 这会让 Shift+左键 时也能听到熟悉的“咔嚓”声
         player.play_sound({ path = "utility/entity_settings_pasted" })
 
-        -- 6. Debug 信息
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_debug("设置已粘贴: " .. source_data.name .. " -> " .. dest_data.name)
-        end
     end
 end
 
@@ -897,11 +873,6 @@ function Builder.on_silent_destroyed(registration_number)
     end
 
     clear_destroy_tracking_for_portal(registration.portal_unit_number)
-
-    -- 找到了受害者所在的传送门，执行无情地清理
-    if RiftRail and RiftRail.DEBUG_MODE_ENABLED and log_debug then
-        log_debug("[Builder] triggered silent destroyed mechanism for portal registration_number: " .. registration_number)
-    end
 
     -- 移除失效的配网连接
     if Logic and Logic.unpair_portals_specific then

@@ -7,8 +7,6 @@ local GUI = nil
 local LTN = nil
 local CS2 = nil
 
-local log_debug = function() end
-
 -- ============================================================================
 -- 配置与辅助函数
 -- ============================================================================
@@ -29,11 +27,10 @@ local function count_connections(id_table)
 end
 
 function Logic.init(deps)
-    State     = deps.State
-    GUI       = deps.GUI
-    log_debug = deps.log_debug
-    LTN       = deps.LTN
-    CS2       = deps.CS2
+    State = deps.State
+    GUI   = deps.GUI
+    LTN   = deps.LTN
+    CS2   = deps.CS2
 end
 
 -- ============================================================================
@@ -87,9 +84,6 @@ local function check_and_reset_logistics(portaldata)
         portaldata.cybersyn_enabled = false
         portaldata.cs2_enabled = false
         portaldata.ltn_enabled = false
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_debug("[Logic] Portal " .. portaldata.id .. " 连接数为零，已关闭 Cybersyn / CS2 / LTN 开关")
-        end
     end
 end
 -- ============================================================================
@@ -283,9 +277,6 @@ function Logic.set_mode(player_index, portal_id, mode, skip_sync)
         -- 清空整个目标列表
         my_data.target_ids = {}
 
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_debug("[Logic] 模式切换清理: Entry " .. my_data.id .. " 断开连接")
-        end
     elseif old_mode == "exit" and my_data.source_ids then
         -- 如果之前是出口，通知所有来源断开连接
         for src_id, _ in pairs(my_data.source_ids) do
@@ -305,9 +296,6 @@ function Logic.set_mode(player_index, portal_id, mode, skip_sync)
         -- 清理互斥锁
         my_data.locking_entry_id = nil
 
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_debug("[Logic] 模式切换清理: Exit " .. my_data.id .. " 清空所有来源")
-        end
     end
 
     -- 应用新模式
@@ -469,9 +457,6 @@ function Logic.pair_portals(player_index, source_id, target_id)
     local target_display = build_display_name(target)
     player.print({ "messages.rift-rail-pair-success", source_display, target_display })
 
-    if RiftRail.DEBUG_MODE_ENABLED then
-        log_debug("[Logic] 建立连接: Entry " .. source.id .. " -> Exit " .. target.id)
-    end
 
     refresh_all_guis()
 
@@ -742,10 +727,6 @@ function Logic.unpair_portals_specific(player_index, source_id, target_id)
         -- 复用现有的本地化字符串，提示已断开与某某的连接
         local target_display = build_display_name(target)
         player.print({ "messages.rift-rail-unpair-success", target_display })
-    end
-
-    if RiftRail.DEBUG_MODE_ENABLED then
-        log_debug("[Logic] 精准断开: " .. source_id .. " -x- " .. target_id)
     end
 
     refresh_all_guis()

@@ -5,16 +5,8 @@
 local Stats = {}
 local State
 
-local log_debug = function(...) end
 function Stats.init(deps)
-    log_debug = deps.log_debug
-    State     = deps.State
-end
-
-local function log_stats(msg)
-    if RiftRail.DEBUG_MODE_ENABLED then
-        log_debug("[RiftRail:Stats] " .. msg)
-    end
+    State = deps.State
 end
 
 -- 每次传送完成时，更新入口的发送计数器和出口的接收计数器

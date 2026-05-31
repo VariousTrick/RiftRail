@@ -24,14 +24,6 @@ end
 
 local State = nil
 local Stats = nil
-local log_debug = function(_) end
-
--- local REBUILD_DEBOUNCE_TICKS = 120
-
--- 统一 CS2 调试日志前缀。
-local function cs2_log(msg)
-    log_debug("[CS2] " .. msg)
-end
 
 local function should_fail_unhandled_cs2_cross_surface()
     local setting = settings and settings.global and settings.global["rift-rail-cs2-fail-unhandled-cross-surface"]
@@ -293,12 +285,7 @@ end ]]
 
 -- 请求 CS2 重建拓扑（带节流，避免高频抖动）。
 local function request_cs2_topology_rebuild()
-    local ok, err = pcall(remote.call, "cybersyn2", "rebuild_train_topologies")
-    if not ok then
-        if RiftRail and RiftRail.DEBUG_MODE_ENABLED then
-            cs2_log("重建拓扑失败: " .. tostring(err))
-        end
-    end
+    pcall(remote.call, "cybersyn2", "rebuild_train_topologies")
 end
 
 -- 向方向对集合加入唯一 surface 对（去重）。
@@ -517,7 +504,6 @@ end
 function CS2.init(deps)
     State = deps.State
     Stats = deps.Stats
-    log_debug = deps.log_debug or log_debug
 
     rebuild_route_cache()
 end
@@ -603,18 +589,6 @@ function CS2.route_callback(delivery_id, action, _, train_id, luatrain, train_st
     if not (entry and exit_portal) then
         local should_fail = (action == "pickup" or action == "dropoff") and should_fail_unhandled_cs2_cross_surface()
         if should_fail then
-            if RiftRail and RiftRail.DEBUG_MODE_ENABLED then
-                cs2_log(
-                    "未找到跨地表路线，主动取消 delivery="
-                        .. tostring(delivery_id)
-                        .. " action="
-                        .. tostring(action)
-                        .. " from_surface="
-                        .. tostring(current_surface_index)
-                        .. " to_surface="
-                        .. tostring(target_surface_index)
-                )
-            end
             pcall(
                 remote.call,
                 "cybersyn2",
@@ -644,9 +618,6 @@ function CS2.route_callback(delivery_id, action, _, train_id, luatrain, train_st
         -- 兜底：如果异常读不到车库名，回退到出口站，避免直接中断接管。
         if not continuation_station_name and exit_station and exit_station.valid then
             continuation_station_name = exit_station.backer_name
-            if RiftRail and RiftRail.DEBUG_MODE_ENABLED then
-                cs2_log("complete 未读到车库站名，回退使用出口站 continuation=" .. tostring(continuation_station_name))
-            end
         end
     end
 
@@ -678,10 +649,6 @@ function CS2.route_callback(delivery_id, action, _, train_id, luatrain, train_st
     }
     storage.rr_cs2_old_train_by_delivery_id[delivery_id] = old_train_id
 
-    if RiftRail and RiftRail.DEBUG_MODE_ENABLED then
-        cs2_log("接管 delivery=" .. delivery_id .. " action=" .. tostring(action) .. " old_luatrain=" .. tostring(old_train_id) .. " cstrain=" .. tostring(train_id) .. " route=" .. entry.id .. "->" .. exit_portal.id .. (continuation_station_name and (" -> " .. continuation_station_name) or ""))
-    end
-
     return true
 end
 
@@ -705,10 +672,6 @@ function CS2.on_train_arrived(event)
         new_train.group = handoff.previous_group
     end
 
-    if RiftRail and RiftRail.DEBUG_MODE_ENABLED then
-        cs2_log("传送完成：已清空过渡调度并恢复车组 old_train=" .. old_train_id .. " new_train=" .. new_train.id .. " delivery=" .. handoff.delivery_id)
-    end
-
     storage.rr_cs2_handoff_by_old_train_id[old_train_id] = nil
     storage.rr_cs2_old_train_by_delivery_id[handoff.delivery_id] = nil
 
@@ -716,15 +679,8 @@ function CS2.on_train_arrived(event)
     local ok, err = pcall(remote.call, "cybersyn2", "route_plugin_handoff", handoff.delivery_id, new_train)
 
     if not ok then
-        if RiftRail and RiftRail.DEBUG_MODE_ENABLED then
-            cs2_log("handoff 归还失败 delivery=" .. handoff.delivery_id .. " err=" .. tostring(err))
-        end
         pcall(remote.call, "cybersyn2", "fail_delivery", handoff.delivery_id, "RIFTRAIL_HANDOFF_FAILED")
         return
-    end
-
-    if RiftRail and RiftRail.DEBUG_MODE_ENABLED then
-        cs2_log("handoff 归还成功 delivery=" .. handoff.delivery_id .. " old_train=" .. old_train_id .. " new_train=" .. new_train.id)
     end
 
     Stats.record_logistics_delivery("cs2", event.entry_unit_number, event.exit_unit_number)
@@ -741,9 +697,6 @@ function CS2.on_train_arrived(event)
                 p.opened = e
                 refresh_count = refresh_count + 1
             end
-        end
-        if refresh_count > 0 and RiftRail and RiftRail.DEBUG_MODE_ENABLED then
-            cs2_log("为 " .. refresh_count .. " 名玩家刷新了 CS2 面板")
         end
     end
 end

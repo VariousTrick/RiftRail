@@ -1,13 +1,7 @@
 local AW = {}
 
 local aw_mod_enabled = false
-local log_debug = function() end
-
-function AW.init(deps)
-    if deps and deps.log_debug then
-        log_debug = deps.log_debug
-    end
-
+function AW.init(_deps)
     aw_mod_enabled = script.active_mods["AssemblyWagon"] ~= nil
 end
 
@@ -29,11 +23,7 @@ function AW.on_car_replaced(old_car, new_car)
         return
     end
 
-    local ok, err = pcall(remote.call, "AssemblyWagon", "transfer_binding", old_car, new_car)
-
-    if not ok and RiftRail and RiftRail.DEBUG_MODE_ENABLED then
-        log_debug("[RiftRail:Compat:AW] transfer_binding 调用失败: " .. tostring(err))
-    end
+    pcall(remote.call, "AssemblyWagon", "transfer_binding", old_car, new_car)
 end
 
 return AW
