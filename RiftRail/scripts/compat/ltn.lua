@@ -33,26 +33,11 @@ end
 local LTN = {}
 local State = nil
 local Stats = nil
-local log_ltn = function(...) end -- 接受任意参数的占位函数
 local ROUTING_TABLE_VERSION = 2
 
 -- ============================================================================
 -- 工具函数与常量
 -- ============================================================================
-
--- 日志：遵循全局调试开关
-local function ltn_log(msg)
-    if RiftRail and RiftRail.DEBUG_MODE_ENABLED then
-        if log_ltn then
-            log_ltn("[LTN] " .. msg)
-        else
-            log("[RiftRail:LTN] " .. msg)
-            if game then
-                game.print("[RiftRail:LTN] " .. msg)
-            end
-        end
-    end
-end
 
 LTN.BUTTON_NAME = "rift_rail_ltn_switch" -- GUI按钮名
 
@@ -106,10 +91,6 @@ local function migrate_routing_table()
     -- 版本不匹配 → 直接清空整个路由表，让系统重新通过规范接口重建
     storage.rift_rail_ltn_routing_table = {}
     storage.rift_rail_ltn_routing_table_version = ROUTING_TABLE_VERSION
-
-    if RiftRail.DEBUG_MODE_ENABLED then
-        ltn_log("[Migration] 已清空路由表，等待系统重建")
-    end
 end
 
 -- ============================================================================
@@ -119,17 +100,10 @@ end
 function LTN.init(dependencies)
     State = dependencies.State
     Stats = dependencies.Stats
-    if dependencies.log_ltn then
-        log_ltn = dependencies.log_ltn
-    elseif dependencies.log_debug then
-        log_ltn = dependencies.log_debug
-    end
 
     if storage.rift_rail_ltn_routing_table_version ~= ROUTING_TABLE_VERSION then
         migrate_routing_table()
     end
-
-    ltn_log("[LTNCompat] 模块已加载 (运行时检测 LTN 接口)。")
 end
 
 -- ============================================================================
@@ -271,10 +245,6 @@ p_join_pool = function(portal_data, dest_surface, batch_mode)
     local my_pool = get_pool(source_surface, dest_surface)
     my_pool[unit_number] = station
 
-    if RiftRail.DEBUG_MODE_ENABLED then
-        ltn_log("[Pool] 加入池子: " .. portal_data.name .. " (" .. source_surface .. " -> " .. dest_surface .. ")")
-    end
-
     -- Step 2: 如果不是批量模式，立即与反向池中的伙伴建立连接
     if not batch_mode then
         local partner_pool = get_pool(dest_surface, source_surface)
@@ -285,14 +255,7 @@ p_join_pool = function(portal_data, dest_surface, batch_mode)
                 local nid = compute_network_id(station, partner_station, -1)
                 remote.call("logistic-train-network", "connect_surfaces", station, partner_station, nid)
                 connection_count = connection_count + 1
-                if RiftRail.DEBUG_MODE_ENABLED then
-                    ltn_log("[LTN] 已注册连接: " .. portal_data.name .. " <-> partner#" .. partner_unit)
-                end
             end
-        end
-
-        if RiftRail.DEBUG_MODE_ENABLED then
-            ltn_log("[Pool] 建立连接数: " .. connection_count)
         end
     end
 end
@@ -323,24 +286,13 @@ p_leave_pool = function(portal_data, dest_surface, batch_mode)
                 remote.call("logistic-train-network", "disconnect_surfaces", station, partner_station)
 
                 disconnection_count = disconnection_count + 1
-                if RiftRail.DEBUG_MODE_ENABLED then
-                    ltn_log("[LTN] 已注销连接: " .. portal_data.name .. " <-> partner#" .. partner_unit)
-                end
             end
-        end
-
-        if RiftRail.DEBUG_MODE_ENABLED then
-            ltn_log("[Pool] 断开连接数: " .. disconnection_count)
         end
     end
 
     -- Step 2: 将自己从池子中移除
     if storage.rr_ltn_pools[source_surface] and storage.rr_ltn_pools[source_surface][dest_surface] then
         storage.rr_ltn_pools[source_surface][dest_surface][unit_number] = nil
-
-        if RiftRail.DEBUG_MODE_ENABLED then
-            ltn_log("[Pool] 离开池子: " .. portal_data.name .. " (" .. source_surface .. " -> " .. dest_surface .. ")")
-        end
     end
 end
 
@@ -381,10 +333,6 @@ p_commit_all_ltn_connections = function()
             end
         end
     end
-
-    if RiftRail.DEBUG_MODE_ENABLED then
-        ltn_log("[Commit] 批量建立 LTN 连接完成，总计: " .. total_connections)
-    end
 end
 
 --- 更新路由表（对比期望状态与当前状态）
@@ -417,10 +365,6 @@ update_routing_table_for_portal = function(portal_data, desired_routes)
                 exit_custom_id = partner_data.id,
                 exit_unit_number = partner_data.unit_number,
             }
-
-            if RiftRail.DEBUG_MODE_ENABLED then
-                ltn_log("[RouteTable] 注册路由: " .. portal_data.id .. " -> " .. partner_data.id)
-            end
         end
     end
 
@@ -442,9 +386,6 @@ update_routing_table_for_portal = function(portal_data, desired_routes)
 
                     if not still_wanted then
                         entry_record[exit_unit_number] = nil
-                        if RiftRail.DEBUG_MODE_ENABLED then
-                            ltn_log("[RouteTable] 注销路由: Entry:" .. unit_number .. " -x- Exit:" .. exit_unit_number)
-                        end
                     end
                 end
 
@@ -497,10 +438,6 @@ sync_portal_ltn_state = function(portal_data, batch_mode)
         if not desired_pools[dest_surface] then
             p_leave_pool(portal_data, dest_surface, batch_mode)
         end
-    end
-
-    if RiftRail.DEBUG_MODE_ENABLED then
-        ltn_log("[Sync] 已完成传送门 LTN 状态同步: " .. portal_data.name)
     end
 end
 
@@ -654,10 +591,6 @@ function LTN.on_portal_mode_changed(portal_data, old_mode)
             end
         end
     end
-
-    if RiftRail.DEBUG_MODE_ENABLED then
-        ltn_log("[ModeChanged] 已同步传送门模式切换: " .. portal_data.name .. " (old=" .. tostring(old_mode) .. " new=" .. portal_data.mode .. ")")
-    end
 end
 
 --- 传送门销毁时的处理函数
@@ -679,10 +612,6 @@ function LTN.on_portal_destroyed(portal_data)
                 sync_portal_ltn_state(partner_data, false)
             end
         end
-    end
-
-    if RiftRail.DEBUG_MODE_ENABLED then
-        ltn_log("[Destroyed] 已清理销毁的传送门 LTN 状态: " .. portal_data.name)
     end
 end
 
@@ -724,10 +653,6 @@ function LTN.update_connection(select_portal, target_portal, connect, player, my
         local msg = build_connection_message(my_enabled, was_connected, now_connected, select_portal, target_portal, operator_is_first)
         send_connection_message(msg, player, silent)
     end
-
-    if RiftRail.DEBUG_MODE_ENABLED then
-        ltn_log("[UpdateConnection] 已同步连接状态: " .. select_portal.name .. " <-> " .. target_portal.name)
-    end
 end
 
 -- ============================================================================
@@ -747,9 +672,6 @@ function LTN.update_station_name_in_routes(entry_unit_number, new_station_name)
                 -- 更新该入口的所有出口记录
                 for exit_id, route_data in pairs(entry_routes) do
                     route_data.station_name = new_station_name
-                end
-                if RiftRail.DEBUG_MODE_ENABLED then
-                    ltn_log("已更新路由表中的车站名: entry_id=" .. entry_unit_number .. " -> " .. new_station_name)
                 end
             end
         end
@@ -771,19 +693,8 @@ local function find_best_route_station(from_surface_idx, to_surface_idx, start_p
     local routing_table = storage.rift_rail_ltn_routing_table
     local available_entries = routing_table[from_surface_idx] and routing_table[from_surface_idx][to_surface_idx]
 
-    if RiftRail.DEBUG_MODE_ENABLED then
-        ltn_log("find_best_route_station: from=" .. from_surface_idx .. " to=" .. to_surface_idx)
-    end
-
     if not (available_entries and next(available_entries)) then
-        if RiftRail.DEBUG_MODE_ENABLED then
-            ltn_log("available_entries为空")
-        end
         return nil, nil
-    end
-
-    if RiftRail.DEBUG_MODE_ENABLED then
-        ltn_log("available_entries存在，开始遍历")
     end
 
     -- 遍历所有入口和出口组合，找总距离最小的路径
@@ -792,18 +703,10 @@ local function find_best_route_station(from_surface_idx, to_surface_idx, start_p
     local min_total_dist_sq = math.huge
 
     for entry_id, exit_list in pairs(available_entries) do
-        if RiftRail.DEBUG_MODE_ENABLED then
-            ltn_log("处理entry_id=" .. entry_id .. " exit_list类型=" .. type(exit_list))
-        end
-
         -- 遍历该入口的所有出口
         if type(exit_list) == "table" then
             for exit_id, route_data in pairs(exit_list) do
                 if type(route_data) == "table" and route_data.position and route_data.exit_position then
-                    if RiftRail.DEBUG_MODE_ENABLED then
-                        ltn_log("处理exit_id=" .. exit_id)
-                    end
-
                     -- 计算起点到入口的距离（同一地表，坐标系一致）
                     local entry_dist_sq = (start_pos.x - route_data.position.x) ^ 2 + (start_pos.y - route_data.position.y) ^ 2
 
@@ -817,17 +720,10 @@ local function find_best_route_station(from_surface_idx, to_surface_idx, start_p
                         min_total_dist_sq = total_dist_sq
                         best_station_name = route_data.station_name
                         best_exit_id = route_data.exit_custom_id
-                        if RiftRail.DEBUG_MODE_ENABLED then
-                            ltn_log("找到更优路线: station=" .. best_station_name .. " dist_sq=" .. total_dist_sq)
-                        end
                     end
                 end
             end
         end
-    end
-
-    if RiftRail.DEBUG_MODE_ENABLED then
-        ltn_log("返回结果: station=" .. tostring(best_station_name) .. " exit_id=" .. tostring(best_exit_id))
     end
 
     return best_station_name, best_exit_id
@@ -891,12 +787,6 @@ local function try_insert_cross_surface_route(train, from_surface_idx, to_surfac
     -- Step 3: 如果找到路径，则插入到时刻表
     if station_name then
         insert_portal_sequence(train, station_name, exit_id, insert_index)
-        if RiftRail.DEBUG_MODE_ENABLED then
-            ltn_log("插入" .. log_context .. "路由: 地表 " .. from_surface_idx .. " -> " .. to_surface_idx)
-        end
-    else
-        -- 错误/警告处理：未能找到可用路径
-        ltn_log("[警告] 未能为 " .. log_context .. " 找到可用传送路径 (" .. from_surface_idx .. " -> " .. to_surface_idx .. ")")
     end
 end
 
@@ -940,7 +830,6 @@ local function process_single_delivery(train_id, deliveries, stops)
 
     -- 检查索引是否有效
     if not r_index then
-        ltn_log("[警告] 未能找到 Requester 站点索引，跳过调度修改。")
         return
     end
 
@@ -955,8 +844,6 @@ local function process_single_delivery(train_id, deliveries, stops)
     -- [阶段 A] Loco -> Provider (取货)
     if p_index then
         try_insert_cross_surface_route(train, loco.surface.index, from_entity.surface.index, loco.position, from_entity.position, p_index, "取货")
-    else
-        ltn_log("[警告] 未能找到 Provider 站点索引，跳过取货路由插入。")
     end
 end
 
@@ -985,10 +872,6 @@ local function logic_reassign(new_train, old_id)
         local has_delivery = remote.call("logistic-train-network", "reassign_delivery", old_id, new_train)
 
         if has_delivery then
-            if RiftRail.DEBUG_MODE_ENABLED then
-                ltn_log("任务迁移: 已重指派交付给新列车 " .. new_train.id)
-            end
-
             -- LTN 特性: 插入临时站以确保状态更新
             local insert_index = remote.call("logistic-train-network", "get_or_create_next_temp_stop", new_train)
             if insert_index then
@@ -1014,10 +897,6 @@ function LTN.on_train_teleport_transfer(event)
     end
 end
 
-if RiftRail.DEBUG_MODE_ENABLED then
-    ltn_log("LTN兼容模式: 启用基于 TrainTeleportTransfer 事件的极速重指派")
-end
-
 -- ============================================================================
 -- 迁移相关
 -- ============================================================================
@@ -1027,10 +906,6 @@ end
 function LTN.purge_legacy_connections()
     if not storage.rift_rails then
         return
-    end
-
-    if RiftRail.DEBUG_MODE_ENABLED then
-        ltn_log("[Purge] 开始清理旧版 LTN 连接...")
     end
 
     -- 1. 断开所有 LTN 连接
@@ -1051,9 +926,6 @@ function LTN.purge_legacy_connections()
             end
         end
 
-        if RiftRail.DEBUG_MODE_ENABLED then
-            ltn_log("[Purge] 已断开 " .. disconnect_count .. " 个 LTN 连接")
-        end
     end
 
     -- 2. 清空路由表
@@ -1062,9 +934,6 @@ function LTN.purge_legacy_connections()
     -- 3. 清空连接池
     storage.rr_ltn_pools = {}
 
-    if RiftRail.DEBUG_MODE_ENABLED then
-        ltn_log("[Purge] 旧版 LTN 连接清理完成")
-    end
 end
 
 -- ============================================================================
@@ -1078,10 +947,6 @@ end
 ---   Step 2: Rebuild（重建） - 纯内存计算，更新路由表和连接池
 ---   Step 3: Commit（提交） - 统一建立所有 LTN 连接
 function LTN.rebuild_routing_table_from_storage()
-    if RiftRail.DEBUG_MODE_ENABLED then
-        ltn_log("[Rebuild] 开始重建 LTN 路由表...")
-    end
-
     -- Step 1: Purge - 彻底清空（包括 LTN 连接）
     LTN.purge_legacy_connections()
 
@@ -1093,18 +958,10 @@ function LTN.rebuild_routing_table_from_storage()
             sync_portal_ltn_state(portaldata, true)
             sync_count = sync_count + 1
         end
-
-        if RiftRail.DEBUG_MODE_ENABLED then
-            ltn_log("[Rebuild] 已同步 " .. sync_count .. " 个传送门")
-        end
     end
 
     -- Step 3: Commit - 统一建立所有 LTN 连接
     p_commit_all_ltn_connections()
-
-    if RiftRail.DEBUG_MODE_ENABLED then
-        ltn_log("[Rebuild] LTN 路由表重建完成")
-    end
 end
 
 return LTN

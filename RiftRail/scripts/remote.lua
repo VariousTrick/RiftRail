@@ -6,7 +6,6 @@ local Logic
 local Builder
 local GUI
 local CS2
-local log_debug
 
 function Remote.init(params)
     State     = params.State
@@ -14,7 +13,6 @@ function Remote.init(params)
     Builder   = params.Builder
     GUI       = params.GUI
     CS2       = params.CS2
-    log_debug = params.log_debug
 
     -- ============================================================================
     -- Remote Interface

@@ -6,15 +6,12 @@ local CS2 = nil
 local State = nil
 local Builder = nil
 
-local log_debug = function() end
-
 function Maintenance.init(deps)
     Util      = deps.Util
     LTN       = deps.LTN
     CS2       = deps.CS2
     State     = deps.State
     Builder   = deps.Builder
-    log_debug = deps.log_debug
 end
 
 -- 处理模组设置变更事件
@@ -62,11 +59,6 @@ function Maintenance.on_settings_changed(event)
 
         settings.global["rift-rail-uninstall-cleanup"] = { value = false }
         game.print({ "messages.rift-rail-uninstall-complete", count_ltn, count_cs2 })
-    end
-
-    -- 3. 调试模式
-    if event.setting == "rift-rail-debug-mode" then
-        RiftRail.DEBUG_MODE_ENABLED = settings.global["rift-rail-debug-mode"].value
     end
 end
 

@@ -2,14 +2,6 @@
 -- Rift Rail - 主入口
 -- 功能：事件分发、日志管理、模块加载
 -- 更新：集成传送逻辑、补全玩家传送、事件分流
--- add print msg tp the game when the mod is loaded
-script.on_event(defines.events.on_player_joined_game, function(event)
-    local player = game.get_player(event.player_index)
-    player.print({ "messages.rift-rail-welcome" })
-    if script.active_mods["cybersyn"] then
-        player.print({ "messages.rift-rail-now-has-cs2" })
-    end
-end)
 
 -- ==========================================================================
 -- Rift Rail 自定义事件ID注册（供外部模组监听）
@@ -19,20 +11,6 @@ RiftRail.Events = RiftRail.Events or {}
 RiftRail.Events.TrainDeparting = script.generate_event_name()
 RiftRail.Events.TrainTeleportTransfer = script.generate_event_name()
 RiftRail.Events.TrainArrived = script.generate_event_name()
-
--- 将调试开关挂载到全局表上
-RiftRail.DEBUG_MODE_ENABLED = settings.global["rift-rail-debug-mode"].value
-
--- 定义一个纯粹的、只负责打印的日志函数
-local function log_debug(msg)
-    if not RiftRail.DEBUG_MODE_ENABLED then
-        return
-    end
-    log("[RiftRail] " .. msg)
-    if game then
-        game.print("[RiftRail] " .. msg)
-    end
-end
 
 -- 3. 加载模块
 local flib_util = require("util") -- 引入官方库，命名为 flib_util 避免和自己的 Util 冲突
@@ -63,7 +41,6 @@ end
 -- 给 Builder 注入 CybersynSE (用于拆除清理)
 if Builder.init then
     Builder.init({
-        log_debug = log_debug,
         flib_util = flib_util,
         State     = State,
         Logic     = Logic,
@@ -74,7 +51,6 @@ end
 -- 优先加载独立观察者
 if Stats.init then
     Stats.init({
-        log_debug = log_debug,
         State     = State,
     })
 end
@@ -83,7 +59,6 @@ end
 if LTN.init then
     LTN.init({
         State     = State,
-        log_debug = log_debug,
         Stats     = Stats,
     })
 end
@@ -91,34 +66,26 @@ end
 if CS2Compat.init then
     CS2Compat.init({
         State     = State,
-        log_debug = log_debug,
         Stats     = Stats,
     })
 end
 
 if Schedule.init then
-    Schedule.init({
-        log_debug = log_debug,
-    })
+    Schedule.init({})
 end
 
 if Util.init then
-    Util.init({
-        log_debug = log_debug,
-    })
+    Util.init({})
 end
 
 if AWCompat.init then
-    AWCompat.init({
-        log_debug = log_debug,
-    })
+    AWCompat.init({})
 end
 
 if TeleportFactory.init then
     TeleportFactory.init({
         Util      = Util,
         Math      = TeleportMath,
-        log_debug = log_debug,
     })
 end
 
@@ -126,7 +93,6 @@ if TeleportUtils.init then
     TeleportUtils.init({
         Math      = TeleportMath,
         State     = State,
-        log_debug = log_debug,
     })
 end
 
@@ -139,7 +105,6 @@ if Teleport.init then
         Math          = TeleportMath,
         Factory       = TeleportFactory,
         TeleportUtils = TeleportUtils,
-        log_debug     = log_debug,
         AwCompat      = AWCompat,
         Events        = RiftRail.Events,
     })
@@ -156,7 +121,6 @@ if Logic.init then
     Logic.init({
         State     = State,
         GUI       = GUI,
-        log_debug = log_debug,
         LTN       = LTN,
         CS2       = CS2Compat,
     })
@@ -166,7 +130,6 @@ if GUI.init then
     GUI.init({
         State    = State,
         Util     = Util,
-        og_debug = log_debug,
     })
 end
 
@@ -174,7 +137,6 @@ end
 if Migrations.init then
     Migrations.init({
         State        = State,
-        log_debug    = log_debug,
         LTN          = LTN,
         Util         = Util,
         TeleportMath = TeleportMath,
@@ -190,7 +152,6 @@ if Remote.init then
         Builder   = Builder,
         GUI       = GUI,
         CS2       = CS2Compat,
-        log_debug = log_debug,
     })
 end
 
@@ -201,13 +162,17 @@ if Maintenance.init then
         CS2       = CS2Compat,
         Util      = Util,
         Builder   = Builder,
-        log_debug = log_debug,
     })
 end
 
 -- ============================================================================
 -- 5. 事件注册
 -- ============================================================================
+
+script.on_event(defines.events.on_player_joined_game, function(event)
+    local player = game.get_player(event.player_index)
+    player.print({ "messages.rift-rail-welcome" })
+end)
 
 -- 实体过滤器：只监听本模组相关的实体
 local rr_filters = {
@@ -279,7 +244,6 @@ local function register_ltn_events()
             script.on_event(ev1, function(e)
                 LTN.on_stops_updated(e)
             end)
-            log_debug("[LTN] 已注册 on_stops_updated 事件")
         end
 
         local ok2, ev2 = pcall(remote.call, "logistic-train-network", "on_dispatcher_updated")
@@ -287,7 +251,6 @@ local function register_ltn_events()
             script.on_event(ev2, function(e)
                 LTN.on_dispatcher_updated(e)
             end)
-            log_debug("[LTN] 已注册 on_dispatcher_updated 事件")
         end
     end
 end

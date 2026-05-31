@@ -13,18 +13,9 @@ local TeleportUtils = {}
 local Math = nil
 local State = nil
 
-local log_debug = function(...) end
-
 function TeleportUtils.init(deps)
-    Math      = deps.Math
-    State     = deps.State
-    log_debug = deps.log_debug
-end
-
-local function log_tu(msg)
-    if RiftRail.DEBUG_MODE_ENABLED then
-        log_debug("[RiftRail:TeleportUtils] " .. msg)
-    end
+    Math  = deps.Math
+    State = deps.State
 end
 
 -- =================================================================================
@@ -142,10 +133,6 @@ function TeleportUtils.restore_train_state(train, portaldata, apply_speed, prefe
         return
     end
 
-    if RiftRail.DEBUG_MODE_ENABLED then
-        log_tu("状态恢复: TrainID=" .. train.id .. ", 恢复进度=" .. tostring(portaldata.saved_schedule_index ~= nil))
-    end
-
     local index_to_restore = preferred_index or portaldata.saved_schedule_index
     if index_to_restore then
         train.go_to_station(index_to_restore)
@@ -157,10 +144,6 @@ function TeleportUtils.restore_train_state(train, portaldata, apply_speed, prefe
         local speed_mag = settings.global["rift-rail-teleport-speed"].value
         local sign = Math.calculate_speed_sign(train, portaldata)
         train.speed = speed_mag * sign
-
-        if RiftRail.DEBUG_MODE_ENABLED then
-            log_tu("状态恢复: 速度重置为 " .. train.speed)
-        end
     end
 end
 

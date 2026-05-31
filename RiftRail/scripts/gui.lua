@@ -61,17 +61,6 @@ end
 
 local State = nil
 
-local log_debug = function() end
-
-local function log_gui(message)
-    if not RiftRail.DEBUG_MODE_ENABLED then
-        return
-    end
-    if log_debug then
-        log_debug(message)
-    end
-end
-
 -- WARNING: This value MUST be kept in sync with the one in scripts/logic.lua
 -- 警告：此值必须与 scripts/logic.lua 中的值保持同步
 local MAX_CONNECTIONS = 5
@@ -104,7 +93,6 @@ local MODE_STATS_CONFIG = {
 function GUI.init(dependencies)
     State = dependencies.State
     Util = dependencies.Util
-    log_debug = dependencies.log_debug
 end
 
 -- =================================================================================

@@ -6,6 +6,71 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+## 2026-05-31（v0.13.15：移除运行期调试日志体系）
+
+**改动摘要**：删除 RiftRail 在日常运行阶段保留的大量调试日志、日志注入和调试开关，仅保留 `migrations.lua` 中对存档升级真正有长期价值的迁移日志，并统一改为直接 `log()` 输出。
+
+### 背景
+随着 RiftRail 的核心逻辑逐渐稳定，项目中原先为了梳理流程而留下的大量调试日志，已经越来越像生成阶段的脚手架，而不是长期维护资产。这些日志主要分布在：
+- 传送主流程
+- LTN / CS2 兼容层
+- 建造与销毁处理
+- GUI 与若干工具模块
+
+这套体系存在几个明显问题：
+- 平时几乎没人会打开调试开关；
+- 真出问题时，即便打开，也会产生大量与具体问题无关的过程噪音；
+- 未来如果要排查新问题，通常仍然需要在问题点临时补充针对性日志，而不是依赖这套常驻的全局 debug 流程。
+
+因此本次不再保留“理论上也许有用”的运行期日志体系，而是将其作为一次结构清理整体拆除。
+
+### 设计判断
+本次的原则非常明确：
+- 不保留全模组运行期调试开关；
+- 不保留常驻的过程性日志；
+- 不额外为少数历史日志点重新补一套新的输出分支；
+- 只保留迁移脚本中的低频、高价值日志，因为旧存档升级问题确实需要长期留痕。
+
+换句话说，RiftRail 以后面对运行期问题的策略，将不再是“长期保留一整套几乎没人用的 debug 模式”，而是：
+- 平时保持正式代码干净；
+- 真出现问题时，在具体位置临时加入显式日志；
+- 问题修复后再将这些临时日志移除。
+
+### 具体改动
+- `RiftRail/settings.lua`
+  - 删除 `rift-rail-debug-mode` 设置
+- `RiftRail/locale/en/strings.cfg`
+- `RiftRail/locale/zh-CN/strings.cfg`
+- `RiftRail/locale/ja/strings.cfg`
+  - 删除与调试开关对应的本地化条目
+- `RiftRail/control.lua`
+  - 删除全局调试状态维护与运行期日志注入
+- `RiftRail/scripts/maintenance.lua`
+  - 删除调试设置变更处理
+- `RiftRail/scripts/migrations.lua`
+  - 保留迁移日志
+  - 将迁移日志统一改为直接 `log()` 输出
+- `RiftRail/scripts/compat/ltn.lua`
+- `RiftRail/scripts/compat/cs2.lua`
+- `RiftRail/scripts/compat/aw.lua`
+- `RiftRail/scripts/teleport.lua`
+- `RiftRail/scripts/builder.lua`
+- `RiftRail/scripts/gui.lua`
+- `RiftRail/scripts/schedule.lua`
+- `RiftRail/scripts/logic.lua`
+- `RiftRail/scripts/stats.lua`
+- `RiftRail/scripts/util.lua`
+- `RiftRail/scripts/teleport_system/teleport_factory.lua`
+- `RiftRail/scripts/teleport_system/teleport_utils.lua`
+- `RiftRail/scripts/remote.lua`
+  - 删除已失效的调试日志分支、包装函数和相关依赖
+
+### 结果
+- 模组不再暴露运行期调试开关；
+- 常规游戏流程中不再输出调试日志；
+- 迁移阶段仍然保留必要日志，便于排查旧存档升级问题；
+- 各模块之间少了一层无实际价值的日志依赖，代码结构更直接，后续维护成本更低。
+
 ## 2026-05-30（v0.13.14：移除 LTN 传送后清理站设置与相关逻辑）
 
 **改动摘要**：删除 RiftRail 在 LTN 兼容层中继承自早期 `se-ltn-glue` 思路的“传送后清理站”可选功能。该功能默认关闭、实际使用面较小，却会与新版 LTN 的 `get_or_create_next_temp_stop()` 临时轨道定位逻辑发生结构性冲突，因此本次直接将其从产品和代码层面一起移除。
