@@ -37,10 +37,5 @@ if core then
     end
 end
 
-if data.raw.recipe["rift-rail-placer-recycling"] then
-    data.raw.recipe["rift-rail-placer-recycling"] = nil
-end
-
-if data.raw.recipe["rift-rail-station-item-recycling"] then
-    data.raw.recipe["rift-rail-station-item-recycling"] = nil
-end
+-- Keep recycling recipes in the prototype table so any technology effects or
+-- save data that still references them can resolve their IDs cleanly.

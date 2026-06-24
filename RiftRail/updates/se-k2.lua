@@ -55,7 +55,6 @@ for _, name in pairs(recycling_recipes) do
     if recipe then
         recipe.enabled = false      -- canot be used anymore
         recipe.hidden = true        -- hidden form the gui
-        data.raw.recipe[name] = nil -- optionally remove all
     end
 end
 
