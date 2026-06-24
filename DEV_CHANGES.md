@@ -6,6 +6,29 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+## 2026-06-24（v0.14.0：修复 Factorio 2.1 assignID 报错，保留回收配方原型并补全本地化）
+
+**改动摘要**：修复在 Factorio 2.1 启动阶段因某些配方原型被移除导致的 `assignID` 报错（示例：`rift-rail-placer-recycling`）。采用保守策略：保留回收相关配方原型（`enabled=false`、`hidden=true`），并移除会将原型设置为 `nil` 的删除逻辑；同时补齐 `rift-rail-placer` 的本地化（`zh-CN` / `en` / `ja`）。
+
+### 具体改动
+- 将所有会将 `rift-rail-placer-recycling` / `rift-rail-station-item-recycling` 置为 `nil` 的逻辑替换为仅 `enabled = false`、`hidden = true`，保证原型仍然存在于 `data.raw`，避免 `assignID` 阶段中断。
+- 在 `RiftRail/locale/zh-CN/strings.cfg`, `RiftRail/locale/en/strings.cfg`, `RiftRail/locale/ja/strings.cfg` 中新增 `entity-name.rift-rail-placer` 条目。
+
+### 影响文件（主要）
+- `RiftRail/data-final-fixes.lua`
+- `RiftRail/updates/sa.lua`
+- `RiftRail/updates/se.lua`
+- `RiftRail/updates/k2.lua`
+- `RiftRail/updates/se-k2.lua`
+- `RiftRail/updates/easy-mode.lua`
+- `RiftRail/locale/zh-CN/strings.cfg`
+- `RiftRail/locale/en/strings.cfg`
+- `RiftRail/locale/ja/strings.cfg`
+
+### 说明
+- 本次为兼容性优先的最小修复：保留原型可避免旧存档或其他 mod 的技术引用在加载时失效。后续可选项包括按启动项为回收配方填充实际配方，或在有充分迁移策略的情况下彻底删掉并同步调整所有引用。
+
+
 ## 2026-05-31（v0.13.15：移除运行期调试日志体系）
 
 **改动摘要**：删除 RiftRail 在日常运行阶段保留的大量调试日志、日志注入和调试开关，仅保留 `migrations.lua` 中对存档升级真正有长期价值的迁移日志，并统一改为直接 `log()` 输出。
