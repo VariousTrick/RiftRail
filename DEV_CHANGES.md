@@ -6,6 +6,24 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+## 2026-06-30（v0.14.0：适配 Factorio 2.1 与放置器回收支持）
+
+**改动摘要**：修复了在 Factorio 2.1 下导致游戏启动报错的配方清理逻辑问题，并正式开放了 Rift Rail 放置器的回收功能。
+
+### 背景
+在 Factorio 2.0/2.1 引入了品质与回收机系统后，游戏引擎会自动为绝大多数物品生成对应的 `[item-name]-recycling` 配方。在之前的版本中，为了防止玩家意外回收 Rift Rail 放置器，我们在 `data-final-fixes.lua` 和各大兼容脚本中直接将这些自动生成的回收配方暴力设置为 `nil`。
+然而在 Factorio 2.1 中，引擎在处理 `assignID` 时加强了校验：如果一个物品能生成回收配方，引擎会在内部建立映射；此时若用脚本强行将配方置为 `nil`，引擎在最后映射 ID 时就会因找不到配方而引发 `Error in assignID` 导致硬崩溃。
+
+### 处理策略
+- **底层支持**：移除所有兼容脚本（`sa.lua`、`k2.lua`、`easy-mode.lua` 等）以及 `data-final-fixes.lua` 中的强制 `nil` 代码，彻底解决启动报错问题。
+- **机制适配**：在 `rift-rail-placer` 的制造配方上添加 `auto_recycle = false` 属性。根据 2.1 的最新机制，当配方不允许被回收机逆向推导原料时，回收机会默认将物品“回收为它自身”。这使得玩家现在可以将放置器投入回收机，利用回收机的概率机制来“洗”出高品质的传送门。
+- **本地化修复**：由于这种特殊回收配方会去读取其实体名称，补充了中、英、日三语的 `[entity-name]` 本地化字段，修复了回收面板上出现的 `Unknown key: "entity-name.rift-rail-placer"` 显示问题。
+
+### 具体改动
+- `RiftRail/prototypes/recipes/rift-rail-placer.lua`：增加 `auto_recycle = false` 属性。
+- `RiftRail/data-final-fixes.lua` 及 `RiftRail/updates/*.lua`：移除暴力删除回收配方的逻辑块。
+- `RiftRail/locale/*/strings.cfg`：补充 `rift-rail-placer` 在 `[entity-name]` 节点下的翻译文本。
+
 ## 2026-05-31（v0.13.15：移除运行期调试日志体系）
 
 **改动摘要**：删除 RiftRail 在日常运行阶段保留的大量调试日志、日志注入和调试开关，仅保留 `migrations.lua` 中对存档升级真正有长期价值的迁移日志，并统一改为直接 `log()` 输出。

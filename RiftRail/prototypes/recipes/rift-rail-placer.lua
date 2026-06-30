@@ -5,6 +5,7 @@ data:extend({
         type = "recipe",
         name = "rift-rail-placer",
         enabled = false,
+        auto_recycle = false,
         energy_required = 30,
         ingredients = {
             { type = "item", name = "rail",                        amount = 100 },
