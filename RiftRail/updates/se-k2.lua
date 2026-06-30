@@ -45,17 +45,5 @@ if tech then
     }
 end
 
--- disable rift-rail-placer-recycle recipe and remove item-recycling recipe
-local recycling_recipes = {
-    "rift-rail-placer-recycling",
-    "rift-rail-station-item-recycling"
-}
-for _, name in pairs(recycling_recipes) do
-    local recipe = data.raw.recipe[name]
-    if recipe then
-        recipe.enabled = false      -- canot be used anymore
-        recipe.hidden = true        -- hidden form the gui
-        data.raw.recipe[name] = nil -- optionally remove all
-    end
-end
+
 
