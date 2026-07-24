@@ -6,6 +6,46 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+## 2026-07-24（v0.14.1：适配 Cybersyn 2 新 topology plugins 接口）
+
+**改动摘要**：将 RiftRail 的 Cybersyn 2 拓扑注册从旧 route API 迁移到新版 `node_topology_plugins` / `vehicle_topology_plugins`，并改为使用一个固定的 RiftRail 拓扑名，同时为旧存档补充一次性的重拓扑迁移。
+
+### 背景
+Cybersyn 2 的拓扑插件接口已经从旧的 route plugin 语义中拆分出来，新的实现会分别询问 node 和 vehicle 的默认拓扑归属。RiftRail 现在不再按地表组合动态拼接拓扑名，而是统一返回一个固定的 RiftRail 拓扑，避免老存档在拓扑命名变化后继续显示 `unknown`。
+
+这次适配的目标不是重做跨地表路由逻辑，而是让 RiftRail 继续把自身的跨表能力提供给 CS2，同时符合它新的拓扑分发方式。拓扑本身不再承载“哪些地表互通”的细分信息，而是作为一个稳定的 RiftRail 网络标识供 CS2 识别。
+
+### 处理策略
+- 仅迁移 CS2 的拓扑注册入口，不改动 RiftRail 现有的跨地表路由算法。
+- 保留 route_callback 相关接管逻辑，因为它仍然用于跨地表运单接管与回收。
+- 统一使用固定的 RiftRail 拓扑名，避免动态命名导致的老存档兼容歧义。
+- 为旧存档增加一次性的 CS2 重拓扑迁移，确保更新后会重新分配默认拓扑。
+- 删除不再使用的旧拓扑桥接，避免在新版 CS2 下继续维护无效兼容层。
+
+### 具体改动
+- `RiftRail/updates/cs2.lua`
+  - 将拓扑注册改为写入 `node_topology_plugins` 和 `vehicle_topology_plugins`
+  - 保留 `route_plugins` 中的 route 接管部分，仅用于 `route_callback`
+  - 删除旧的 `train_topology_callback` 兼容注册
+- `RiftRail/scripts/remote.lua`
+  - 新增 `cs2_node_topology_callback`
+  - 新增 `cs2_vehicle_topology_callback`
+  - 删除旧的 `cs2_train_topology_callback` 桥接
+- `RiftRail/scripts/compat/cs2.lua`
+  - 新增节点与车辆拓扑回调的实现
+  - 改为返回固定的 RiftRail 拓扑 ID
+  - 移除旧的 surface 集合式拓扑回调
+- `RiftRail/scripts/migrations.lua`
+  - 新增一次性的 CS2 重拓扑迁移
+- `RiftRail/scripts/state.lua`
+  - 为旧存档补齐 `rift_rail_cs2_retopologized` 标记
+
+### 结果
+- RiftRail 已经能对接新版 CS2 的拓扑插件接口。
+- RiftRail 现在对外只暴露一个稳定的拓扑名，老存档不再依赖动态地表组合命名。
+- 旧的拓扑桥接不再保留，减少了维护负担和接口歧义。
+- 老存档在更新后会自动触发一次重拓扑，避免继续停留在 `unknown`。
+
 ## 2026-06-30（v0.14.0：适配 Factorio 2.1 与放置器回收支持）
 
 **改动摘要**：修复了在 Factorio 2.1 下导致游戏启动报错的配方清理逻辑问题，并正式开放了 Rift Rail 放置器的回收功能。

@@ -4,7 +4,10 @@ local CS2 = {}
 if not script.active_mods["cybersyn2"] then
     return {
         init = function() end,
-        train_topology_callback = function()
+        node_topology_callback = function()
+            return nil
+        end,
+        vehicle_topology_callback = function()
             return nil
         end,
         --[[ reachable_callback = function()
@@ -75,6 +78,21 @@ local function get_last_station_name(luatrain)
     end
 
     return nil
+end
+
+-- 交给 CS2 创建或获取一个固定命名的拓扑。
+local function get_or_create_rift_rail_topology()
+    if storage.rift_rail_topology_id then
+        return storage.rift_rail_topology_id
+    end
+
+    local ok, topology_id = pcall(remote.call, "cybersyn2", "get_or_create_topology", "RiftRail")
+    if not ok or not topology_id then
+        return nil
+    end
+
+    storage.rift_rail_topology_id = topology_id
+    return topology_id
 end
 
 -- 判断 portal 是否是启用 CS2 的有效入口。
@@ -509,7 +527,7 @@ function CS2.init(deps)
 end
 
 -- 返回从起始地表可达的目标地表集合（SET 结构）。
-function CS2.train_topology_callback(origin_surface_index)
+local function get_connected_surface_set(origin_surface_index)
     ensure_route_cache()
 
     local result = {}
@@ -533,6 +551,24 @@ function CS2.train_topology_callback(origin_surface_index)
     end
 
     return nil
+end
+
+-- 新版 CS2：所有 RiftRail 节点统一归入同一个固定拓扑。
+function CS2.node_topology_callback(node_id, train_stop)
+    if not (train_stop and train_stop.valid) then
+        return nil
+    end
+
+    return get_or_create_rift_rail_topology()
+end
+
+-- 新版 CS2：所有 RiftRail 车辆统一归入同一个固定拓扑。
+function CS2.vehicle_topology_callback(vehicle_id, lua_train)
+    if vehicle_id == nil then
+        return nil
+    end
+
+    return get_or_create_rift_rail_topology()
 end
 
 -- 该函数返回trun会否决CS2生成的任务，RiftRail原则上不投否决票，因此直接注释掉，保留函数接口以备未来需要。

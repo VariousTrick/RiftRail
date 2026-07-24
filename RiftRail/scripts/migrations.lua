@@ -422,6 +422,29 @@ function Migrations.patch_cs2_enabled_default()
 end
 
 -- ============================================================================
+-- [迁移任务 13] v0.14.1 CS2 拓扑重建
+-- ============================================================================
+-- 目的：让旧存档重新计算一次默认拓扑，避免新版 topology 插件继续显示 unknown。
+-- 触发条件：标志位 storage.rift_rail_cs2_retopologized 不存在，且已安装 cybersyn2。
+function Migrations.rebuild_cs2_topology()
+    if storage.rift_rail_cs2_retopologized then
+        return
+    end
+
+    if not remote.interfaces["cybersyn2"] then
+        return
+    end
+
+    local ok = pcall(remote.call, "cybersyn2", "retopologize")
+    if not ok then
+        return
+    end
+
+    storage.rift_rail_cs2_retopologized = true
+    log("[Migration] 已触发 Cybersyn 2 拓扑重建。")
+end
+
+-- ============================================================================
 -- [迁移任务 13] 历史遗留：全图碰撞器实体化重建
 -- ============================================================================
 -- 目的：为了适应引擎更新，将所有旧的无 ID 碰撞器替换为带 unit_number 的新碰撞器。
@@ -566,6 +589,7 @@ function Migrations.run_all()
     Migrations.final_cybersyn_purge()
     Migrations.calculate_teleport_cache()
     Migrations.patch_cs2_enabled_default()
+    Migrations.rebuild_cs2_topology()
     Migrations.rebuild_legacy_colliders()
     Migrations.state_machine_refactor()
     Migrations.rebuild_destroy_tracking_v3()
