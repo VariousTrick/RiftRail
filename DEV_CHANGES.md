@@ -17,7 +17,7 @@ Cybersyn 2 移除了旧版的 `train_topology_callback`，改用独立的 Node /
 - `RiftRail/updates/cs2.lua`：在 `data.lua` 阶段将回调接口注册至 `node_topology_plugins` 与 `vehicle_topology_plugins`。
 - `RiftRail/scripts/remote.lua`：向外部暴露 `cs2_node_topology_callback` 与 `cs2_vehicle_topology_callback` 接口。
 - `RiftRail/scripts/compat/cs2.lua`：实现 `CS2.node_topology_callback` 与 `CS2.vehicle_topology_callback`，统一返回 `nil` 放行，完全尊重并保留地表原生拓扑及用户自定义拓扑。
-- `RiftRail/scripts/state.lua`：根据 CONTRIBUTING.md 规范，在 `State.setup_new_game()` 和 `State.patch_missing_root_tables()` 中显式声明与兜底迁移标记 `storage.rift_rail_cs2_retopologized_v4`。
+- `RiftRail/scripts/state.lua`：根据 CONTRIBUTING.md 规范，在 `State.setup_new_game()` 和 `State.patch_missing_root_tables()` 中显式声明与兜底迁移标记 `storage.rift_rail_cs2_retopologized_v1`。
 - `RiftRail/scripts/migrations.lua`：新增 `Migrations.retopologize_cs2()` 迁移任务，在旧存档升级加载时主动调用 `retopologize` 触发拓扑重算，重置历史可能的非规范拓扑数据。
 
 ## 2026-06-30（v0.14.0：适配 Factorio 2.1 与放置器回收支持）

@@ -48,7 +48,7 @@ function State.setup_new_game()
     storage.portal_stats_migrated = true
     storage.destroy_tracking_v2_migrated = true
     storage.destroy_tracking_v3_migrated = true
-    storage.rift_rail_cs2_retopologized_v4 = true
+    storage.rift_rail_cs2_retopologized_v1 = true
 end
 
 --- [阶段二：老兵补丁]
@@ -90,7 +90,7 @@ function State.patch_missing_root_tables()
     if storage.portal_stats_migrated == nil then storage.portal_stats_migrated = false end
     if storage.destroy_tracking_v2_migrated == nil then storage.destroy_tracking_v2_migrated = false end
     if storage.destroy_tracking_v3_migrated == nil then storage.destroy_tracking_v3_migrated = false end
-    if storage.rift_rail_cs2_retopologized_v4 == nil then storage.rift_rail_cs2_retopologized_v4 = false end
+    if storage.rift_rail_cs2_retopologized_v1 == nil then storage.rift_rail_cs2_retopologized_v1 = false end
 end
 
 --- 清理旧版销毁追踪迁移遗留状态，为 v3 显式 registration_number 映射重建让路。

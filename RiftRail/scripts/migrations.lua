@@ -548,9 +548,9 @@ end
 -- CS2 拓扑重新计算迁移
 -- ============================================================================
 -- 目的：CS2 重构拓扑插件 API 后，在配置更新时触发拓扑重新计算
--- 触发条件：标志位 storage.rift_rail_cs2_retopologized_v4 为 false，且 Cybersyn 2 已安装
+-- 触发条件：标志位 storage.rift_rail_cs2_retopologized_v1 为 false，且 Cybersyn 2 已安装
 function Migrations.retopologize_cs2()
-    if storage.rift_rail_cs2_retopologized_v4 then
+    if storage.rift_rail_cs2_retopologized_v1 then
         return
     end
 
@@ -565,7 +565,7 @@ function Migrations.retopologize_cs2()
         end
     end
 
-    storage.rift_rail_cs2_retopologized_v4 = true
+    storage.rift_rail_cs2_retopologized_v1 = true
 end
 
 -- ============================================================================
