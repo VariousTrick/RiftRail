@@ -546,22 +546,12 @@ local function is_surface_in_rift_rail_network(surface_index)
     return false
 end
 
--- 节点拓扑回调：仅为 RiftRail 内部传送门车站分配 RiftRail 拓扑。
+-- 节点拓扑回调：不干预车站拓扑，直接返回 nil 以保留地表原生拓扑或用户自定义拓扑。
 function CS2.node_topology_callback(node_id, train_stop)
-    if not (train_stop and train_stop.valid) then
-        return nil
-    end
-
-    -- 仅当车站为 RiftRail 传送门内部专用车站时才接管拓扑
-    if train_stop.name == "rift-rail-station" then
-        return get_or_create_rift_rail_topology()
-    end
-
-    -- 玩家放置的所有普通火车站放行，保留其原生地表拓扑 (如 nauvis)
     return nil
 end
 
--- 车辆拓扑回调：放行普通列车，由 CS2 自行根据所属地表/分组进行拓扑分配。
+-- 车辆拓扑回调：不干预列车拓扑，直接返回 nil 以保留地表原生拓扑或用户自定义拓扑。
 function CS2.vehicle_topology_callback(vehicle_id, lua_train)
     return nil
 end
