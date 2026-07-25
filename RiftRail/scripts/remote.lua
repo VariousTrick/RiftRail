@@ -29,9 +29,15 @@ function Remote.init(params)
         get_train_arrived_event = function()
             return RiftRail.Events.TrainArrived
         end,
-        cs2_train_topology_callback = function(origin_surface_index)
-            if CS2 and CS2.train_topology_callback then
-                return CS2.train_topology_callback(origin_surface_index)
+        cs2_node_topology_callback = function(node_id, train_stop)
+            if CS2 and CS2.node_topology_callback then
+                return CS2.node_topology_callback(node_id, train_stop)
+            end
+            return nil
+        end,
+        cs2_vehicle_topology_callback = function(vehicle_id, lua_train)
+            if CS2 and CS2.vehicle_topology_callback then
+                return CS2.vehicle_topology_callback(vehicle_id, lua_train)
             end
             return nil
         end,

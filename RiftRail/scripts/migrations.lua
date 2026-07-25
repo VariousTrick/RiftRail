@@ -545,6 +545,30 @@ function Migrations.add_portal_stats()
 end
 
 -- ============================================================================
+-- CS2 拓扑重新计算迁移
+-- ============================================================================
+-- 目的：CS2 重构拓扑插件 API 后，在配置更新时触发拓扑重新计算
+-- 触发条件：标志位 storage.rift_rail_cs2_retopologized_v1 为 false，且 Cybersyn 2 已安装
+function Migrations.retopologize_cs2()
+    if storage.rift_rail_cs2_retopologized_v1 then
+        return
+    end
+
+    -- 强制清除可能残留的历史拓扑缓存 ID，确保老存档重算时向 CS2 申请全新的拓扑
+    storage.rift_rail_cs2_topology_id = nil
+
+    if script.active_mods["cybersyn2"] then
+        log("[Migration] 正在触发 CS2 拓扑重新计算...")
+        local ok = pcall(remote.call, "cybersyn2", "retopologize")
+        if not ok then
+            pcall(remote.call, "cybersyn2", "rebuild_train_topologies")
+        end
+    end
+
+    storage.rift_rail_cs2_retopologized_v1 = true
+end
+
+-- ============================================================================
 -- 主入口：按顺序执行所有迁移任务
 -- ============================================================================
 function Migrations.run_all()
@@ -570,6 +594,7 @@ function Migrations.run_all()
     Migrations.state_machine_refactor()
     Migrations.rebuild_destroy_tracking_v3()
     Migrations.add_portal_stats()
+    Migrations.retopologize_cs2()
 end
 
 return Migrations

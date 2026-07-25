@@ -4,7 +4,10 @@ local CS2 = {}
 if not script.active_mods["cybersyn2"] then
     return {
         init = function() end,
-        train_topology_callback = function()
+        node_topology_callback = function()
+            return nil
+        end,
+        vehicle_topology_callback = function()
             return nil
         end,
         --[[ reachable_callback = function()
@@ -285,7 +288,10 @@ end ]]
 
 -- 请求 CS2 重建拓扑（带节流，避免高频抖动）。
 local function request_cs2_topology_rebuild()
-    pcall(remote.call, "cybersyn2", "rebuild_train_topologies")
+    local ok = pcall(remote.call, "cybersyn2", "retopologize")
+    if not ok then
+        pcall(remote.call, "cybersyn2", "rebuild_train_topologies")
+    end
 end
 
 -- 向方向对集合加入唯一 surface 对（去重）。
@@ -508,30 +514,45 @@ function CS2.init(deps)
     rebuild_route_cache()
 end
 
--- 返回从起始地表可达的目标地表集合（SET 结构）。
-function CS2.train_topology_callback(origin_surface_index)
-    ensure_route_cache()
-
-    local result = {}
-    local by_to_surface = storage.rr_cs2_route_cache.by_surface[origin_surface_index]
-    if not by_to_surface then
-        return nil
+-- 获取或分配 RiftRail 的 CS2 拓扑 ID。
+local function get_or_create_rift_rail_topology()
+    local topology_id = storage.rift_rail_cs2_topology_id
+    if topology_id then
+        return topology_id
     end
 
-    for to_surface_index, bucket in pairs(by_to_surface) do
-        if bucket.flat_edges and #bucket.flat_edges > 0 then
-            -- 验证反向路线 (to -> origin) 是否也存在
-            -- 只有双向都通，才向 CS2 注册 A-B 的连通性
-            if has_direct_route(to_surface_index, origin_surface_index) then
-                result[to_surface_index] = true
-            end
-        end
-    end
-
-    if next(result) then
+    local ok, result = pcall(remote.call, "cybersyn2", "get_or_create_topology", "RiftRail")
+    if ok and result then
+        storage.rift_rail_cs2_topology_id = result
         return result
     end
 
+    return nil
+end
+
+-- 判断指定地表是否接入了 RiftRail CS2 传送网络。
+local function is_surface_in_rift_rail_network(surface_index)
+    if not surface_index then
+        return false
+    end
+    ensure_route_cache()
+    local cache = storage.rr_cs2_route_cache
+    if cache and cache.by_surface and cache.by_surface[surface_index] then
+        local by_to_surface = cache.by_surface[surface_index]
+        if next(by_to_surface) ~= nil then
+            return true
+        end
+    end
+    return false
+end
+
+-- 节点拓扑回调：不干预车站拓扑，直接返回 nil 以保留地表原生拓扑或用户自定义拓扑。
+function CS2.node_topology_callback(node_id, train_stop)
+    return nil
+end
+
+-- 车辆拓扑回调：不干预列车拓扑，直接返回 nil 以保留地表原生拓扑或用户自定义拓扑。
+function CS2.vehicle_topology_callback(vehicle_id, lua_train)
     return nil
 end
 
