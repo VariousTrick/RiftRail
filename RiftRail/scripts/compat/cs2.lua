@@ -530,29 +530,64 @@ local function get_or_create_rift_rail_topology()
     return nil
 end
 
--- 判断指定地表是否接入了 RiftRail CS2 传送网络。
-local function is_surface_in_rift_rail_network(surface_index)
+-- 判断指定地表是否处于与其他地表双向可达的传送网络中。
+local function is_surface_in_bidirectional_rift_network(surface_index)
     if not surface_index then
         return false
     end
     ensure_route_cache()
     local cache = storage.rr_cs2_route_cache
-    if cache and cache.by_surface and cache.by_surface[surface_index] then
-        local by_to_surface = cache.by_surface[surface_index]
-        if next(by_to_surface) ~= nil then
-            return true
+    if not (cache and cache.by_surface) then
+        return false
+    end
+
+    -- 检查从当前地表出发是否有可达的目标地表 to_surface
+    local from_routes = cache.by_surface[surface_index]
+    if not (from_routes and next(from_routes) ~= nil) then
+        return false
+    end
+
+    -- 检查是否存在至少一个目标地表 to_surface 能够反向回到当前地表 surface_index
+    for to_surface_index, _ in pairs(from_routes) do
+        if to_surface_index ~= surface_index then
+            local return_routes = cache.by_surface[to_surface_index]
+            if return_routes and return_routes[surface_index] then
+                return true
+            end
         end
     end
+
     return false
 end
 
--- 节点拓扑回调：不干预车站拓扑，直接返回 nil 以保留地表原生拓扑或用户自定义拓扑。
+-- 节点拓扑回调：仅为处于双向传送网络地表上的车站分配 RiftRail 默认拓扑。
 function CS2.node_topology_callback(node_id, train_stop)
+    if not (train_stop and train_stop.valid and train_stop.surface) then
+        return nil
+    end
+
+    if is_surface_in_bidirectional_rift_network(train_stop.surface.index) then
+        return get_or_create_rift_rail_topology()
+    end
+
     return nil
 end
 
--- 车辆拓扑回调：不干预列车拓扑，直接返回 nil 以保留地表原生拓扑或用户自定义拓扑。
+-- 车辆拓扑回调：仅为处于双向传送网络地表上的列车分配 RiftRail 默认拓扑。
 function CS2.vehicle_topology_callback(vehicle_id, lua_train)
+    if not (lua_train and lua_train.valid) then
+        return nil
+    end
+
+    local stock = lua_train.front_stock or lua_train.back_stock or (lua_train.carriages and lua_train.carriages[1])
+    if not (stock and stock.valid and stock.surface) then
+        return nil
+    end
+
+    if is_surface_in_bidirectional_rift_network(stock.surface.index) then
+        return get_or_create_rift_rail_topology()
+    end
+
     return nil
 end
 

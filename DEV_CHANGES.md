@@ -8,15 +8,15 @@
 
 ## 2026-07-25（v0.14.1：适配 Cybersyn 2 全新 Topology Plugin API）
 
-**改动摘要**：将 RiftRail 接入 CS2 最新重构的 Topology Plugin API（`node_topology_plugins` 与 `vehicle_topology_plugins`），替换旧的 `route_plugins.train_topology_callback`。拓扑回调不干预任何车站与列车的拓扑归属（统一返回 `nil`），完全保留地表原生地表拓扑（如 `nauvis` / `gleba`）或用户通过 CS2 组合仪手动设置的信号拓扑，专注于跨地表路由接管与物理传送。
+**改动摘要**：将 RiftRail 接入 CS2 最新重构的 Topology Plugin API（`node_topology_plugins` 与 `vehicle_topology_plugins`），替换旧的 `route_plugins.train_topology_callback`。实现基于强连通双向闭环的传送网默认拓扑判定，满足 CS2 作者设想的“插件提供可达连通图默认拓扑，玩家可手动覆盖隔离”标准。
 
 ### 背景
-Cybersyn 2 移除了旧版的 `train_topology_callback`，改用独立的 Node / Vehicle 拓扑插件数组。若未在 `data.lua` 阶段完成新回调接口注册，会导致框架校验不匹配。同时在 CS2 2.0 中，拓扑系统负责订单匹配撮合，而 RiftRail 负责跨地表路由与传送，不需要强加自定义拓扑。
+Cybersyn 2 移除了旧版的 `train_topology_callback`，改用独立的 Node / Vehicle 拓扑插件体系。根据 CS2 作者的架构设计，插件需要为能够通过传送门互相抵达的连通网节点提供共享的默认拓扑，以便 CS2 调度线程能够在零手动配置的情况下全自动完成跨地表撮合发车。
 
 ### 详细改动
 - `RiftRail/updates/cs2.lua`：在 `data.lua` 阶段将回调接口注册至 `node_topology_plugins` 与 `vehicle_topology_plugins`。
 - `RiftRail/scripts/remote.lua`：向外部暴露 `cs2_node_topology_callback` 与 `cs2_vehicle_topology_callback` 接口。
-- `RiftRail/scripts/compat/cs2.lua`：实现 `CS2.node_topology_callback` 与 `CS2.vehicle_topology_callback`，统一返回 `nil` 放行，完全尊重并保留地表原生拓扑及用户自定义拓扑。
+- `RiftRail/scripts/compat/cs2.lua`：实现 `is_surface_in_bidirectional_rift_network(surface_index)` 双向强连通检测。仅当地表 A 与地表 B 之间同时满足入与出 4 个传送门就位且开启 CS2 时，为该网络上的车站与列车自动分配共享的默认拓扑 `"RiftRail"`；未双向通车的孤立地表放行 `nil`，保留其原生地表拓扑（如 `nauvis`）。
 - `RiftRail/scripts/state.lua`：根据 CONTRIBUTING.md 规范，在 `State.setup_new_game()` 和 `State.patch_missing_root_tables()` 中显式声明与兜底迁移标记 `storage.rift_rail_cs2_retopologized_v1`。
 - `RiftRail/scripts/migrations.lua`：新增 `Migrations.retopologize_cs2()` 迁移任务，在旧存档升级加载时主动调用 `retopologize` 触发拓扑重算，重置历史可能的非规范拓扑数据。
 
