@@ -516,18 +516,13 @@ end
 
 -- 获取或分配 RiftRail 的 CS2 拓扑 ID。
 local function get_or_create_rift_rail_topology()
-    local topology_id = storage.rift_rail_cs2_topology_id
-    if topology_id then
-        return topology_id
-    end
-
     local ok, result = pcall(remote.call, "cybersyn2", "get_or_create_topology", "RiftRail")
     if ok and result then
         storage.rift_rail_cs2_topology_id = result
         return result
     end
 
-    return nil
+    return storage.rift_rail_cs2_topology_id
 end
 
 -- 判断指定地表是否处于与其他地表双向可达的传送网络中。

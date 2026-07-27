@@ -16,7 +16,7 @@ Cybersyn 2 移除了旧版的 `train_topology_callback`，改用独立的 Node /
 ### 详细改动
 - `RiftRail/updates/cs2.lua`：在 `data.lua` 阶段将回调接口注册至 `node_topology_plugins` 与 `vehicle_topology_plugins`。
 - `RiftRail/scripts/remote.lua`：向外部暴露 `cs2_node_topology_callback` 与 `cs2_vehicle_topology_callback` 接口。
-- `RiftRail/scripts/compat/cs2.lua`：实现 `is_surface_in_bidirectional_rift_network(surface_index)` 双向强连通检测。仅当地表 A 与地表 B 之间同时满足入与出 4 个传送门就位且开启 CS2 时，为该网络上的车站与列车自动分配共享的默认拓扑 `"RiftRail"`；未双向通车的孤立地表放行 `nil`，保留其原生地表拓扑（如 `nauvis`）。
+- `RiftRail/scripts/compat/cs2.lua`：实现 `is_surface_in_bidirectional_rift_network(surface_index)` 双向强连通检测。`get_or_create_rift_rail_topology()` 改为实时向 CS2 申请校验最新拓扑 ID，彻底免疫老存档过期的旧缓存数字问题。仅当地表 A 与地表 B 之间同时满足 4 个传送门就位且开启 CS2 时，为该网络上的车站与列车自动分配共享的默认拓扑 `"RiftRail"`；未双向通车的孤立地表放行 `nil`，保留其原生地表拓扑（如 `nauvis`）。
 - `RiftRail/scripts/state.lua`：根据 CONTRIBUTING.md 规范，在 `State.setup_new_game()` 和 `State.patch_missing_root_tables()` 中显式声明与兜底迁移标记 `storage.rift_rail_cs2_retopologized_v1`。
 - `RiftRail/scripts/migrations.lua`：新增 `Migrations.retopologize_cs2()` 迁移任务，在旧存档升级加载时主动调用 `retopologize` 触发拓扑重算，重置历史可能的非规范拓扑数据。
 
