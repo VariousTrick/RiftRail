@@ -200,6 +200,11 @@ script.on_event({
     defines.events.script_raised_revive,
 }, Builder.on_built)
 
+-- 4. 太空平台建造: 单独注册 + 过滤器
+if defines.events.on_space_platform_built_entity then
+    script.on_event(defines.events.on_space_platform_built_entity, Builder.on_built, rr_filters)
+end
+
 -- B. 拆除/挖掘事件 (拆分优化版 - 修正 API 限制)
 -- 定义处理函数 (保持不变)
 local function on_mined_handler(event)
@@ -212,7 +217,12 @@ script.on_event(defines.events.on_player_mined_entity, on_mined_handler, rr_filt
 -- 2. 原生拆除 (机器人): 单独注册 + 过滤器
 script.on_event(defines.events.on_robot_mined_entity, on_mined_handler, rr_filters)
 
--- 3. 基于注册的实体销毁监听
+-- 3. 太空平台拆除: 单独注册 + 过滤器
+if defines.events.on_space_platform_mined_entity then
+    script.on_event(defines.events.on_space_platform_mined_entity, on_mined_handler, rr_filters)
+end
+
+-- 4. 基于注册的实体销毁监听
 -- 处理不支持过滤器的底层强制销毁事件
 script.on_event(defines.events.on_object_destroyed, function(event)
     Builder.on_silent_destroyed(event.registration_number)

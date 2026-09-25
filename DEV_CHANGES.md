@@ -5,6 +5,18 @@
 >
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
+## 2026-09-25（v0.14.2：支持太空平台虚影建造与拆除）
+
+**改动摘要**：修复了在太空平台上通过虚影建造传送门时仅生成放置器而无法展开为完整传送门的问题。补充注册了 Factorio 2.0 / Space Age 太空平台专属的实体建造与拆除事件监听。
+
+### 背景
+玩家无法肉身登陆太空平台，必须通过远程虚影放置建筑，再由太空平台枢纽（Hub）自动完成建造。在 Factorio 2.0 中，太空平台枢纽建造实体时触发的是独立的 `on_space_platform_built_entity` 事件，而非 `on_built_entity` 或 `on_robot_built_entity`。由于此前未监听该事件，导致太空平台完成建造时未调用 `Builder.on_built`，放置器实体未能被销毁并替换为传送门主体与子实体。同样，太空平台拆除实体触发的 `on_space_platform_mined_entity` 此前也未作监听。
+
+### 详细改动
+- `RiftRail/control.lua`：
+  - 在建造事件组中，补充注册 `defines.events.on_space_platform_built_entity`，挂载 `Builder.on_built` 与 `rr_filters` 过滤器。
+  - 在拆除事件组中，补充注册 `defines.events.on_space_platform_mined_entity`，挂载 `on_mined_handler` 与 `rr_filters` 过滤器。
+  - 均增加 `defines.events` 存在性判断，确保在无 Space Age 环境下向下兼容。
 
 ## 2026-07-25（v0.14.1：适配 Cybersyn 2 全新 Topology Plugin API）
 
