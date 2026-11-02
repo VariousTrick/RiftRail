@@ -33,6 +33,15 @@ function Logic.init(deps)
     CS2   = deps.CS2
 end
 
+function Logic.can_teleport_player(player)
+    if not player then
+        return false
+    end
+
+    local permission = settings.global["rift-rail-player-teleport-permission"].value
+    return permission == "all" or (permission == "admins" and player.admin)
+end
+
 -- ============================================================================
 -- 辅助函数：广播刷新
 -- ============================================================================
@@ -607,6 +616,10 @@ function Logic.teleport_player(player_index, portal_id)
     local player = game.get_player(player_index)
     local portaldata = State.get_portaldata_by_id(portal_id)
     if not (player and portaldata) then
+        return
+    end
+    if not Logic.can_teleport_player(player) then
+        player.print({ "messages.rift-rail-player-teleport-disabled" })
         return
     end
     if player and portaldata and portaldata.shell and portaldata.shell.valid then

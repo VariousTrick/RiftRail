@@ -66,6 +66,7 @@ local State = nil
 local MAX_CONNECTIONS = 5
 
 local Util = nil
+local Logic = nil
 
 local MODE_STATS_CONFIG = {
     entry = {
@@ -93,6 +94,7 @@ local MODE_STATS_CONFIG = {
 function GUI.init(dependencies)
     State = dependencies.State
     Util = dependencies.Util
+    Logic = dependencies.Logic
 end
 
 -- =================================================================================
@@ -379,15 +381,17 @@ function GUI.build_or_update(player, entity)
     })
     preview_btn.style.padding = 0
 
-    -- 右侧：传送玩家按钮 (使用透明的 tool_button 样式，消除丑陋黑框)
-    local tp_btn = mode_flow.add({
-        type = "sprite-button",
-        name = "rift_rail_tp_player_button",
-        sprite = "riftrail-teleport-player-icon",
-        tooltip = { "gui.rift-rail-btn-player-teleport" },
-        style = "tool_button",
-    })
-    tp_btn.style.padding = 0
+    -- 仅在当前玩家有权限时显示手动传送按钮。
+    if Logic.can_teleport_player(player) then
+        local tp_btn = mode_flow.add({
+            type = "sprite-button",
+            name = "rift_rail_tp_player_button",
+            sprite = "riftrail-teleport-player-icon",
+            tooltip = { "gui.rift-rail-btn-player-teleport" },
+            style = "tool_button",
+        })
+        tp_btn.style.padding = 0
+    end
 
     -- 右侧弹簧
     local r_mode_pusher = mode_flow.add({ type = "empty-widget" })

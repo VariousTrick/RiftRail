@@ -5,6 +5,41 @@
 >
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
+## 2026-11-02（v0.14.3：增加手动玩家传送权限设置）
+
+**改动摘要**：为控制核心中的“传送玩家”功能增加地图级权限设置，支持所有玩家、仅管理员和禁用三种模式；列车传送及车内玩家随车传送行为保持不变。
+
+### 设计目标
+
+手动传送玩家可以作为跨地表个人传送功能使用。为了让服务器管理员能够控制这项便利功能，同时不影响 Rift Rail 的核心铁路运输用途，本次将手动传送权限与列车传送路径分开处理：
+
+- 手动传送是否可用由地图设置控制。
+- 列车正常通过 Rift Rail 时，车内玩家继续随列车一起传送。
+- 手动传送不增加物品消耗机制。
+
+### 具体改动
+
+- `RiftRail/settings.lua`
+  - 新增 `rift-rail-player-teleport-permission` 字符串设置。
+  - 提供 `all`（所有玩家）、`admins`（仅管理员）和 `disabled`（禁用）三个选项。
+  - 默认值为 `all`，保持已有存档的原有行为。
+- `RiftRail/scripts/logic.lua`
+  - 新增统一的手动传送权限判断。
+  - 在实际执行玩家传送前再次验证地图设置和管理员权限，避免通过 remote interface 绕过 GUI 限制。
+- `RiftRail/scripts/gui.lua`
+  - 仅在当前玩家有权使用手动传送时创建“传送玩家”按钮。
+  - “仅管理员”模式下普通玩家不显示该按钮，“禁用”模式下所有玩家都不显示该按钮。
+- `RiftRail/control.lua`
+  - 将玩家传送权限判断依赖注入 GUI 模块。
+- `RiftRail/locale/en/strings.cfg`
+- `RiftRail/locale/zh-CN/strings.cfg`
+- `RiftRail/locale/ja/strings.cfg`
+  - 补充设置名称、设置说明、三个选项和权限拒绝提示的本地化文本。
+
+### 行为边界
+
+本次没有修改 `RiftRail/scripts/teleport.lua` 或 `RiftRail/scripts/teleport_system/teleport_factory.lua`。因此列车传送流程保持原状，玩家驾驶或乘坐列车时仍会按照列车传送逻辑随车到达目标地表。
+
 ## 2026-09-25（v0.14.2：支持太空平台虚影建造与拆除）
 
 **改动摘要**：修复了在太空平台上通过虚影建造传送门时仅生成放置器而无法展开为完整传送门的问题。补充注册了 Factorio 2.0 / Space Age 太空平台专属的实体建造与拆除事件监听。

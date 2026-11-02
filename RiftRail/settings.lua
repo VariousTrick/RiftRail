@@ -35,6 +35,16 @@ data:extend({
         localised_name = { "mod-setting-name.rift-rail-cs2-fail-unhandled-cross-surface" },
         localised_description = { "mod-setting-description.rift-rail-cs2-fail-unhandled-cross-surface" },
     },
+    {
+        type = "string-setting",
+        name = "rift-rail-player-teleport-permission",
+        setting_type = "runtime-global",
+        default_value = "all",
+        allowed_values = { "all", "admins", "disabled" },
+        order = "a-d",
+        localised_name = { "mod-setting-name.rift-rail-player-teleport-permission" },
+        localised_description = { "mod-setting-description.rift-rail-player-teleport-permission" },
+    },
     -- 紧急修复开关
     {
         type = "bool-setting",
