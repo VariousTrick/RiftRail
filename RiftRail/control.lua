@@ -130,6 +130,7 @@ if GUI.init then
     GUI.init({
         State    = State,
         Util     = Util,
+        Logic    = Logic,
     })
 end
 
