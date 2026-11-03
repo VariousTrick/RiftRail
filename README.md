@@ -82,6 +82,7 @@ Rift Rail 是一个跨地表、跨空间平台的列车传送系统。它通过�
 - **Ldmf**：配方、科技和模组集成方面的贡献。
 - **Harag**：跨地表物流设计方面的启发。
 - **Cybersyn**、**LTN** 和 **Space Exploration** 的作者：感谢你们提供的框架和工具。
+- **hgschmie**：提供了关于 LTN 集成的宝贵意见。
 - 感谢所有参与测试、报告问题和提出建议的玩家。
 
 </details>
@@ -156,6 +157,7 @@ Changing the startup setting requires restarting the game.
 - **Ldmf** for contributions to recipes, technologies, and mod integrations.
 - **Harag** for the inspiration behind the cross-surface logistics design.
 - The creators of **Cybersyn**, **LTN**, and **Space Exploration** for providing the frameworks that make this mod possible.
+- **hgschmie** for providing valuable feedback on LTN integration.
 - Everyone who tested the mod, reported issues, and provided feedback.
 
 </details>
