@@ -1,6 +1,4 @@
-
-![Version](https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/VariousTrick/RiftRail/main/RiftRail/info.json&query=$.version&label=Version&color=blue)![Downloads](https://img.shields.io/badge/dynamic/json?url=https://mods.factorio.com/api/mods/RiftRail&query=$.downloads_count&label=Downloads&color=orange)
-
+![Version](https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/VariousTrick/RiftRail/main/RiftRail/info.json&query=$.version&label=Version&color=blue) ![Downloads](https://img.shields.io/badge/dynamic/json?url=https://mods.factorio.com/api/mods/RiftRail&query=$.downloads_count&label=Downloads&color=orange)
 
 # Rift Rail - 裂隙铁路
 
@@ -14,166 +12,157 @@
 
 ---
 
-<details>
+<details open>
 <summary><strong>📖 中文文档 (Chinese Documentation)</strong></summary>
- 
- [屏幕录像_20260327_222258.webm](https://github.com/user-attachments/assets/71ac7154-dcad-40d2-93ed-dec77c9c3791)
- 
----
 
-## 裂隙铁路 - Rift Rail
-### 跨维度列车运输系统
+## 裂隙铁路
 
-在不同的地表和飞船之间建立无缝的铁路连接。Rift Rail 为庞大的基地或多地表帝国提供了一种紧凑、高科技的物流解决方案。
+Rift Rail 是一个跨地表、跨空间平台的列车传送系统。它通过入口和出口连接不同位置的铁路网络，让列车可以在不同地表之间快速通行。
 
-与传统的双向连接不同，Rift Rail 采用**非对称的单向传送系统**。这种设计允许极高的拓扑灵活性，让你能够轻松构建复杂的单向循环或简单的点对点传送。
+[观看演示录像](https://github.com/user-attachments/assets/71ac7154-dcad-40d2-93ed-dec77c9c3791)
 
-#### 核心特性
+### 🚂 主要功能
 
-🌌 **非对称传送**
-通过 GUI 将每个传送门配置为 **入口**、**出口** 模式。这种灵活性允许你根据具体需求设计交通流，无论是简单的捷径还是复杂的跨地表路由。
+- 🌌 支持地表之间以及 Space Exploration 太空平台之间的列车传送。
+- 🔀 通过入口、出口和待机模式配置传送门。
+- 🕸️ 支持多个入口连接一个出口，也支持一个入口连接多个出口。
+- 🚆 支持机车、货运车厢、流体车厢和炮车。
+- 👤 乘坐列车的玩家会随列车一起传送。
+- 🛡️ 控制核心支持可配置权限的手动玩家传送。
+- 🎨 支持自定义传送门名称和图标。
+- 📦 支持 LTN 和 Cybersyn 2 跨地表物流调度。
+- ⚙️ 提供多种模组集成与配方进程选项。
 
-🚂 **全类型支持**
-完美支持机车、货运车厢、流体车厢和大炮车厢。坐在车内的玩家也会随车辆瞬间传送。
-**极限兼容声明**：完美兼容各路模组中的特殊列车配置！最短支持单格迷你车厢，最长支持达到 **12 格**（约为原生长度的 2 倍）的极限巨型车辆，依然保持毫秒级丝滑护盾穿行。
+### 🛠️ 基本用法
 
-🎨 **管理与交互**
-- **自定义标识**：为传送门设置自定义名称和图标，便于识别。
-- **网格对齐**：强制 2×2 铁轨网格对齐，确保每次都能完美连接铁轨。
+1. 建造两个 Rift Rail 传送门。
+2. 打开传送门的控制核心。
+3. 将一个传送门设置为入口，另一个设置为出口。
+4. 在连接界面中完成配对。
+5. 将铁路连接到传送门内部的轨道。
+6. 让列车驶入入口传送门。
 
-#### 物流集成与路由
+列车会从已连接的出口传送门出现，并继续运行。
 
-🚀 **Space Exploration**
-深度集成。传送门可以在飞船上正常工作，并在飞船起飞、降落和克隆事件中无缝保持连接。
+### 📦 物流集成
 
-📦 **Logistic Train Network (LTN)**
-原生支持跨地表运输。在新的多对多架构下，列车会自动选择距离其目的地最近的可用传送门。
+#### 🚚 Logistic Train Network
 
+支持 LTN 跨地表物流调度。
 
-🤖 **Cybersyn 2 (CS2)**
-自 v0.12 起重新原生支持 Cybersyn 2。通过 CS2 的 route plugin 接口实现跨地表调度，系统会综合入口距离与出口到目标站距离，自动选择全局最优传送路径。
-*   **关于 Cybersyn：** 由于底层架构冲突，v0.10 版本已**移除**对 Cybersyn 的支持。
+#### 🤖 Cybersyn 2
 
-🌐 **多对多路由**
-从 v0.10 开始，Rift Rail 支持复杂的路由网络：
-*   **多对一 (最多5个)：** 将多个入口连接到单个出口。
-*   **一对多（最多5个）：** 将单个入口连接到多个出口，并通过电路信号控制路由，或让 LTN 自动选择最佳路径。
+自 v0.12 起原生支持 Cybersyn 2，通过 CS2 的 route plugin 接口实现跨地表调度。
 
-#### 平衡性与游戏进程
-本模组现已支持多种平衡模式，以适应您期望的游戏风格。您可以在 **模组设置 (启动项)** 中进行选择。非常感谢玩家 **Ldmf** 为我们设计并实现了这套完善的进程系统！
+#### 🚀 Space Exploration
 
-*   **普通模式 (默认):** 标准体验。配方和科技被设计在游戏中期解锁。
-*   **简单模式:** 配方极其廉价，适合不受限制的建设。
-*   **硬核模式 (SE, K2, 太空时代):** 将 Rift Rail 深度整合进大型模组的大后期。您将需要纳奎矿或物质等终局资源才能建造您的第一个传送门。
+支持在太空平台上建造和使用 Rift Rail，并进行跨地表列车传送。
 
-**重要提示：** 更改此设置需要重启游戏。
+### 🧩 模组集成与配方进程
 
-### 💡 进阶：性能与 UPS 优化指南
-对于追求极致性能的巨型基地玩家，Rift Rail 在底层已经实现了终极的“零拷贝 (Zero-Copy)”架构。无论传送门是平行摆放还是 90 度交错，系统都会通过瞬时数学推演全量使用原生 `clone` API，自身传送过程几乎不消耗任何 UPS。因此，你可以自由地摆放传送门而无需顾虑方向惩罚。
+可以在模组设置中选择以下选项：
 
-* **核心技巧：平衡“传送速度”与“检测频率”**
-    您可以在模组设置中调整这两个核心参数。提高**放置检测间隔**（如 2 或 3）可大幅降低脚本对于循环传送带事件的 CPU 消耗，但会导致车厢连接延迟。较高的**传送时车辆速度**会增加吞吐量，但必须配合极低的检测间隔，否则会导致列车拉断。
-    * **推荐高吞吐量模式（默认）**：检测间隔 `1`，传送速度 `1.0` ~ `2.4`。
-    * **推荐终极 UPS 环保模式（千瓶基地）**：检测间隔 `3` 或 `4`，传送速度 `0.5` ~ `1.0`。搭配全维度克隆优化，极大降低底层轮询的运算频率。
+- 无集成
+- 简单模式
+- Space Age
+- Krastorio 2
+- Space Exploration
+- Space Exploration + Krastorio 2
 
-*   特别感谢：
-*   **Ldmf**：感谢其对原版、SE、K2 和 Space Age 的配方、科技及数据结构进行的全面重构与巨大贡献。
-*   **Harag** (`se-ltn-glue` 的作者)：感谢其开创的事件驱动型跨地表交付设计模式，为本模组的集成方案提供了重要启发。
-*   **Cybersyn**、**LTN** 和 **Space Exploration** 的创作者：感谢你们提供的强大框架，使本模组成为可能。
+修改启动设置后需要重新启动游戏。
 
----
+### 📚 详细文档
 
-**支持 Space Exploration：**
-Earendel 的 Patreon：https://www.patreon.com/earendel
-尝试 Space Exploration 模组：https://mods.factorio.com/mod/space-exploration
+- [常见问题](./FAQ.md)
+- [中文 API 文档](./doc/API_CN.md)
+- [English API Documentation](./doc/API_EN.md)
+
+### ❤️ 致谢
+
+- **Ldmf**：配方、科技和模组集成方面的贡献。
+- **Harag**：跨地表物流设计方面的启发。
+- **Cybersyn**、**LTN** 和 **Space Exploration** 的作者：感谢你们提供的框架和工具。
+- 感谢所有参与测试、报告问题和提出建议的玩家。
 
 </details>
 
-<details>
+<details open>
 <summary><strong>📖 English Documentation</strong></summary>
 
- [屏幕录像_20260327_222258.webm](https://github.com/user-attachments/assets/71ac7154-dcad-40d2-93ed-dec77c9c3791)
+## Rift Rail
 
----
+Rift Rail is a train teleportation system for transporting trains across surfaces and Space Exploration space platforms. It connects railway networks through entry and exit portals.
 
-## Rift Rail - Interdimensional Train Transportation
+[Watch the demonstration video](https://github.com/user-attachments/assets/71ac7154-dcad-40d2-93ed-dec77c9c3791)
 
-Create seamless railway connections across surfaces and spaceships. Rift Rail offers a compact, high-tech solution for logistics in sprawling bases or multi-surface empires.
+### 🚂 Features
 
-Unlike traditional bidirectional connections, Rift Rail utilizes an **asymmetric, one-way teleportation system**. This design allows for flexible network topologies, enabling you to build complex one-way loops or simple point-to-point transfers with ease.
+- 🌌 Train teleportation between surfaces and Space Exploration space platforms.
+- 🔀 Entry, Exit, and Standby portal modes.
+- 🕸️ Multiple Entry portals connected to one Exit, or one Entry connected to multiple Exits.
+- 🚆 Support for locomotives, cargo wagons, fluid wagons, and artillery wagons.
+- 👤 Players inside trains travel with the train.
+- 🛡️ Configurable manual player teleportation from the control core.
+- 🎨 Custom portal names and icons.
+- 📦 Logistic Train Network and Cybersyn 2 integration.
+- ⚙️ Multiple mod integration and recipe progression options.
 
-#### Core Features
+### 🛠️ Basic Usage
 
-🌌 **Asymmetric Teleportation**
-Configure each portal as **Entry** or **Exit** via a simple GUI. This flexibility allows you to design traffic flows that suit your specific needs, from simple shortcuts to complex cross-surface routing.
+1. Build two Rift Rail portals.
+2. Open a portal's control core.
+3. Set one portal to Entry mode and the other to Exit mode.
+4. Pair the portals through the connection interface.
+5. Connect your railway to the internal portal tracks.
+6. Send a train through the Entry portal.
 
-🚂 **Full Transport Support**
-Works flawlessly with locomotives, cargo wagons, fluid wagons, and artillery wagons. Players inside the train are teleported instantly along with the vehicle.
-**Extreme Compatibility Statement**: Unmatched support for modded trains! Whether you have adorable 1-tile mini-wagons or massive behemoths up to **12 tiles** long (double the vanilla length), Rift Rail effortlessly adapts to let them glide through portals smoothly.
+The train will appear at the connected Exit portal and continue its journey.
 
-🎨 **Organization & UX**
-- **Customization**: Assign custom names and icons to portals for easy identification.
-- **Grid Snapping**: Forced 2×2 rail grid alignment ensures perfect track connections every time.
+### 📦 Logistics Integrations
 
-#### Logistics Integration & Routing
+#### 🚚 Logistic Train Network
 
-🚀 **Space Exploration**
-Deep integration. Portals function correctly on spaceships and maintain connections seamlessly through liftoff, landing, and cloning events.
+Rift Rail supports LTN cross-surface logistics.
 
-📦 **Logistic Train Network (LTN)**
-Native support for cross-surface deliveries. With the new N-to-M architecture, trains will automatically select the closest available portal to their destination.
+#### 🤖 Cybersyn 2
 
+Native Cybersyn 2 support was added in v0.12 through the CS2 route plugin interface.
 
-🤖 **Cybersyn 2 (CS2)**
-Re-introduced in v0.12 with native support. Integrates via CS2's route plugin API to enable cross-surface dispatching, with automatic global-optimal portal selection based on combined approach and exit-to-destination distances.
-*   **Note on Cybersyn:** Support for Cybersyn has been **removed** in v0.10 due to fundamental architectural conflicts.
+#### 🚀 Space Exploration
 
-🌐 **Many-to-Many Routing**
-As of v0.10, Rift Rail supports complex routing:
-*   **Many-to-One (up to 5):** Connect multiple Entry portals to a single Exit.
-*   **One-to-Many (up to 5):** Connect a single Entry to multiple Exits and control routing via circuit signals or let LTN auto-select the best path.
+Rift Rail supports building and using portals on Space Exploration space platforms.
 
-#### Balancing & Progression
-This mod now features multiple balancing modes to fit your desired playstyle, accessible via the **Mod Settings (Startup)**. A huge thank you to **Ldmf** for designing and implementing this comprehensive progression system!
+### 🧩 Mod Integrations and Recipe Progression
 
-*   **Normal Mode (Default):** The standard Rift Rail experience. The recipe and technology are designed to be unlocked in the mid-game.
-*   **Easy Mode:** For those who want to build without constraints. The recipe is extremely cheap.
-*   **Hardcore Modes (SE, K2, Space Age):** Integrates Rift Rail deep into the endgame of major overhaul mods. You will need access to late-game resources (like Naquium or Matter) to build your first portal.
+The mod provides the following options:
 
-**Important:** Changing this setting requires a game restart.
+- None
+- Easy Mode
+- Space Age
+- Krastorio 2
+- Space Exploration
+- Space Exploration + Krastorio 2
 
-### 💡 Advanced: Performance & UPS Tuning
-For megabase builders pushing for maximum performance, Rift Rail now inherently features an ultimate "Zero-Copy" architecture. Regardless of whether portals are placed parallel or at a 90-degree intersection, the system uses stateless mathematical prediction to utilize the ultra-fast native Factorio `clone` API for all entities. The teleportation action itself consumes almost zero UPS, meaning you can place portals in any orientation without performance penalties.
+Changing the startup setting requires restarting the game.
 
-* **Tip: Balancing "Teleport Speed" and "Placement Interval"**
-    You can adjust these core parameters in the Mod Settings. Increasing the **Placement Interval** (e.g., to 2 or 3) significantly reduces overall script CPU polling usage but delays carriage connection. Higher **Teleport Speeds** increase throughput but MUST be paired with lower intervals to prevent trains from snapping.
-    * **Recommended High Throughput (Default)**: Interval `1`, Speed `1.0` ~ `2.4`.
-    * **Recommended UPS-Eco (Megabases)**: Interval `3` or `4`, Speed `0.5` ~ `1.0`. This drastically reduces script polling frequency.
+### 📚 Documentation
 
+- [FAQ](./FAQ.md)
+- [中文 API 文档](./doc/API_CN.md)
+- [English API Documentation](./doc/API_EN.md)
 
+### ❤️ Thanks
 
-
-
-#### Acknowledgments
-
-*   Special thanks to:
-*   **Ldmf** for the massive contribution on overhauling recipes, technologies, and data structure for Vanilla, SE, K2, and Space Age.
-*   **Harag** (author of `se-ltn-glue`) for pioneering the event-driven cross-surface delivery design pattern that heavily inspired our integration approach.
-*   **The creators of**: **Cybersyn**, **LTN**, and **Space Exploration** for providing the robust frameworks that make this mod possible.
-
----
-
-**Support Space Exploration:**
-Earendel's Patreon: https://www.patreon.com/earendel
-Try the Space Exploration mod: https://mods.factorio.com/mod/space-exploration
+- **Ldmf** for contributions to recipes, technologies, and mod integrations.
+- **Harag** for the inspiration behind the cross-surface logistics design.
+- The creators of **Cybersyn**, **LTN**, and **Space Exploration** for providing the frameworks that make this mod possible.
+- Everyone who tested the mod, reported issues, and provided feedback.
 
 </details>
 
----
 
 <div align="center">
 
 **Made with ❤️ for Factorio Community**
 
 </div>
-
