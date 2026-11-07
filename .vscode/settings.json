@@ -8,5 +8,9 @@
     },
     "Lua.codeLens.enable": true,
     "editor.codeLens": true,
-    "editor.fontFamily": "'Sarasa Mono SC', 'JetBrainsMono Nerd Font', monospace"
+    "editor.fontFamily": "'Sarasa Mono SC', 'JetBrainsMono Nerd Font', monospace",
+    "Lua.workspace.userThirdParty": [
+        "/home/arch/.config/Code/User/workspaceStorage/f256fc7c0f09c943deda057171d5481b/justarandomgeek.factoriomod-debug/sumneko-3rd"
+    ],
+    "Lua.workspace.checkThirdParty": "ApplyInMemory"
 }
