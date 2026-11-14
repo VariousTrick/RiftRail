@@ -465,6 +465,12 @@ local function finalize_sequence(entry_portaldata, exit_portaldata)
         end
 
         if final_train and final_train.valid then
+            -- 销毁引导车后，Factorio 可能重置新列车的时刻表指针。
+            -- 在清理临时站点前恢复销毁前的索引，避免清理逻辑基于错误位置调整索引。
+            if leader_destroyed and actual_index_before_cleanup then
+                final_train.go_to_station(actual_index_before_cleanup)
+            end
+
             -- 传送完全结束，货仓补满。在恢复速度前先清除所有假中断临时站，
             -- 避免 cleanup 内部的 go_to_station 在恢复速度之后重置寻路动作。
             local entry_station_name_final = TeleportUtils.get_real_station_name(entry_portaldata)

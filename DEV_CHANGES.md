@@ -5,6 +5,27 @@
 >
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
+## 2026-11-14（v0.14.4：修复引导车销毁后的调度指针恢复）
+
+**改动摘要**：修复列车尾部先进入传送门时，传送结束销毁引导车后列车调度指针可能被 Factorio 重置的问题。
+
+### 问题背景
+
+当列车不是以车头作为第一节进入传送门时，RiftRail 会在出口生成引导车，帮助出口侧列车完成传送过程。最后一节车厢传送完成后，引导车会被销毁；此时 Factorio 可能重新组织列车对象并重置时刻表当前指针。
+
+传送流程此前已经在销毁引导车前保存了列车调度索引，但销毁引导车并重新获取列车对象后没有立即恢复该索引。后续的临时中断清理因此可能基于重置后的指针执行，造成列车传送完成后前往错误站点。
+
+### 具体改动
+
+- `RiftRail/scripts/teleport.lua`
+  - 在销毁引导车并重新获取出口列车对象后，恢复销毁前保存的调度索引。
+  - 在临时中断清理前完成指针恢复，使清理逻辑继续使用传送完成时的正确列车位置。
+  - 普通车头先进入传送门的流程不改变，仅引导车路径增加必要的状态恢复。
+
+### 行为边界
+
+本次修改不改变玩家时刻表内容，也不主动跳过玩家设置的站点；只恢复引导车销毁前已经保存的列车调度指针。
+
 ## 2026-11-02（v0.14.3：增加手动玩家传送权限设置）
 
 **改动摘要**：为控制核心中的“传送玩家”功能增加地图级权限设置，支持所有玩家、仅管理员和禁用三种模式；列车传送及车内玩家随车传送行为保持不变。
