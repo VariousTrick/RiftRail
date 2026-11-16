@@ -141,7 +141,7 @@ end
 
 -- 通过实体获取数据
 function State.get_portaldata(entity)
-    if not (entity and entity.valid) then
+    if not (entity and (type(entity) == "userdata" or type(entity) == "table") and entity.valid) then
         return nil
     end
 

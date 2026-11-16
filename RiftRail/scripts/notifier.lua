@@ -316,4 +316,96 @@ function Notifier.notify_cs2_one_way(player, one_way_pairs)
     end
 end
 
+-- ============================================================================
+-- 5. 传送门配对拓扑输出
+-- ============================================================================
+
+--- 打印指定传送门的配对拓扑信息至聊天框/控制台 (接入本地化 strings.cfg)
+---@param player LuaPlayer|nil 目标玩家，若为 nil 则退化为 game.print
+---@param data table|nil 由 Logic.get_paired_portals 生成的拓扑数据结构
+function Notifier.print_paired_portals(player, data)
+    local target_player = player or (game and game.player)
+    local print_fn = function(msg)
+        if target_player and target_player.valid and target_player.print then
+            target_player.print(msg)
+        elseif game and game.print then
+            game.print(msg)
+        end
+    end
+
+    if not data then
+        print_fn({ "messages.rift-rail-query-not-found" })
+        return
+    end
+
+    local function mode_badge(mode)
+        if mode == "entry" then
+            return { "", "[font=default-bold][color=green][", { "gui.rift-rail-mode-entry" }, "][/color][/font]" }
+        elseif mode == "exit" then
+            return { "", "[font=default-bold][color=orange][", { "gui.rift-rail-mode-exit" }, "][/color][/font]" }
+        elseif mode == "neutral" then
+            return { "", "[font=default-bold][color=gray][", { "gui.rift-rail-mode-neutral" }, "][/color][/font]" }
+        end
+        return tostring(mode or "unknown")
+    end
+
+    local self_name = (data.name and data.name ~= "") and data.name or { "messages.rift-rail-query-unnamed" }
+    local self_gps = (data.gps and data.gps ~= "") and data.gps or "N/A"
+    local header = {
+        "messages.rift-rail-query-header",
+        tostring(data.id),
+        self_name,
+        mode_badge(data.mode),
+        self_gps,
+    }
+
+    local msg = {
+        "",
+        header,
+    }
+
+    if #data.entries == 0 and #data.exits == 0 then
+        table.insert(msg, "\n")
+        table.insert(msg, { "messages.rift-rail-query-empty-header" })
+        table.insert(msg, "\n")
+        table.insert(msg, { "messages.rift-rail-query-none" })
+    else
+        if #data.entries > 0 then
+            table.insert(msg, "\n")
+            table.insert(msg, { "messages.rift-rail-query-entries-header", tostring(#data.entries) })
+            for idx, item in ipairs(data.entries) do
+                local iname = (item.name and item.name ~= "") and item.name or { "messages.rift-rail-query-unnamed" }
+                local igps = (item.gps and item.gps ~= "") and item.gps or "N/A"
+                table.insert(msg, "\n")
+                table.insert(msg, {
+                    "messages.rift-rail-query-item",
+                    tostring(idx),
+                    tostring(item.id),
+                    iname,
+                    igps,
+                })
+            end
+        end
+
+        if #data.exits > 0 then
+            table.insert(msg, "\n")
+            table.insert(msg, { "messages.rift-rail-query-exits-header", tostring(#data.exits) })
+            for idx, item in ipairs(data.exits) do
+                local iname = (item.name and item.name ~= "") and item.name or { "messages.rift-rail-query-unnamed" }
+                local igps = (item.gps and item.gps ~= "") and item.gps or "N/A"
+                table.insert(msg, "\n")
+                table.insert(msg, {
+                    "messages.rift-rail-query-item",
+                    tostring(idx),
+                    tostring(item.id),
+                    iname,
+                    igps,
+                })
+            end
+        end
+    end
+
+    print_fn(msg)
+end
+
 return Notifier

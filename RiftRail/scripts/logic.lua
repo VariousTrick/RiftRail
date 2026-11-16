@@ -846,4 +846,77 @@ function Logic.on_entity_renamed(event)
     end
 end
 
+-- ============================================================================
+-- 传送门配对拓扑查询与本地化输出
+-- ============================================================================
+
+-- 查询指定传送门配对的所有入口与出口信息 (返回纯数据结构，ID居首位)
+function Logic.get_paired_portals(portal_or_id)
+    local portal = nil
+
+    if type(portal_or_id) == "number" then
+        portal = State.get_portaldata_by_id(portal_or_id)
+    elseif type(portal_or_id) == "string" then
+        local id = tonumber(portal_or_id)
+        portal = State.get_portaldata_by_id(id or portal_or_id)
+    else
+        local target_entity = portal_or_id or (game and game.player and game.player.selected)
+        portal = State.get_portaldata(target_entity)
+    end
+
+    if not portal then
+        return nil
+    end
+
+    local function summarize(p)
+        return {
+            id = p.id,
+            mode = p.mode,
+            gps = Notifier.get_portal_gps(p),
+            name = p.name or "",
+        }
+    end
+
+    local exits = {}
+    for tid in pairs(portal.target_ids or {}) do
+        local p = State.get_portaldata_by_id(tid)
+        if p then
+            table.insert(exits, summarize(p))
+        end
+    end
+    table.sort(exits, function(a, b) return a.id < b.id end)
+
+    local entries = {}
+    for sid in pairs(portal.source_ids or {}) do
+        local p = State.get_portaldata_by_id(sid)
+        if p then
+            table.insert(entries, summarize(p))
+        end
+    end
+    table.sort(entries, function(a, b) return a.id < b.id end)
+
+    return {
+        id = portal.id,
+        mode = portal.mode,
+        gps = Notifier.get_portal_gps(portal),
+        name = portal.name or "",
+        entries = entries,
+        exits = exits,
+    }
+end
+
+-- 打印指定传送门的配对信息至聊天框/控制台 (委派给 Notifier 处理消息组装与输出)
+function Logic.print_paired_portals(portal_or_id, player)
+    -- 智能适配 (player, portal_id) 或 (portal_id, player)
+    if portal_or_id and type(portal_or_id) ~= "number" and type(portal_or_id) ~= "string" and portal_or_id.valid and type(portal_or_id.print) == "function" and player ~= nil then
+        player, portal_or_id = portal_or_id, player
+    end
+
+    local data = Logic.get_paired_portals(portal_or_id)
+    if Notifier and Notifier.print_paired_portals then
+        Notifier.print_paired_portals(player, data)
+    end
+    return data
+end
+
 return Logic
