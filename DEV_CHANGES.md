@@ -6,28 +6,18 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
-## 2026-11-16（v0.14.4：科技树前置优化、配方 API 适配与跨地表物流通知重构）
+## 2026-11-16（v0.14.4：跨地表物流通知重构与 LTN 迁移优化）
 
-**改动摘要**：修复默认模式下科技过早亮起问题、在 Space Age 模式中补齐农业科学包、修复 Factorio 2.0 配方原型 `category` 废弃合并为 `categories` 的加载报错；全面重构 LTN 与 Cybersyn 的多对多跨地表物流通知，杜绝刷屏并补全 GPS 坐标与设置管辖。
+**改动摘要**：全面重构 LTN 与 Cybersyn 的多对多跨地表物流通知，杜绝刷屏并补全 GPS 坐标与设置管辖；抽离独立的通知管理模块（`scripts/notifier.lua`）；彻底优化 LTN 迁移逻辑，消除旧接口调用与重复全量重建。
 
 ### 问题背景与目标
 
-1. **默认模式科技前置缺失**：在原版/默认模式（`none`）下，`rift-rail-tech` 的前置仅挂靠在基础铁路 `automated-rail-transportation` 上，但研究包却需要太空科学包（`space-science-pack`）。导致玩家在红绿瓶时期就看到该科技显示为“可研究”，却长期无法真正研发。
-2. **Space Age 模式科学包补全**：在 Space Age 模式下，传送门配方要求使用 Gleba 的碳纤维，但科技研究包中缺少对应的农业科学包。
-3. **Factorio 2.0 配方原型重构报错**：Factorio 2.0 将 `RecipePrototype` 中的 `category` 与 `additional_categories` 合并为 `categories` 数组表。在兼容模式（`sa.lua`、`se.lua`、`k2.lua`）中直接对 `recipe.category` 赋值会导致游戏启动报 `In RecipePrototype, category and additional_categories got merged into categories table` 错误并加载失败。
-4. **跨地表物流通知不完善与刷屏**：原本设置宣称管辖 Cybersyn 与 LTN，但实际上 Cybersyn 从未接入设置管辖且单向警告强行弹窗；而在多对多配对场景下，LTN 点击开关会按伙伴数量逐条发送多条聊天消息造成刷屏；且关闭时对未连通伙伴也会错误提示“已断开”。
+1. **跨地表物流通知不完善与刷屏**：原本设置宣称管辖 Cybersyn 与 LTN，但实际上 Cybersyn 从未接入设置管辖且单向警告强行弹窗；而在多对多配对场景下，LTN 点击开关会按伙伴数量逐条发送多条聊天消息造成刷屏；且关闭时对未连通伙伴也会错误提示“已断开”。
+2. **业务与通知代码高度耦合**：`logic.lua` 与 `ltn.lua` 混杂了大量用于解析地表、提取 GPS、拼接复杂本地化参数的代码，职责模糊且不利于维护。
+3. **LTN 迁移历史遗留问题**：旧版迁移中的 `logistics_reset` 依赖旧的 6 参数 `LTN.update_connection` 接口，新版接口已简化为 2 参数；此外多对多迁移与 LTN 重建可能重复触发，且在未启用 LTN 时会过早标记完成。
 
 ### 具体改动
 
-- `RiftRail/prototypes/technology/rift-rail.lua` & `RiftRail/technology.lua`
-  - 为默认模式的科技前置增加自适应探测：若存在 `space-science-pack` 科技则加入前置；若不存在（如原版纯基底环境）则回退关联 `rocket-silo`，确保科技树逻辑连贯。
-- `RiftRail/updates/sa.lua`
-  - 在科技研究包列表（`unit.ingredients`）中补充 `{ "agricultural-science-pack", 1 }`，与配方中所需的行星材料形成完整对称。
-  - 将 `recipe.category = "assembler3-crafting"` 规范更新为 `recipe.category = nil` 与 `recipe.categories = { "assembler3-crafting" }`。
-- `RiftRail/updates/k2.lua`
-  - 将 `recipe.category = "rift-rail-k2-only"` 规范更新为 `recipe.category = nil` 与 `recipe.categories = { "rift-rail-k2-only" }`。
-- `RiftRail/updates/se.lua`
-  - 将 `recipe.category = "space-manufacturing"` 规范更新为 `recipe.category = nil` 与 `recipe.categories = { "space-manufacturing" }`。
 - `RiftRail/scripts/notifier.lua`
   - 新建独立的通知管理中心模块，统一收敛物流状态通知、GPS 坐标提取、玩家个人设置过滤、多对多聚合摘要拼装及消息分发逻辑。
 - `RiftRail/control.lua`
@@ -43,6 +33,33 @@
   - 防御未安装模组的边界情况：仅在 `script.active_mods["LogisticTrainNetwork"]` 实际启用且成功执行重建后才标记完成，确保中途加装 LTN 时能够正确补全跨地表路由表。
 - `RiftRail/locale/zh-CN/strings.cfg`、`locale/en/strings.cfg`、`locale/ja/strings.cfg`
   - 增加中、英、日三语的跨地表物流聚合通知本地化条目，并清理已被新通知完全取代的旧版 LTN 本地化废弃条目。
+
+### 行为边界
+
+- 不改动 `info.json` 版本号，维持在当前版本体系内。
+- 业务逻辑与界面行为保持原有设计，仅优化通知聚合表现与模块解耦。
+
+## 2026-11-16（v0.14.4：科技树前置优化与 Factorio 2.0 配方类别 API 适配）
+
+**改动摘要**：修复默认模式下科技过早亮起的体验问题、在 Space Age 模式中补齐农业科学包、以及修复 Factorio 2.0 配方原型 `category` 废弃合并为 `categories` 的加载报错。
+
+### 问题背景与目标
+
+1. **默认模式科技前置缺失**：在原版/默认模式（`none`）下，`rift-rail-tech` 的前置仅挂靠在基础铁路 `automated-rail-transportation` 上，但研究包却需要太空科学包（`space-science-pack`）。导致玩家在红绿瓶时期就看到该科技显示为“可研究”，却长期无法真正研发。
+2. **Space Age 模式科学包补全**：在 Space Age 模式下，传送门配方要求使用 Gleba 的碳纤维，但科技研究包中缺少对应的农业科学包。
+3. **Factorio 2.0 配方原型重构报错**：Factorio 2.0 将 `RecipePrototype` 中的 `category` 与 `additional_categories` 合并为 `categories` 数组表。在兼容模式（`sa.lua`、`se.lua`、`k2.lua`）中直接对 `recipe.category` 赋值会导致游戏启动报 `In RecipePrototype, category and additional_categories got merged into categories table` 错误并加载失败。
+
+### 具体改动
+
+- `RiftRail/prototypes/technology/rift-rail.lua` & `RiftRail/technology.lua`
+  - 为默认模式的科技前置增加自适应探测：若存在 `space-science-pack` 科技则加入前置；若不存在（如原版纯基底环境）则回退关联 `rocket-silo`，确保科技树逻辑连贯。
+- `RiftRail/updates/sa.lua`
+  - 在科技研究包列表（`unit.ingredients`）中补充 `{ "agricultural-science-pack", 1 }`，与配方中所需的行星材料形成完整对称。
+  - 将 `recipe.category = "assembler3-crafting"` 规范更新为 `recipe.category = nil` 与 `recipe.categories = { "assembler3-crafting" }`。
+- `RiftRail/updates/k2.lua`
+  - 将 `recipe.category = "rift-rail-k2-only"` 规范更新为 `recipe.category = nil` 与 `recipe.categories = { "rift-rail-k2-only" }`。
+- `RiftRail/updates/se.lua`
+  - 将 `recipe.category = "space-manufacturing"` 规范更新为 `recipe.category = nil` 与 `recipe.categories = { "space-manufacturing" }`。
 
 ### 行为边界
 
