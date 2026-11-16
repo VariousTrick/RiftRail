@@ -80,4 +80,72 @@ The event table includes the following fields:
 
 Rift Rail custom events are fired once per full train teleport (start and end), with all relevant data in the event table. Standard events are fired for each carriage. Choose the approach that fits your needs, or use both for full coverage.
 
+---
+
+## Remote Interface
+
+In addition to custom events, Rift Rail provides `remote.call` interfaces for third-party mods to query topology data or coordinate actions.
+
+### Portal Pairing Topology Query
+
+#### 1. `get_paired_portals`
+Queries all paired entries and exits for a given portal, returning a structured pure data table (with ID placed first in each item).
+
+```lua
+local data = remote.call("RiftRail", "get_paired_portals", portal_or_id)
+```
+
+- **Parameter `portal_or_id`** (optional):
+  - `number`: Custom numeric portal ID (e.g., `1`).
+  - `string`: String format of the ID (e.g., `"1"`).
+  - `LuaEntity`: Portal entity object (supports shell `rift-rail-entity`, core `rift-rail-core`, or any child entity).
+  - `nil`: Defaults to the entity currently selected by the player (`game.player.selected`).
+- **Return Value**: Returns `nil` if not found; otherwise returns a table structured as follows:
+  ```lua
+  {
+      id = 1,                                -- [number] Custom ID of the portal
+      name = "Main Base Depot",              -- [string] Custom name (empty string if unnamed)
+      mode = "entry",                        -- [string] Operating mode: "entry" | "exit" | "neutral"
+      gps = "[gps=10.5,20.0,nauvis]",        -- [string] Rich text GPS hyperlink
+      entries = {                            -- [table] List of paired entries (sorted ascending by ID)
+          {
+              id = 2,
+              name = "Remote Input",
+              mode = "entry",
+              gps = "[gps=-50.0,80.0,nauvis]",
+          },
+      },
+      exits = {                              -- [table] List of paired exits (sorted ascending by ID)
+          {
+              id = 3,
+              name = "Smelting Area Exit",
+              mode = "exit",
+              gps = "[gps=120.0,-35.0,vulcanus]",
+          },
+      },
+  }
+  ```
+
+#### 2. `print_paired_portals`
+Formats and prints the pairing topology of a given portal to a player's chat console (or game console) using localized rich text. Items include entry/exit subheadings, item counts, and clickable map GPS hyperlinks at the end of each entry.
+
+```lua
+remote.call("RiftRail", "print_paired_portals", portal_or_id, target_player)
+-- Also supports reversed argument order:
+-- remote.call("RiftRail", "print_paired_portals", target_player, portal_or_id)
+```
+
+- **Parameters**:
+  - `portal_or_id`: Same as `get_paired_portals` (supports numeric/string ID, entity, or portaldata table).
+  - `target_player` (optional): `LuaPlayer` object. If omitted or called without a player context, safely falls back to console output.
+- **Output Sample**:
+  ```text
+  [RiftRail] ID: 1 · Nauvis Entry [Entry] -> [gps=10.5,20.0,nauvis]
+  ▼ Paired Exits (Total 2):
+    [1] ID: 2 · Vulcanus Foundry Exit -> [gps=-100.0,55.5,vulcanus]
+    [2] ID: 3 · Gleba Bio Farm Exit -> [gps=32.0,-80.0,gleba]
+  ```
+
+---
+
 If you have any questions, feel free to ask on our mod page.

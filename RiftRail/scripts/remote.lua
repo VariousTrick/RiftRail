@@ -100,6 +100,16 @@ function Remote.init(params)
         unpair_portals_specific = function(player_index, source_id, target_id)
             Logic.unpair_portals_specific(player_index, source_id, target_id)
         end,
+
+        -- 查询当前传送门配对的所有入口与出口信息 (返回结构化数据表，ID居于首位)
+        get_paired_portals = function(portal_or_id)
+            return Logic.get_paired_portals(portal_or_id)
+        end,
+
+        -- 打印当前传送门配对的所有入口与出口信息到控制台/聊天框 (ID居于首位，出入口分开)
+        print_paired_portals = function(portal_or_id, target_player)
+            return Logic.print_paired_portals(portal_or_id, target_player)
+        end,
     })
 
     -- 4. 注册 RiftRail_Tips 沙盒/提示接口

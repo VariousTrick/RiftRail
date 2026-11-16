@@ -26,4 +26,13 @@ data:extend({
         height = 64,
         flags = { "gui-icon" },
     },
+    -- 打印配对信息聊天图标
+    {
+        type = "sprite",
+        name = "riftrail-chat-icon",
+        filename = "__RiftRail__/graphics/icon/chat.png",
+        width = 64,
+        height = 64,
+        flags = { "gui-icon" },
+    },
 })

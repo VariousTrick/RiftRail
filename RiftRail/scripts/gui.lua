@@ -366,6 +366,16 @@ function GUI.build_or_update(player, entity)
     local l_mode_pusher = mode_flow.add({ type = "empty-widget" })
     l_mode_pusher.style.horizontally_stretchable = true
 
+    -- 快捷打印配对信息到聊天框按钮 (位于眼睛预览按钮左侧)
+    local print_btn = mode_flow.add({
+        type = "sprite-button",
+        name = "rift_rail_print_info_button",
+        sprite = "riftrail-chat-icon",
+        tooltip = { "gui.rift-rail-btn-print-info-tooltip" },
+        style = "tool_button",
+    })
+    print_btn.style.padding = 0
+
     -- 1. 读取当前预览状态
     local is_preview_on = (player_settings.show_preview == true)
 
@@ -904,6 +914,18 @@ CLICK_HANDLERS["rift_rail_remote_view_button"] = function(ctx)
 
     if target_id then
         remote.call("RiftRail", "open_remote_view_by_target", ctx.player.index, target_id)
+    end
+end
+
+-- 打印配对信息按钮：将当前传送门的所有配对信息输出到玩家聊天框
+CLICK_HANDLERS["rift_rail_print_info_button"] = function(ctx)
+    local my_data = get_context_portaldata(ctx)
+    if not my_data then
+        return
+    end
+
+    if Logic and Logic.print_paired_portals then
+        Logic.print_paired_portals(my_data.id, ctx.player)
     end
 end
 
