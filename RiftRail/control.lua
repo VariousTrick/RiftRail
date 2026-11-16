@@ -32,6 +32,7 @@ local TickDispatcher = require("scripts.tick_dispatcher")
 local Migrations = require("scripts.migrations")
 local Maintenance = require("scripts.maintenance")
 local Stats = require("scripts.stats")
+local Notifier = require("scripts.notifier")
 -- 仅当玩家安装并启用了 informatron 模组时，才加载并注册说明书接口
 if script.active_mods["informatron"] then
     local InformatronSetup = require("scripts.compat.informatron")
@@ -116,6 +117,12 @@ if TickDispatcher.init then
     })
 end
 
+if Notifier.init then
+    Notifier.init({
+        State     = State,
+    })
+end
+
 -- 给 Logic 注入 CybersynSE (用于GUI开关)
 if Logic.init then
     Logic.init({
@@ -123,6 +130,7 @@ if Logic.init then
         GUI       = GUI,
         LTN       = LTN,
         CS2       = CS2Compat,
+        Notifier  = Notifier,
     })
 end
 

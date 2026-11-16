@@ -126,12 +126,16 @@ end
 -- 目的：为新版 LTN 路由表系统初始化数据
 -- 触发条件：标志位 storage.rift_rail_ltn_table_migrated 不存在
 function Migrations.build_ltn_routing_table()
-    if not storage.rift_rail_ltn_table_migrated then
-        log("[Migration] 正在为 LTN 路由表系统填充数据...")
-        if LTN.rebuild_routing_table_from_storage then
+    if storage.rift_rail_ltn_table_migrated then
+        return
+    end
+
+    -- 只有在真正安装并启用了 LTN 模组时，才执行全量重建并标记完成
+    if script.active_mods["LogisticTrainNetwork"] then
+        log("[Migration] 正在为 LTN 路由表系统填充数据并初始化连接...")
+        if LTN and LTN.rebuild_routing_table_from_storage then
             LTN.rebuild_routing_table_from_storage()
         end
-        -- 设置标志位，防止下次更新时重复运行
         storage.rift_rail_ltn_table_migrated = true
     end
 end
@@ -259,40 +263,8 @@ function Migrations.unified_multi_pairing()
 end
 
 -- ============================================================================
--- [迁移任务 9] v0.10.0 物流连接重置
+-- [迁移任务 9] v0.10.0 物流连接重置（历史任务：已合并至任务 6 build_ltn_routing_table 统一执行）
 -- ============================================================================
--- 目的：暴力清洗 Cybersyn/LTN 连接，重新评估并重建
--- 触发条件：storage.rift_rails 存在
-function Migrations.logistics_reset()
-    if storage.rift_rails then
-        log("[Migration] 开始执行物流连接重置 (Purge & Re-evaluate)...")
-
-        -- [重建] 遍历现有数据，重新注册合法的连接
-        for _, portal in pairs(storage.rift_rails) do
-            if portal.mode == "entry" and portal.target_ids then
-                for target_id, _ in pairs(portal.target_ids) do
-                    local partner = State.get_portaldata_by_id(target_id)
-                    if partner then
-                        -- [LTN] LTN 没有暴力清洗功能，所以保持"先断开后连接"的传统逻辑
-                        -- 使用静默模式，避免在迁移时向玩家发送消息
-                        if LTN then
-                            LTN.update_connection(portal, partner, false, nil, nil, true)
-                        end
-
-                        -- [重建连接]
-                        -- 只有当开关开启，且符合新版"双向握手"规则时，才会真正注册成功
-                        if portal.ltn_enabled then
-                            if LTN then
-                                LTN.update_connection(portal, partner, true, nil, nil, true)
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        log("[Migration] 物流连接重置完成。")
-    end
-end
 
 -- ============================================================================
 -- [迁移任务 10 - 最终] 永久移除 Cybersyn 数据
@@ -578,13 +550,12 @@ function Migrations.run_all()
     Migrations.rename_carriage_to_car()
     Migrations.build_active_teleporter_list()
 
-    -- 物流系统迁移
+    -- 多对多架构迁移（优先完成 target_ids/source_ids 数据升级）
+    Migrations.unified_multi_pairing()
+
+    -- 物流系统迁移（在多对多数据就绪后，且仅当 LTN 存在时单次重建）
     Migrations.purge_ltn_legacy()
     Migrations.build_ltn_routing_table()
-
-    -- 多对多架构迁移
-    Migrations.unified_multi_pairing()
-    Migrations.logistics_reset()
 
     -- 其他
     Migrations.final_cybersyn_purge()

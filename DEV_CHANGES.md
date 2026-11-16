@@ -28,14 +28,21 @@
   - 将 `recipe.category = "rift-rail-k2-only"` 规范更新为 `recipe.category = nil` 与 `recipe.categories = { "rift-rail-k2-only" }`。
 - `RiftRail/updates/se.lua`
   - 将 `recipe.category = "space-manufacturing"` 规范更新为 `recipe.category = nil` 与 `recipe.categories = { "space-manufacturing" }`。
+- `RiftRail/scripts/notifier.lua`
+  - 新建独立的通知管理中心模块，统一收敛物流状态通知、GPS 坐标提取、玩家个人设置过滤、多对多聚合摘要拼装及消息分发逻辑。
+- `RiftRail/control.lua`
+  - 引入并初始化 `Notifier` 模块，并注入至 `Logic.init`。
 - `RiftRail/scripts/logic.lua`
-  - 新增 `get_portal_gps`、`should_notify_player`、`send_logistics_notification` 与 `build_logistics_toggle_summary` 统一通知管辖模块。
-  - 重构 `Logic.set_ltn_enabled`：调用底层同步时开启 `silent=true` 避免内部循环单条发消息，并在外部输出单条聚合汇总消息。
-  - 重构 `Logic.set_cs2_enabled`：完整接入聚合通知，并使单向路径警告严格受到 `rift-rail-show-logistics-notifications` 设置控制。
-  - 优化状态判定：关闭时仅报告真正被切断的有效连接；开启时输出有效连接列表与等待对方开启的提示，且所有门均附带 `[gps=x,y,surface]` 点击链接。
-  - 统一解绑（Unpair）与配对（Pair）的物流通知机制：在解除配对或建立配对时，若切断或建立了原本双向开启的有效物流连接，LTN 与 CS2 均统一发送规范通知；该通知严格受“显示跨地表连接通知”个人设置管辖，而普通解绑/配对基础提示始终正常反馈。
+  - 移除内嵌的 200 余行通知拼装与设置检查辅助函数，全面委托给 `Notifier`。
+  - 大幅精简 `set_ltn_enabled`、`set_cs2_enabled`、`pair_portals` 和 `unpair_portals_specific`，使业务函数恢复纯粹的调度职责。
+- `RiftRail/scripts/compat/ltn.lua`
+  - 彻底清理遗留的 `build_connection_message`、`send_connection_message` 及旧版连接判断逻辑，`LTN.update_connection` 简化为纯粹的底层连接同步函数。
+- `RiftRail/scripts/migrations.lua`
+  - 彻底解决 LTN 迁移历史遗留问题：将历史任务 `logistics_reset` 的全量重建职责合并至 `build_ltn_routing_table`，消除旧版 6 参数废弃调用；
+  - 调整迁移顺序，确保在多对多数据结构转换（`unified_multi_pairing`）完成后再单次执行 LTN 路由填充，杜绝老存档升级时重复执行 $O(N^2)$ 的全量重建；
+  - 防御未安装模组的边界情况：仅在 `script.active_mods["LogisticTrainNetwork"]` 实际启用且成功执行重建后才标记完成，确保中途加装 LTN 时能够正确补全跨地表路由表。
 - `RiftRail/locale/zh-CN/strings.cfg`、`locale/en/strings.cfg`、`locale/ja/strings.cfg`
-  - 增加中、英、日三语的跨地表物流聚合通知本地化条目。
+  - 增加中、英、日三语的跨地表物流聚合通知本地化条目，并清理已被新通知完全取代的旧版 LTN 本地化废弃条目。
 
 ### 行为边界
 
