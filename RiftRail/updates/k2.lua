@@ -23,7 +23,8 @@ end
 -- set new recipe for rift-rail-placer in Krastorio2
 local recipe = data.raw.recipe["rift-rail-placer"]
 if recipe then
-    recipe.category = "rift-rail-k2-only"
+    recipe.category = nil
+    recipe.categories = { "rift-rail-k2-only" }
     -- Modify Rift Rail recipe if Krastorio2 mod is active
     if recipe then
         recipe.ingredients = {

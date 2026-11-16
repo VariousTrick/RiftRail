@@ -5,6 +5,34 @@
 >
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
+
+## 2026-11-16（v0.14.4：科技树前置优化与 Factorio 2.0 配方类别 API 适配）
+
+**改动摘要**：修复默认模式下科技过早亮起的体验问题、在 Space Age 模式中补齐农业科学包、以及修复 Factorio 2.0 配方原型 `category` 废弃合并为 `categories` 的加载报错。
+
+### 问题背景与目标
+
+1. **默认模式科技前置缺失**：在原版/默认模式（`none`）下，`rift-rail-tech` 的前置仅挂靠在基础铁路 `automated-rail-transportation` 上，但研究包却需要太空科学包（`space-science-pack`）。导致玩家在红绿瓶时期就看到该科技显示为“可研究”，却长期无法真正研发。
+2. **Space Age 模式科学包补全**：在 Space Age 模式下，传送门配方要求使用 Gleba 的碳纤维，但科技研究包中缺少对应的农业科学包。
+3. **Factorio 2.0 配方原型重构报错**：Factorio 2.0 将 `RecipePrototype` 中的 `category` 与 `additional_categories` 合并为 `categories` 数组表。在兼容模式（`sa.lua`、`se.lua`、`k2.lua`）中直接对 `recipe.category` 赋值会导致游戏启动报 `In RecipePrototype, category and additional_categories got merged into categories table` 错误并加载失败。
+
+### 具体改动
+
+- `RiftRail/prototypes/technology/rift-rail.lua` & `RiftRail/technology.lua`
+  - 为默认模式的科技前置增加自适应探测：若存在 `space-science-pack` 科技则加入前置；若不存在（如原版纯基底环境）则回退关联 `rocket-silo`，确保科技树逻辑连贯。
+- `RiftRail/updates/sa.lua`
+  - 在科技研究包列表（`unit.ingredients`）中补充 `{ "agricultural-science-pack", 1 }`，与配方中所需的行星材料形成完整对称。
+  - 将 `recipe.category = "assembler3-crafting"` 规范更新为 `recipe.category = nil` 与 `recipe.categories = { "assembler3-crafting" }`。
+- `RiftRail/updates/k2.lua`
+  - 将 `recipe.category = "rift-rail-k2-only"` 规范更新为 `recipe.category = nil` 与 `recipe.categories = { "rift-rail-k2-only" }`。
+- `RiftRail/updates/se.lua`
+  - 将 `recipe.category = "space-manufacturing"` 规范更新为 `recipe.category = nil` 与 `recipe.categories = { "space-manufacturing" }`。
+
+### 行为边界
+
+- 不改动 `info.json` 版本号，维持在当前版本体系内。
+- `easy-mode` 等其他无影响逻辑保持原有状态不变。
+
 ## 2026-11-14（v0.14.4：修复引导车销毁后的调度指针恢复）
 
 **改动摘要**：修复列车尾部先进入传送门时，传送结束销毁引导车后列车调度指针可能被 Factorio 重置的问题。
