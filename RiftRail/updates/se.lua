@@ -21,7 +21,8 @@ if recipe then
         { type = "item", name = "se-nanomaterial",          amount = 100 }
     }
     -- recipe lock to Space Exploration Manufacturing ficility
-    recipe.category = "space-manufacturing"
+    recipe.category = nil
+    recipe.categories = { "space-manufacturing" }
 end
 
 
