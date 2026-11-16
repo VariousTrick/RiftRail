@@ -6,15 +6,16 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
-## 2026-11-16（v0.14.4：科技树前置优化与 Factorio 2.0 配方类别 API 适配）
+## 2026-11-16（v0.14.4：科技树前置优化、配方 API 适配与跨地表物流通知重构）
 
-**改动摘要**：修复默认模式下科技过早亮起的体验问题、在 Space Age 模式中补齐农业科学包、以及修复 Factorio 2.0 配方原型 `category` 废弃合并为 `categories` 的加载报错。
+**改动摘要**：修复默认模式下科技过早亮起问题、在 Space Age 模式中补齐农业科学包、修复 Factorio 2.0 配方原型 `category` 废弃合并为 `categories` 的加载报错；全面重构 LTN 与 Cybersyn 的多对多跨地表物流通知，杜绝刷屏并补全 GPS 坐标与设置管辖。
 
 ### 问题背景与目标
 
 1. **默认模式科技前置缺失**：在原版/默认模式（`none`）下，`rift-rail-tech` 的前置仅挂靠在基础铁路 `automated-rail-transportation` 上，但研究包却需要太空科学包（`space-science-pack`）。导致玩家在红绿瓶时期就看到该科技显示为“可研究”，却长期无法真正研发。
 2. **Space Age 模式科学包补全**：在 Space Age 模式下，传送门配方要求使用 Gleba 的碳纤维，但科技研究包中缺少对应的农业科学包。
 3. **Factorio 2.0 配方原型重构报错**：Factorio 2.0 将 `RecipePrototype` 中的 `category` 与 `additional_categories` 合并为 `categories` 数组表。在兼容模式（`sa.lua`、`se.lua`、`k2.lua`）中直接对 `recipe.category` 赋值会导致游戏启动报 `In RecipePrototype, category and additional_categories got merged into categories table` 错误并加载失败。
+4. **跨地表物流通知不完善与刷屏**：原本设置宣称管辖 Cybersyn 与 LTN，但实际上 Cybersyn 从未接入设置管辖且单向警告强行弹窗；而在多对多配对场景下，LTN 点击开关会按伙伴数量逐条发送多条聊天消息造成刷屏；且关闭时对未连通伙伴也会错误提示“已断开”。
 
 ### 具体改动
 
@@ -27,6 +28,14 @@
   - 将 `recipe.category = "rift-rail-k2-only"` 规范更新为 `recipe.category = nil` 与 `recipe.categories = { "rift-rail-k2-only" }`。
 - `RiftRail/updates/se.lua`
   - 将 `recipe.category = "space-manufacturing"` 规范更新为 `recipe.category = nil` 与 `recipe.categories = { "space-manufacturing" }`。
+- `RiftRail/scripts/logic.lua`
+  - 新增 `get_portal_gps`、`should_notify_player`、`send_logistics_notification` 与 `build_logistics_toggle_summary` 统一通知管辖模块。
+  - 重构 `Logic.set_ltn_enabled`：调用底层同步时开启 `silent=true` 避免内部循环单条发消息，并在外部输出单条聚合汇总消息。
+  - 重构 `Logic.set_cs2_enabled`：完整接入聚合通知，并使单向路径警告严格受到 `rift-rail-show-logistics-notifications` 设置控制。
+  - 优化状态判定：关闭时仅报告真正被切断的有效连接；开启时输出有效连接列表与等待对方开启的提示，且所有门均附带 `[gps=x,y,surface]` 点击链接。
+  - 统一解绑（Unpair）与配对（Pair）的物流通知机制：在解除配对或建立配对时，若切断或建立了原本双向开启的有效物流连接，LTN 与 CS2 均统一发送规范通知；该通知严格受“显示跨地表连接通知”个人设置管辖，而普通解绑/配对基础提示始终正常反馈。
+- `RiftRail/locale/zh-CN/strings.cfg`、`locale/en/strings.cfg`、`locale/ja/strings.cfg`
+  - 增加中、英、日三语的跨地表物流聚合通知本地化条目。
 
 ### 行为边界
 
