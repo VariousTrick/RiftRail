@@ -6,6 +6,49 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+## 2026-11-16（v0.14.4：传送门配对拓扑远程查询接口、GUI快捷打印与通知中心解耦）
+
+**改动摘要**：新增传送门配对拓扑远程查询与本地化打印接口（`get_paired_portals` / `print_paired_portals`）；在控制核心 GUI 运行模式行新增快捷打印按钮并注册自定义 `riftrail-chat-icon` 精灵图；将文本格式化与聊天打印抽离至 `Notifier` 保持 `Logic` 纯粹性；修复实体与数据表多类型参数防御性解析。
+
+### 问题背景与目标
+
+1. **配对拓扑缺乏直观查询手段**：在多对多配对场景下，玩家和外部模组难以快速掌握特定传送门配对的所有入口与出口关系，缺乏支持大地图快速定位的坐标展示。
+2. **GUI 快捷交互需求**：玩家在控制核心面板中需要一种无侵入、不丢失当前窗口焦点的轻量方式，随时将配对拓扑记录到聊天框供常驻参考。
+3. **架构解耦与职责划分**：新功能的本地化富文本拼接最初写在 `logic.lua` 中造成代码臃肿，需抽离至 `notifier.lua` 保持 `Logic` 的纯净调度职责。
+4. **参数类型边界与防御性修复**：
+   - 当向 `Logic.get_paired_portals` 传入无效数字或字符串 ID 时，避免因 short-circuit 逻辑错误跌入 `State.get_portaldata` 引发对非实体的索引报错；
+   - 当 GUI 按钮传递 `portaldata` 内存表或外部传递实体对象时，完善类型分支判断，避免因 `entity.valid` 校验失败错误返回 `nil`。
+
+### 具体改动
+
+- `RiftRail/scripts/remote.lua`
+  - 注册 `get_paired_portals(portal_or_id)`：支持数字 ID、字符串 ID、实体对象或当前选定实体，返回以 ID 居首位的结构化纯数据表。
+  - 注册 `print_paired_portals(portal_or_id, target_player)`：智能兼容参数顺序，将结构化拓扑格式化为多语言富文本输出至目标玩家聊天框或控制台。
+- `RiftRail/scripts/logic.lua`
+  - 新增 `Logic.get_paired_portals` 核心查询逻辑，独立统计并升序排列入口与出口列表。
+  - 显式增加对 `number`、`string`、`portaldata` 表与实体的四路类型分支，杜绝非法 ID 穿透。
+  - 精简 `Logic.print_paired_portals`，仅负责数据解析与委派调用 `Notifier.print_paired_portals`。
+- `RiftRail/scripts/notifier.lua`
+  - 新增 `Notifier.print_paired_portals(player, data)`，统一收敛模式颜色徽章判定、空目标展示处理、行末大地图跳转 GPS 超链接拼装及聊天框发送。
+- `RiftRail/prototypes/sprites/sprites.lua`
+  - 注册自定义图标原型 `riftrail-chat-icon`，关联 `graphics/icon/chat.png`（64×64 RGBA）。
+- `RiftRail/scripts/gui.lua`
+  - 在模式工具栏（`mode_flow`）眼睛预览按钮左侧添加 `rift_rail_print_info_button`，采用 `riftrail-chat-icon` 图标与 `tool_button` 风格。
+  - 注册点击处理器调用 `Logic.print_paired_portals(my_data.id, ctx.player)`。
+- `RiftRail/scripts/state.lua`
+  - 增强 `State.get_portaldata` 入口守卫，先检查传入对象是否已是有效 `portaldata` 数据表，避免访问不存在的 `entity.valid`。
+- `RiftRail/locale/zh-CN/strings.cfg`、`locale/en/strings.cfg`、`locale/ja/strings.cfg`
+  - 补充拓扑查询反馈文本（Header、Entries/Exits Header、Item 格式、空状态、未找到提示）以及按钮悬停 Tooltip 的三语本地化翻译。
+- `RiftRail/doc/API_CN.md` & `doc/API_EN.md`
+  - 在官方文档中新增“远程接口 (Remote Interface)”章节，详细阐述接口签名、参数规则、返回值结构与代码调用示例。
+- `RiftRail/changelog.txt`
+  - 更新 v0.14.4 更新日志条目。
+
+### 行为边界
+
+- 不推进 `info.json` 版本号，严格保持当前版本。
+- 所有 Lua 脚本均通过 `luac -p` 语法校验，单元测试全部通过。
+
 ## 2026-11-16（v0.14.4：跨地表物流通知重构与 LTN 迁移优化）
 
 **改动摘要**：全面重构 LTN 与 Cybersyn 的多对多跨地表物流通知，杜绝刷屏并补全 GPS 坐标与设置管辖；抽离独立的通知管理模块（`scripts/notifier.lua`）；彻底优化 LTN 迁移逻辑，消除旧接口调用与重复全量重建。

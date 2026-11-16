@@ -141,7 +141,16 @@ end
 
 -- 通过实体获取数据
 function State.get_portaldata(entity)
-    if not (entity and (type(entity) == "userdata" or type(entity) == "table") and entity.valid) then
+    if not entity then
+        return nil
+    end
+
+    -- 如果传入的本身就是 portaldata 表
+    if type(entity) == "table" and entity.unit_number and storage.rift_rails and storage.rift_rails[entity.unit_number] then
+        return storage.rift_rails[entity.unit_number]
+    end
+
+    if not ((type(entity) == "userdata" or type(entity) == "table") and entity.valid) then
         return nil
     end
 

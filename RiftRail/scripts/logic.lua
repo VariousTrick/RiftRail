@@ -859,6 +859,11 @@ function Logic.get_paired_portals(portal_or_id)
     elseif type(portal_or_id) == "string" then
         local id = tonumber(portal_or_id)
         portal = State.get_portaldata_by_id(id or portal_or_id)
+    elseif type(portal_or_id) == "table" and (portal_or_id.id or portal_or_id.unit_number) then
+        -- 传入的本身即为 portaldata 数据表
+        portal = (portal_or_id.unit_number and State.get_portaldata_by_unit_number(portal_or_id.unit_number))
+            or (portal_or_id.id and State.get_portaldata_by_id(portal_or_id.id))
+            or portal_or_id
     else
         local target_entity = portal_or_id or (game and game.player and game.player.selected)
         portal = State.get_portaldata(target_entity)

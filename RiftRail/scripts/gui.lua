@@ -925,7 +925,7 @@ CLICK_HANDLERS["rift_rail_print_info_button"] = function(ctx)
     end
 
     if Logic and Logic.print_paired_portals then
-        Logic.print_paired_portals(my_data, ctx.player)
+        Logic.print_paired_portals(my_data.id, ctx.player)
     end
 end
 

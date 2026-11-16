@@ -79,4 +79,72 @@ remote.call("RiftRail", "get_train_arrived_event")
 
 Rift Rail 的自定义事件只会在整列列车传送的关键节点触发一次，参数包含整车的关键信息。标准事件则会为每节车厢单独触发。开发者可根据自身需求选择监听方式，两者可同时使用。
 
+---
+
+## 远程接口 (Remote Interface)
+
+除了事件监听，Rift Rail 还提供丰富的 `remote.call` 远程接口，供第三方模组查询拓扑数据或进行协同控制。
+
+### 传送门配对拓扑查询接口
+
+#### 1. `get_paired_portals`
+查询指定传送门配对的所有入口与出口信息，返回结构化的纯数据表（ID 居于各元素首位）。
+
+```lua
+local data = remote.call("RiftRail", "get_paired_portals", portal_or_id)
+```
+
+- **参数 `portal_or_id`** (可选)：
+  - `number`: 传送门的数字 ID（例如 `1`）。
+  - `string`: 传送门的字符串 ID（例如 `"1"`）。
+  - `LuaEntity`: 传送门的实体对象（支持传送门外壳 `rift-rail-entity`、核心 `rift-rail-core` 或任意子实体）。
+  - `nil`: 若不传，则默认解析为当前玩家所选中的实体（`game.player.selected`）。
+- **返回值**：若未找到返回 `nil`；若找到返回结构如下的 Table：
+  ```lua
+  {
+      id = 1,                                -- [number] 目标传送门的自定义 ID
+      name = "主基地站",                      -- [string] 传送门自定义名称（未命名则为空字符串）
+      mode = "entry",                        -- [string] 运行模式: "entry" | "exit" | "neutral"
+      gps = "[gps=10.5,20.0,nauvis]",        -- [string] 富文本 GPS 坐标超链接
+      entries = {                            -- [table] 配对的入口列表（按 ID 升序排列）
+          {
+              id = 2,
+              name = "远端输入",
+              mode = "entry",
+              gps = "[gps=-50.0,80.0,nauvis]",
+          },
+      },
+      exits = {                              -- [table] 配对的出口列表（按 ID 升序排列）
+          {
+              id = 3,
+              name = "冶炼区出口",
+              mode = "exit",
+              gps = "[gps=120.0,-35.0,vulcanus]",
+          },
+      },
+  }
+  ```
+
+#### 2. `print_paired_portals`
+将指定传送门的配对拓扑信息格式化后，通过本地化富文本打印到指定玩家的聊天框或控制台。信息中包含出入口独立计数、分类展示，以及末尾可点击的大地图跳转 GPS 超链接。
+
+```lua
+remote.call("RiftRail", "print_paired_portals", portal_or_id, target_player)
+-- 亦兼容逆序传参：
+-- remote.call("RiftRail", "print_paired_portals", target_player, portal_or_id)
+```
+
+- **参数**：
+  - `portal_or_id`: 同 `get_paired_portals`，支持数字 ID、字符串 ID、实体对象或已提取的数据表。
+  - `target_player` (可选): `LuaPlayer` 对象。若省略或在无玩家环境执行，将安全回退至控制台打印。
+- **输出样式示意**：
+  ```text
+  [RiftRail] ID: 1 · Nauvis 入口站 [入口] -> [gps=10.5,20.0,nauvis]
+  ▼ 配对出口 (共 2 处):
+    [1] ID: 2 · Vulcanus 铸造出口 -> [gps=-100.0,55.5,vulcanus]
+    [2] ID: 3 · Gleba 农场出口 -> [gps=32.0,-80.0,gleba]
+  ```
+
+---
+
 如有任何问题，欢迎在我们的模组页面上提出。
