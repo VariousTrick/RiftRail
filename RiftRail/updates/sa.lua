@@ -52,6 +52,7 @@ if tech then
             { "promethium-science-pack",      1 },
             { "cryogenic-science-pack",       1 },
             { "electromagnetic-science-pack", 1 },
+            { "agricultural-science-pack",    1 },
             { "metallurgic-science-pack",     1 },
             { "space-science-pack",           1 },
             { "utility-science-pack",         1 }
