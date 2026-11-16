@@ -6,6 +6,7 @@ local State = nil
 local GUI = nil
 local LTN = nil
 local CS2 = nil
+local Notifier = require("scripts.notifier")
 
 -- ============================================================================
 -- 配置与辅助函数
@@ -27,10 +28,11 @@ local function count_connections(id_table)
 end
 
 function Logic.init(deps)
-    State = deps.State
-    GUI   = deps.GUI
-    LTN   = deps.LTN
-    CS2   = deps.CS2
+    State    = deps.State
+    GUI      = deps.GUI
+    LTN      = deps.LTN
+    CS2      = deps.CS2
+    Notifier = deps.Notifier or Notifier
 end
 
 function Logic.can_teleport_player(player)
@@ -466,6 +468,14 @@ function Logic.pair_portals(player_index, source_id, target_id)
     local target_display = build_display_name(target)
     player.print({ "messages.rift-rail-pair-success", source_display, target_display })
 
+    -- 物流连接同步与通知：若双方原本均已开启物流，在建立配对时建立跨地表连通并发送通知（受设置管辖）
+    if source.ltn_enabled and target.ltn_enabled then
+        if script.active_mods["LogisticTrainNetwork"] and LTN and LTN.update_connection then
+            LTN.update_connection(source, target)
+        end
+    end
+
+    Notifier.notify_paired(player, source, target)
 
     refresh_all_guis()
 
@@ -544,29 +554,30 @@ function Logic.set_ltn_enabled(player_index, portal_id, enabled)
     local partners = {}
     if my_data.target_ids then
         for target_id, _ in pairs(my_data.target_ids) do
-            table.insert(partners, State.get_portaldata_by_id(target_id))
+            local p = State.get_portaldata_by_id(target_id)
+            if p then
+                table.insert(partners, p)
+            end
         end
     end
     if my_data.source_ids then
         for source_id, _ in pairs(my_data.source_ids) do
-            table.insert(partners, State.get_portaldata_by_id(source_id))
+            local p = State.get_portaldata_by_id(source_id)
+            if p then
+                table.insert(partners, p)
+            end
         end
     end
 
     -- 3. 遍历所有伙伴，通知兼容模块去重新评估连接状态
-    for _, partner_data in pairs(partners) do
-        if partner_data and LTN and LTN.update_connection then
-            -- 根据自己是源还是目标，正确传递参数
-            -- update_connection 内部会根据双方的 ltn_enabled 状态决定是否注册
-            if my_data.mode == "entry" then
-                local should_connect = my_data.ltn_enabled and partner_data.ltn_enabled
-                LTN.update_connection(my_data, partner_data, should_connect, player, enabled, nil, true)
-            else -- exit
-                local should_connect = partner_data.ltn_enabled and my_data.ltn_enabled
-                LTN.update_connection(partner_data, my_data, should_connect, player, enabled, nil, false)
-            end
+    for _, partner_data in ipairs(partners) do
+        if LTN and LTN.update_connection then
+            LTN.update_connection(my_data, partner_data)
         end
     end
+
+    -- 4. 统一发送聚合汇总通知
+    Notifier.notify_logistics_toggle(player, my_data, "LTN", enabled)
 
     refresh_all_guis()
 end
@@ -582,7 +593,6 @@ function Logic.set_cs2_enabled(player_index, portal_id, enabled)
     end
 
     my_data.cs2_enabled = enabled
-
     refresh_all_guis()
 
     local one_way_pairs = {}
@@ -600,13 +610,9 @@ function Logic.set_cs2_enabled(player_index, portal_id, enabled)
         CS2.on_topology_changed()
     end
 
-    for _, pair in ipairs(one_way_pairs) do
-        local from_surface = game.surfaces[pair.from_surface_index]
-        local to_surface = game.surfaces[pair.to_surface_index]
-        local from_name = (from_surface and from_surface.name) or tostring(pair.from_surface_index)
-        local to_name = (to_surface and to_surface.name) or tostring(pair.to_surface_index)
-        player.print({ "messages.rift-rail-warning-cs2-one-way", from_name, to_name })
-    end
+    -- 统一发送 CS2 聚合汇总通知与单向告警
+    Notifier.notify_logistics_toggle(player, my_data, "Cybersyn", enabled)
+    Notifier.notify_cs2_one_way(player, one_way_pairs)
 end
 
 -- ============================================================================
@@ -710,6 +716,10 @@ function Logic.unpair_portals_specific(player_index, source_id, target_id)
         return
     end
 
+    -- 记录解绑前双方的物流有效连通状态
+    local ltn_was_active = (source.ltn_enabled and target.ltn_enabled)
+    local cs2_was_active = (source.cs2_enabled and target.cs2_enabled)
+
     -- 1. 清理源头 (Entry) 的记录
     if source.target_ids then
         source.target_ids[target_id] = nil
@@ -727,20 +737,18 @@ function Logic.unpair_portals_specific(player_index, source_id, target_id)
     -- LTN 清理逻辑
     -- script.active_mods 检查，只有在 LTN 模组实际启用时才尝试清理
     if script.active_mods["LogisticTrainNetwork"] and LTN and LTN.update_connection then
-        -- 强制发送 "false" 指令来清理（最后一个参数 nil 表示非用户操作）
-        if source.mode == "entry" then
-            LTN.update_connection(source, target, false, player, false, nil)
-        else
-            LTN.update_connection(target, source, false, player, false, nil)
-        end
+        LTN.update_connection(source, target)
     end
 
-    -- 3. 反馈消息
+    -- 3. 反馈消息：基础断开消息始终打印给操作玩家（不受物流设置影响）
     if player then
         -- 复用现有的本地化字符串，提示已断开与某某的连接
         local target_display = build_display_name(target)
         player.print({ "messages.rift-rail-unpair-success", target_display })
     end
+
+    -- 4. 物流断开通知：仅在双方原本开启了跨地表物流且形成有效连通时发送，严格受设置管辖
+    Notifier.notify_unpaired(player, source, target, ltn_was_active, cs2_was_active)
 
     refresh_all_guis()
 

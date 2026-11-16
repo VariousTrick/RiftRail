@@ -6,6 +6,39 @@
 > [EN] Note: This file is used to record every change during the unreleased development phase.
 > Rules: Append new changes to the very top (reverse chronological order), including the date, modified files, and details of the changes. You can write in any language (English, Chinese, etc.); others will use translation tools to read it.
 
+## 2026-11-16（v0.14.4：跨地表物流通知重构与 LTN 迁移优化）
+
+**改动摘要**：全面重构 LTN 与 Cybersyn 的多对多跨地表物流通知，杜绝刷屏并补全 GPS 坐标与设置管辖；抽离独立的通知管理模块（`scripts/notifier.lua`）；彻底优化 LTN 迁移逻辑，消除旧接口调用与重复全量重建。
+
+### 问题背景与目标
+
+1. **跨地表物流通知不完善与刷屏**：原本设置宣称管辖 Cybersyn 与 LTN，但实际上 Cybersyn 从未接入设置管辖且单向警告强行弹窗；而在多对多配对场景下，LTN 点击开关会按伙伴数量逐条发送多条聊天消息造成刷屏；且关闭时对未连通伙伴也会错误提示“已断开”。
+2. **业务与通知代码高度耦合**：`logic.lua` 与 `ltn.lua` 混杂了大量用于解析地表、提取 GPS、拼接复杂本地化参数的代码，职责模糊且不利于维护。
+3. **LTN 迁移历史遗留问题**：旧版迁移中的 `logistics_reset` 依赖旧的 6 参数 `LTN.update_connection` 接口，新版接口已简化为 2 参数；此外多对多迁移与 LTN 重建可能重复触发，且在未启用 LTN 时会过早标记完成。
+
+### 具体改动
+
+- `RiftRail/scripts/notifier.lua`
+  - 新建独立的通知管理中心模块，统一收敛物流状态通知、GPS 坐标提取、玩家个人设置过滤、多对多聚合摘要拼装及消息分发逻辑。
+- `RiftRail/control.lua`
+  - 引入并初始化 `Notifier` 模块，并注入至 `Logic.init`。
+- `RiftRail/scripts/logic.lua`
+  - 移除内嵌的 200 余行通知拼装与设置检查辅助函数，全面委托给 `Notifier`。
+  - 大幅精简 `set_ltn_enabled`、`set_cs2_enabled`、`pair_portals` 和 `unpair_portals_specific`，使业务函数恢复纯粹的调度职责。
+- `RiftRail/scripts/compat/ltn.lua`
+  - 彻底清理遗留的 `build_connection_message`、`send_connection_message` 及旧版连接判断逻辑，`LTN.update_connection` 简化为纯粹的底层连接同步函数。
+- `RiftRail/scripts/migrations.lua`
+  - 彻底解决 LTN 迁移历史遗留问题：将历史任务 `logistics_reset` 的全量重建职责合并至 `build_ltn_routing_table`，消除旧版 6 参数废弃调用；
+  - 调整迁移顺序，确保在多对多数据结构转换（`unified_multi_pairing`）完成后再单次执行 LTN 路由填充，杜绝老存档升级时重复执行 $O(N^2)$ 的全量重建；
+  - 防御未安装模组的边界情况：仅在 `script.active_mods["LogisticTrainNetwork"]` 实际启用且成功执行重建后才标记完成，确保中途加装 LTN 时能够正确补全跨地表路由表。
+- `RiftRail/locale/zh-CN/strings.cfg`、`locale/en/strings.cfg`、`locale/ja/strings.cfg`
+  - 增加中、英、日三语的跨地表物流聚合通知本地化条目，并清理已被新通知完全取代的旧版 LTN 本地化废弃条目。
+
+### 行为边界
+
+- 不改动 `info.json` 版本号，维持在当前版本体系内。
+- 业务逻辑与界面行为保持原有设计，仅优化通知聚合表现与模块解耦。
+
 ## 2026-11-16（v0.14.4：科技树前置优化与 Factorio 2.0 配方类别 API 适配）
 
 **改动摘要**：修复默认模式下科技过早亮起的体验问题、在 Space Age 模式中补齐农业科学包、以及修复 Factorio 2.0 配方原型 `category` 废弃合并为 `categories` 的加载报错。

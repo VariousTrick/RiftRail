@@ -114,10 +114,6 @@ end
 local sync_portal_ltn_state
 local compute_desired_routes
 local update_routing_table_for_portal
-local check_if_connected_before_sync
-local check_if_connected_after_sync
-local build_connection_message
-local send_connection_message
 
 -- 新的池子管理函数
 local p_get_desired_pools
@@ -441,132 +437,6 @@ sync_portal_ltn_state = function(portal_data, batch_mode)
     end
 end
 
---- 检查两个传送门之间是否已连接（同步前）
----@param portal1 table 传送门1
----@param portal2 table 传送门2
----@return boolean 是否已连接
-check_if_connected_before_sync = function(portal1, portal2)
-    if not (portal1 and portal2) then
-        return false
-    end
-
-    local station1 = State.get_station(portal1)
-    local station2 = State.get_station(portal2)
-
-    if not (station1 and station1.valid and station2 and station2.valid) then
-        return false
-    end
-
-    local s1, s2 = portal1.surface.index, portal2.surface.index
-    local u1, u2 = station1.unit_number, station2.unit_number
-    local pool1 = storage.rr_ltn_pools[s1] and storage.rr_ltn_pools[s1][s2]
-    local pool2 = storage.rr_ltn_pools[s2] and storage.rr_ltn_pools[s2][s1]
-
-    return (pool1 and pool1[u1] and pool2 and pool2[u2]) or false
-end
-
---- 检查两个传送门之间是否已连接（同步后）
----@param portal1 table 传送门1
----@param portal2 table 传送门2
----@return boolean 是否已连接
-check_if_connected_after_sync = function(portal1, portal2)
-    -- 连接的条件：双方都启用 LTN，且至少有一方是 Entry 模式
-    if not (portal1 and portal2) then
-        return false
-    end
-
-    if not (portal1.ltn_enabled and portal2.ltn_enabled) then
-        return false
-    end
-
-    -- 至少有一方是 Entry，且在 target_ids 中互相包含
-    local has_route = false
-
-    if portal1.mode == "entry" and portal1.target_ids and portal1.target_ids[portal2.id] then
-        has_route = true
-    end
-
-    if portal2.mode == "entry" and portal2.target_ids and portal2.target_ids[portal1.id] then
-        has_route = true
-    end
-
-    return has_route
-end
-
---- 构造连接状态变化的提示消息
----@param my_enabled boolean 当前操作建筑的新状态
----@param was_connected boolean 操作前是否已连接
----@param now_connected boolean 操作后是否已连接
----@param select_portal table 源传送门
----@param target_portal table 目标传送门
----@param operator_is_first boolean|nil 操作者顺序标记
----@return table|nil 本地化消息表
-build_connection_message = function(my_enabled, was_connected, now_connected, select_portal, target_portal, operator_is_first)
-    local first_portal = select_portal
-    local second_portal = target_portal
-    if operator_is_first == false then
-        first_portal = target_portal
-        second_portal = select_portal
-    end
-
-    local name1 = first_portal.name or "RiftRail"
-    local pos1 = first_portal.shell.position
-    local surface1 = first_portal.shell.surface.name
-    local gps1 = "[gps=" .. pos1.x .. "," .. pos1.y .. "," .. surface1 .. "]"
-
-    local name2 = second_portal.name or "RiftRail"
-    local pos2 = second_portal.shell.position
-    local surface2 = second_portal.shell.surface.name
-    local gps2 = "[gps=" .. pos2.x .. "," .. pos2.y .. "," .. surface2 .. "]"
-
-    if my_enabled then
-        -- 用户正在开启开关
-        if now_connected then
-            -- 双方都开启了 → 连接建立
-            return { "messages.rift-rail-info-ltn-connected", name1, gps1, name2, gps2 }
-        end
-
-        -- 只有自己开启，对方关闭 → 等待伙伴
-        return { "messages.rift-rail-info-ltn-waiting-partner", name1, gps1, name2, gps2 }
-    end
-
-    -- 用户正在关闭开关
-    if was_connected then
-        -- 之前是连接着的 → 已断开
-        return { "messages.rift-rail-info-ltn-disconnected", name1, gps1, name2, gps2 }
-    end
-
-    -- 之前就是孤立的 → 已关闭
-    return { "messages.rift-rail-info-ltn-disabled", name1, gps1 }
-end
-
---- 发送连接状态提示消息
----@param msg table|nil 本地化消息
----@param player LuaPlayer|nil 目标玩家
----@param silent boolean|nil 静默模式
-send_connection_message = function(msg, player, silent)
-    if not msg or silent then
-        return
-    end
-
-    if player then
-        -- 场景 A: 玩家点击开关 -> 私聊反馈
-        local setting = settings.get_player_settings(player)["rift-rail-show-logistics-notifications"]
-        if setting and setting.value then
-            player.print(msg)
-        end
-        return
-    end
-
-    -- 场景 B: 拆除/虫咬/脚本 -> 全服广播
-    for _, p in pairs(game.connected_players) do
-        local setting = settings.get_player_settings(p)["rift-rail-show-logistics-notifications"]
-        if setting and setting.value then
-            p.print(msg)
-        end
-    end
-end
-
 -- ============================================================================
 -- 外部接口：使用核心同步函数
 -- ============================================================================
@@ -615,44 +485,22 @@ function LTN.on_portal_destroyed(portal_data)
     end
 end
 
---- 更新 LTN 连接（简化版，使用核心同步函数）
+--- 更新 LTN 连接（核心同步函数）
 ---@param select_portal table 操作的传送门
 ---@param target_portal table 目标传送门
----@param connect boolean 连接状态（此参数在新架构中被忽略，自动从数据推导）
----@param player LuaPlayer|nil 操作玩家（用于消息提示）
----@param my_enabled boolean 当前操作建筑的新状态
----@param silent boolean|nil 静默模式
----@param operator_is_first boolean|nil 操作者顺序标记
-function LTN.update_connection(select_portal, target_portal, connect, player, my_enabled, silent, operator_is_first)
+function LTN.update_connection(select_portal, target_portal)
     -- 门卫拦截：如果双方都没开启 LTN，说明此事与 LTN 无关，直接退出
-    if not select_portal.ltn_enabled and not (target_portal and target_portal.ltn_enabled) then
+    if not (select_portal and select_portal.ltn_enabled) and not (target_portal and target_portal.ltn_enabled) then
         return
     end
 
-    silent = silent or false
-
-    if not is_ltn_active() and not silent then
-        if player then
-            player.print({ "messages.rift-rail-error-ltn-not-found" })
-        end
+    if not is_ltn_active() then
         return
     end
-
-    -- 记录操作前的连接状态（用于消息提示）
-    local was_connected = check_if_connected_before_sync(select_portal, target_portal)
 
     -- 同步两个传送门的状态（幂等操作）
     sync_portal_ltn_state(select_portal, false)
     sync_portal_ltn_state(target_portal, false)
-
-    -- 检查操作后的连接状态
-    local now_connected = check_if_connected_after_sync(select_portal, target_portal)
-
-    -- 发送消息提示
-    if not silent then
-        local msg = build_connection_message(my_enabled, was_connected, now_connected, select_portal, target_portal, operator_is_first)
-        send_connection_message(msg, player, silent)
-    end
 end
 
 -- ============================================================================
